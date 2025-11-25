@@ -10,17 +10,11 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 abstract contract BaseHooks is IHooks {
     error HookNotImplemented();
 
-    function beforeInitialize(address, PoolKey calldata, uint160) external pure virtual override returns (bytes4) {
+    function beforeInitialize(address, PoolKey calldata, uint160) external pure virtual returns (bytes4) {
         revert HookNotImplemented();
     }
 
-    function afterInitialize(address, PoolKey calldata, uint160, int24)
-        external
-        pure
-        virtual
-        override
-        returns (bytes4)
-    {
+    function afterInitialize(address, PoolKey calldata, uint160, int24) external pure virtual returns (bytes4) {
         revert HookNotImplemented();
     }
 
@@ -28,7 +22,6 @@ abstract contract BaseHooks is IHooks {
         external
         pure
         virtual
-        override
         returns (bytes4)
     {
         revert HookNotImplemented();
@@ -41,7 +34,7 @@ abstract contract BaseHooks is IHooks {
         BalanceDelta,
         BalanceDelta,
         bytes calldata
-    ) external pure virtual override returns (bytes4, BalanceDelta) {
+    ) external pure virtual returns (bytes4, BalanceDelta) {
         revert HookNotImplemented();
     }
 
@@ -50,7 +43,7 @@ abstract contract BaseHooks is IHooks {
         PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external pure virtual override returns (bytes4) {
+    ) external pure virtual returns (bytes4) {
         revert HookNotImplemented();
     }
 
@@ -61,7 +54,7 @@ abstract contract BaseHooks is IHooks {
         BalanceDelta,
         BalanceDelta,
         bytes calldata
-    ) external pure virtual override returns (bytes4, BalanceDelta) {
+    ) external pure virtual returns (bytes4, BalanceDelta) {
         revert HookNotImplemented();
     }
 
@@ -69,7 +62,6 @@ abstract contract BaseHooks is IHooks {
         external
         pure
         virtual
-        override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         revert HookNotImplemented();
@@ -79,7 +71,6 @@ abstract contract BaseHooks is IHooks {
         external
         pure
         virtual
-        override
         returns (bytes4, int128)
     {
         revert HookNotImplemented();
@@ -89,7 +80,6 @@ abstract contract BaseHooks is IHooks {
         external
         pure
         virtual
-        override
         returns (bytes4)
     {
         revert HookNotImplemented();
@@ -99,7 +89,6 @@ abstract contract BaseHooks is IHooks {
         external
         pure
         virtual
-        override
         returns (bytes4)
     {
         revert HookNotImplemented();
