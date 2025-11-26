@@ -49,6 +49,7 @@ contract StableSwapHooks is BaseHooks {
     ) external override returns (bytes4, BeforeSwapDelta, uint24) {
         // int128 dy = swap(_sender, _key, _params, amp);
         // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
+        // Commented implementation for now until more robust solution.
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
 
         return (StableSwapHooks.beforeSwap.selector, delta, 0);
