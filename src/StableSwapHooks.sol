@@ -59,7 +59,7 @@ contract StableSwapHooks is BaseHooks {
         PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external virtual returns (bytes4) {
+    ) external override returns (bytes4) {
         revert ModifyLiquidityThroughHook();
     }
 
