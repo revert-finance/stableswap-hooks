@@ -6,6 +6,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {BalanceDelta, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
+import {PoolId} from "v4-core/types/PoolId.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
 contract StableSwapHooks is BaseHooks {
@@ -18,11 +19,15 @@ contract StableSwapHooks is BaseHooks {
 
     /// Variables
 
+    /// TODO: This could be immutable to save gas if we can deterministicaly know the address of
+    /// the hook for pool init and set it on the constructor.
+    PoolId public poolId;
     uint256 public amp;
 
     /// Errors
 
     error InvalidAmp();
+    error AlreadyInitialized();
     error ModifyLiquidityThroughHook();
 
     /// Events
@@ -40,6 +45,22 @@ contract StableSwapHooks is BaseHooks {
     /// TODO: Who can call this function?
     function setAmp(uint256 newAmp) external {
         _setAmp(newAmp);
+    }
+
+    /// @notice Stores which pool this hook belongs to.
+    /// Only that pool will be able to interact with this hook.
+    function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+        external
+        override
+        returns (bytes4)
+    {
+        if (PoolId.unwrap(poolId) != 0) {
+            revert AlreadyInitialized();
+        }
+
+        poolId = key.toId();
+
+        return StableSwapHooks.beforeInitialize.selector;
     }
 
     /// @notice Prevents users from adding liquidity through the PoolManager's modifyLiquidity function.
