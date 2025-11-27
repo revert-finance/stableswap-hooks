@@ -17,7 +17,7 @@ contract StableSwapHooksTest is Test {
     PoolKey private key;
 
     function setUp() public {
-        hooks = new StableSwapHooks(1e3);
+        hooks = new StableSwapHooks(1e3, Currency.wrap(address(0x1)), Currency.wrap(address(0x2)), 0);
 
         key = PoolKey({
             currency0: Currency.wrap(address(0x1)),
