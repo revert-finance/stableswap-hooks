@@ -7,6 +7,8 @@ import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.
 import {BalanceDelta, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
+import {Currency} from "v4-core/types/Currency.sol";
+import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
 contract StableSwapHooks is BaseHooks {
@@ -17,17 +19,18 @@ contract StableSwapHooks is BaseHooks {
 
     uint256 public constant MAX_AMP = 1e6;
 
+    /// Immutables
+
+    PoolId public immutable poolId;
+
     /// Variables
 
-    /// TODO: This could be immutable to save gas if we can deterministicaly know the address of
-    /// the hook for pool init and set it on the constructor.
-    PoolId public poolId;
     uint256 public amp;
 
     /// Errors
 
     error InvalidAmp();
-    error AlreadyInitialized();
+    error InvalidPoolId();
     error ModifyLiquidityThroughHook();
 
     /// Events
@@ -36,7 +39,17 @@ contract StableSwapHooks is BaseHooks {
 
     /// Deployment
 
-    constructor(uint256 initialAmp) {
+    constructor(uint256 initialAmp, Currency currency0, Currency currency1, uint24 fee) {
+        PoolKey memory key = PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            fee: fee,
+            tickSpacing: type(int24).max,
+            hooks: IHooks(address(this))
+        });
+
+        poolId = key.toId();
+
         _setAmp(initialAmp);
     }
 
@@ -54,11 +67,9 @@ contract StableSwapHooks is BaseHooks {
         override
         returns (bytes4)
     {
-        if (PoolId.unwrap(poolId) != 0) {
-            revert AlreadyInitialized();
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
         }
-
-        poolId = key.toId();
 
         return StableSwapHooks.beforeInitialize.selector;
     }
