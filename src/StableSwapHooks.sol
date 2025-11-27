@@ -13,6 +13,11 @@ import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
 import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
+// TODO: Move to somewhere else, or use OZ IERC20s
+interface IERC20 is IERC20Minimal {
+    function decimals() external view returns (uint8);
+}
+
 contract StableSwapHooks is BaseHooks, IUnlockCallback {
     using SafeCast for int256;
     using SafeCast for uint256;
@@ -25,6 +30,8 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
 
     IPoolManager public immutable poolManager;
     PoolId public immutable poolId;
+    uint256 public immutable rate0;
+    uint256 public immutable rate1;
 
     /// Variables
 
@@ -54,6 +61,9 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
             tickSpacing: type(int24).max,
             hooks: IHooks(address(this))
         });
+
+        rate0 = 10 ** (36 - IERC20(Currency.unwrap(key.currency0)).decimals());
+        rate1 = 10 ** (36 - IERC20(Currency.unwrap(key.currency1)).decimals());
 
         poolId = key.toId();
 
@@ -87,8 +97,8 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
 
         // TODO: This requires approval to be given to the hook contract
         // what should the experience be?
-        IERC20Minimal(Currency.unwrap(key.currency0)).transferFrom(sender, address(poolManager), amount0);
-        IERC20Minimal(Currency.unwrap(key.currency1)).transferFrom(sender, address(poolManager), amount1);
+        IERC20(Currency.unwrap(key.currency0)).transferFrom(sender, address(poolManager), amount0);
+        IERC20(Currency.unwrap(key.currency1)).transferFrom(sender, address(poolManager), amount1);
 
         poolManager.settle();
 
@@ -151,10 +161,6 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
         private
         returns (int128)
     {
-        // rates
-        uint256 rate0 = 10 ** 30; // 6 decimals
-        uint256 rate1 = 10 ** 18; // 18 decimals
-
         // xp_mem
         uint256 xp0 = rate0 * reserves0 / 1e18;
         uint256 xp1 = rate1 * reserves1 / 1e18;
