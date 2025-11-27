@@ -23,6 +23,7 @@ contract StableSwapHooks is BaseHooks {
     /// Errors
 
     error InvalidAmp();
+    error ModifyLiquidityThroughHook();
 
     /// Events
 
@@ -39,6 +40,27 @@ contract StableSwapHooks is BaseHooks {
     /// TODO: Who can call this function?
     function setAmp(uint256 newAmp) external {
         _setAmp(newAmp);
+    }
+
+    /// @notice Prevents users from adding liquidity through the PoolManager's modifyLiquidity function.
+    /// This is because liquidity for this custom curve is handled differently than in Uniswap V4.
+    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+        external
+        override
+        returns (bytes4)
+    {
+        revert ModifyLiquidityThroughHook();
+    }
+
+    /// @notice Prevents users from removing liquidity through the PoolManager's modifyLiquidity function.
+    /// For the same reasons as beforeAddLiquidity.
+    function beforeRemoveLiquidity(
+        address,
+        PoolKey calldata,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) external override returns (bytes4) {
+        revert ModifyLiquidityThroughHook();
     }
 
     function beforeSwap(
