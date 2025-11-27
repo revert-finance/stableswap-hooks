@@ -19,7 +19,7 @@ contract StableSwapHooks is BaseHooks {
 
     /// Variables
 
-    /// TODO: This could be immutable to save gas if we can deterministicaly know the address of 
+    /// TODO: This could be immutable to save gas if we can deterministicaly know the address of
     /// the hook for pool init and set it on the constructor.
     PoolId public poolId;
     uint256 public amp;
