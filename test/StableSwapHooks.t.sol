@@ -17,7 +17,7 @@ contract StableSwapHooksTest is Test {
     PoolKey private key;
 
     function setUp() public {
-        hooks = new StableSwapHooks();
+        hooks = new StableSwapHooks(1e3);
 
         key = PoolKey({
             currency0: Currency.wrap(address(0x1)),
@@ -28,7 +28,7 @@ contract StableSwapHooksTest is Test {
         });
     }
 
-    function testFuzz_beforeSwap_ShouldReturnCorrectDelta(int128 amountSpecified) public view {
+    function testFuzz_beforeSwap_ShouldReturnCorrectDelta(int128 amountSpecified) public {
         vm.assume(amountSpecified != type(int128).min);
 
         IPoolManager.SwapParams memory params =

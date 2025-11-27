@@ -12,17 +12,50 @@ contract StableSwapHooks is BaseHooks {
     using SafeCast for int256;
     using SafeCast for uint256;
 
+    /// Constants
+
+    uint256 public constant MAX_AMP = 1e6;
+
+    /// Variables
+
+    uint256 public amp;
+
+    /// Errors
+
+    error InvalidAmp();
+
+    /// Events
+
+    event AmpSet(uint256 newAmp);
+
+    /// Deployment
+
+    constructor(uint256 initialAmp) {
+        _setAmp(initialAmp);
+    }
+
+    /// External
+
+    /// TODO: Who can call this function?
+    function setAmp(uint256 newAmp) external {
+        _setAmp(newAmp);
+    }
+
     function beforeSwap(
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         bytes calldata hookData
     ) external override returns (bytes4, BeforeSwapDelta, uint24) {
-        int128 dy = swap(sender, key, params);
-        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), dy);
+        // int128 dy = swap(_sender, _key, _params, amp);
+        // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
+        // Commented implementation for now until more robust solution.
+        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
 
         return (StableSwapHooks.beforeSwap.selector, delta, 0);
     }
+
+    /// Internal
 
     function swap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         private
@@ -49,10 +82,10 @@ contract StableSwapHooks is BaseHooks {
 
         uint256 x = xp0 + uint256(-dx) * rate0 / 1e18;
 
-        uint256 amp = 1e3;
+        uint256 memAmp = amp;
 
-        uint256 D = getD(xp0, xp1, amp);
-        uint256 y = getY(x, amp, D);
+        uint256 D = getD(xp0, xp1, memAmp);
+        uint256 y = getY(x, memAmp, D);
         uint256 dy = xp1 - y - 1;
         uint256 dy_fee = 0; // TODO
 
@@ -67,11 +100,11 @@ contract StableSwapHooks is BaseHooks {
         return dy.toInt128();
     }
 
-    function getD(uint256 xp0, uint256 xp1, uint256 amp) private pure returns (uint256) {
+    function getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
         uint256 S = xp0 + xp1;
 
         uint256 D = S;
-        uint256 Ann = amp * 2;
+        uint256 Ann = memAmp * 2;
 
         for (uint256 i = 0; i < 255; ++i) {
             uint256 D_P = D;
@@ -100,11 +133,11 @@ contract StableSwapHooks is BaseHooks {
         revert("Convergence not reached");
     }
 
-    function getY(uint256 x, uint256 amp, uint256 D) private pure returns (uint256) {
+    function getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
         uint256 S_ = x;
         uint256 y_prev = 0;
         uint256 c = D * (D / (x * 2));
-        uint256 Ann = amp * 2;
+        uint256 Ann = memAmp * 2;
 
         // c = c * D * A_PRECISION / (Ann * N_COINS)
         c = c * D * 100 / (Ann * 2);
@@ -131,5 +164,15 @@ contract StableSwapHooks is BaseHooks {
         }
 
         revert("Convergence not reached (y)");
+    }
+
+    function _setAmp(uint256 newAmp) private {
+        if (newAmp >= MAX_AMP) {
+            revert InvalidAmp();
+        }
+
+        emit AmpSet(newAmp);
+
+        amp = newAmp;
     }
 }
