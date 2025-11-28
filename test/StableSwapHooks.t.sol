@@ -26,7 +26,7 @@ contract StableSwapHooksTest is Test {
         MockERC20 mockToken1 = new MockERC20();
 
         hooks = new StableSwapHooks(
-            1e3, IPoolManager(address(0x1)), Currency.wrap(address(mockToken0)), Currency.wrap(address(mockToken1)), 0
+            1e3, IPoolManager(address(0x1)), Currency.wrap(address(mockToken0)), Currency.wrap(address(mockToken1))
         );
 
         key = PoolKey({

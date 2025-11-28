@@ -26,7 +26,10 @@ contract StableSwapHooks is BaseHooks {
 
     uint256 public constant MAX_AMP = 1e6;
     uint256 public constant RATE_PRECISION = 1e18;
-    int24 public constant TICK_SPACING = 60;
+
+    // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
+    uint24 public constant FEE = 100;
+    int24 public constant TICK_SPACING = 1;
 
     /// Immutables
 
@@ -58,13 +61,13 @@ contract StableSwapHooks is BaseHooks {
 
     /// Deployment
 
-    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1, uint24 fee) {
+    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) {
         poolManager = manager;
 
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: fee,
+            fee: FEE,
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(this))
         });
