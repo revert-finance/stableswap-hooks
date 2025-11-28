@@ -4,27 +4,32 @@ pragma solidity 0.8.30;
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
-import {BalanceDelta, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
-import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
-import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
 // TODO: Move to somewhere else, or use OZ IERC20s
-interface IERC20 is IERC20Minimal {
+interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
-contract StableSwapHooks is BaseHooks, IUnlockCallback {
+contract StableSwapHooks is BaseHooks {
     using SafeCast for int256;
     using SafeCast for uint256;
+    using TickMath for int24;
 
     /// Constants
 
     uint256 public constant MAX_AMP = 1e6;
+    uint256 public constant RATE_PRECISION = 1e18;
+
+    // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
+    uint24 public constant FEE = 100;
+    int24 public constant TICK_SPACING = 1;
 
     /// Immutables
 
@@ -38,12 +43,17 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
     uint256 public amp;
     uint256 public reserves0;
     uint256 public reserves1;
+    uint256 public totalShares;
+
+    mapping(address => uint256) public sharesByUser;
 
     /// Errors
 
     error InvalidAmp();
     error InvalidPoolId();
-    error ModifyLiquidityThroughHook();
+    error InvalidInvariant();
+    error InvalidRange();
+    error InvalidCaller();
 
     /// Events
 
@@ -51,11 +61,15 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
 
     /// Deployment
 
-    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1, uint24 fee) {
+    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) {
         poolManager = manager;
 
         PoolKey memory key = PoolKey({
-            currency0: currency0, currency1: currency1, fee: fee, tickSpacing: 1, hooks: IHooks(address(this))
+            currency0: currency0,
+            currency1: currency1,
+            fee: FEE,
+            tickSpacing: TICK_SPACING,
+            hooks: IHooks(address(this))
         });
 
         rate0 = 10 ** (36 - IERC20(Currency.unwrap(key.currency0)).decimals());
@@ -73,35 +87,6 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
         _setAmp(newAmp);
     }
 
-    function addLiquidity(PoolKey calldata key, uint256 amount0, uint256 amount1) external {
-        bytes memory data = abi.encode(msg.sender, key, amount0, amount1);
-
-        poolManager.unlock(data);
-    }
-
-    function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        // TODO: Parse data in a way that we can include remove liquidity as well.
-        (address sender, PoolKey memory key, uint256 amount0, uint256 amount1) =
-            abi.decode(data, (address, PoolKey, uint256, uint256));
-
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
-
-        poolManager.sync(key.currency0);
-        poolManager.sync(key.currency1);
-
-        // TODO: This requires approval to be given to the hook contract
-        // what should the experience be?
-        IERC20(Currency.unwrap(key.currency0)).transferFrom(sender, address(poolManager), amount0);
-        IERC20(Currency.unwrap(key.currency1)).transferFrom(sender, address(poolManager), amount1);
-
-        poolManager.settle();
-
-        reserves0 += amount0;
-        reserves1 += amount1;
-    }
-
     /// @notice Stores which pool this hook belongs to.
     /// Only that pool will be able to interact with this hook.
     function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
@@ -116,25 +101,72 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
         return StableSwapHooks.beforeInitialize.selector;
     }
 
-    /// @notice Prevents users from adding liquidity through the PoolManager's modifyLiquidity function.
-    /// This is because liquidity for this custom curve is handled differently than in Uniswap V4.
-    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
-        external
-        override
-        returns (bytes4)
-    {
-        revert ModifyLiquidityThroughHook();
-    }
-
-    /// @notice Prevents users from removing liquidity through the PoolManager's modifyLiquidity function.
-    /// For the same reasons as beforeAddLiquidity.
-    function beforeRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
+    function afterAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta,
         bytes calldata
-    ) external override returns (bytes4) {
-        revert ModifyLiquidityThroughHook();
+    ) external override returns (bytes4, BalanceDelta) {
+        // Verify only the pool manager is calling this function
+        if (msg.sender != address(poolManager)) {
+            revert InvalidCaller();
+        }
+
+        // Verify that liquidity is being added to the targeted pool
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
+        // Verify that only a full ranged position is being created
+        if (params.tickUpper != TICK_SPACING.maxUsableTick() || params.tickLower != TICK_SPACING.minUsableTick()) {
+            revert InvalidRange();
+        }
+
+        // Extract amounts from delta
+        uint256 amount0 = uint256(int256(-delta.amount0()));
+        uint256 amount1 = uint256(int256(-delta.amount1()));
+
+        uint256 oldTotalShares = totalShares;
+        uint256 newShares = 0;
+
+        {
+            // Calculate old invariant
+            uint256 oldReserves0 = reserves0;
+            uint256 oldReserves1 = reserves1;
+            uint256 oldInvariant =
+                getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+
+            // Calculate new invariant
+            uint256 newInvariant = getD(
+                rate0 * (oldReserves0 + amount0) / RATE_PRECISION,
+                rate1 * (oldReserves1 + amount1) / RATE_PRECISION,
+                amp
+            );
+
+            // Verify new invariant is higher
+            if (newInvariant <= oldInvariant) {
+                revert InvalidInvariant();
+            }
+
+            // Calculate new shares
+            if (oldTotalShares == 0) {
+                newShares = newInvariant;
+            } else {
+                newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
+            }
+        }
+
+        // Update storage
+        totalShares = oldTotalShares + newShares;
+        sharesByUser[sender] += newShares;
+        reserves0 += amount0;
+        reserves1 += amount1;
+
+        // TODO: Emit event
+
+        return (StableSwapHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
     function beforeSwap(
