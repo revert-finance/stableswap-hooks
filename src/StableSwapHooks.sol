@@ -44,7 +44,7 @@ contract StableSwapHooks is BaseHooks {
             currency0: currency0,
             currency1: currency1,
             fee: fee,
-            tickSpacing: type(int24).max,
+            tickSpacing: 1, 
             hooks: IHooks(address(this))
         });
 
