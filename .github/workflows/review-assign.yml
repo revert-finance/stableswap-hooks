@@ -1,4 +1,6 @@
 name: PR Review Assignment
+permissions:
+  pull-requests: write
 
 on:
   pull_request:
