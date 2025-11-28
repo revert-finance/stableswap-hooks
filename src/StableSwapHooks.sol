@@ -190,8 +190,8 @@ contract StableSwapHooks is BaseHooks {
         returns (int128)
     {
         // xp_mem
-        uint256 xp0 = rate0 * reserves0 / 1e18;
-        uint256 xp1 = rate1 * reserves1 / 1e18;
+        uint256 xp0 = (rate0 * reserves0) / 1e18;
+        uint256 xp1 = (rate1 * reserves1) / 1e18;
 
         // dx should be calculated?
         int256 dx = params.amountSpecified;
@@ -200,7 +200,7 @@ contract StableSwapHooks is BaseHooks {
             revert();
         }
 
-        uint256 x = xp0 + uint256(-dx) * rate0 / 1e18;
+        uint256 x = xp0 + (uint256(-dx) * rate0) / 1e18;
 
         uint256 memAmp = amp;
 
@@ -210,7 +210,7 @@ contract StableSwapHooks is BaseHooks {
         uint256 dy_fee = 0; // TODO
 
         // Convert all to real units
-        dy = (dy - dy_fee) * 1e18 / rate1;
+        dy = ((dy - dy_fee) * 1e18) / rate1;
 
         // TODO
         // self.upkeep_oracles(xp, amp, D)
@@ -229,15 +229,15 @@ contract StableSwapHooks is BaseHooks {
         for (uint256 i = 0; i < 255; ++i) {
             uint256 D_P = D;
 
-            D_P = D_P * D / xp0;
-            D_P = D_P * D / xp1;
+            D_P = (D_P * D) / xp0;
+            D_P = (D_P * D) / xp1;
 
             D_P = D_P / 4;
 
             uint256 D_prev = D;
 
             // (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
-            D = (Ann * S / 100 + D_P * 2) * D / ((Ann - 100) * D / 100 + (2 + 1) * D_P);
+            D = (((Ann * S) / 100 + D_P * 2) * D) / (((Ann - 100) * D) / 100 + (2 + 1) * D_P);
 
             if (D > D_prev) {
                 if (D - D_prev <= 1) {
@@ -260,10 +260,10 @@ contract StableSwapHooks is BaseHooks {
         uint256 Ann = memAmp * 2;
 
         // c = c * D * A_PRECISION / (Ann * N_COINS)
-        c = c * D * 100 / (Ann * 2);
+        c = (c * D * 100) / (Ann * 2);
 
         // b: uint256 = S_ + D * A_PRECISION / Ann  # - D
-        uint256 b = S_ + D * 100 / Ann;
+        uint256 b = S_ + (D * 100) / Ann;
 
         // y: uint256 = D
         uint256 y = D;
