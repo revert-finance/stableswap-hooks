@@ -10,6 +10,11 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {StableSwapHooks} from "../src/StableSwapHooks.sol";
 
+// TODO: Move to mocks folder
+contract MockERC20 {
+    uint8 public decimals = 18;
+}
+
 contract StableSwapHooksTest is Test {
     using BeforeSwapDeltaLibrary for BeforeSwapDelta;
 
@@ -17,11 +22,16 @@ contract StableSwapHooksTest is Test {
     PoolKey private key;
 
     function setUp() public {
-        hooks = new StableSwapHooks(1e3, Currency.wrap(address(0x1)), Currency.wrap(address(0x2)), 0);
+        MockERC20 mockToken0 = new MockERC20();
+        MockERC20 mockToken1 = new MockERC20();
+
+        hooks = new StableSwapHooks(
+            1e3, IPoolManager(address(0x1)), Currency.wrap(address(mockToken0)), Currency.wrap(address(mockToken1)), 0
+        );
 
         key = PoolKey({
-            currency0: Currency.wrap(address(0x1)),
-            currency1: Currency.wrap(address(0x2)),
+            currency0: Currency.wrap(address(mockToken0)),
+            currency1: Currency.wrap(address(mockToken1)),
             fee: 0,
             tickSpacing: 0,
             hooks: IHooks(address(hooks))
