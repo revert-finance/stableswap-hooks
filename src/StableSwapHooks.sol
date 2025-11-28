@@ -28,7 +28,8 @@ contract StableSwapHooks is BaseHooks {
     uint256 public constant RATE_PRECISION = 1e18;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
-    uint24 public constant FEE = 100;
+    uint24 public constant FEE = 1e2; // 0.01%
+    uint256 public constant FEE_DENOMINATOR = 1e6; // 100%
     int24 public constant TICK_SPACING = 1;
 
     /// Immutables
@@ -256,28 +257,84 @@ contract StableSwapHooks is BaseHooks {
         private
         returns (int128)
     {
-        // xp_mem
-        uint256 xp0 = (rate0 * reserves0) / 1e18;
-        uint256 xp1 = (rate1 * reserves1) / 1e18;
+        uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
+        uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
-        // dx should be calculated?
         int256 dx = params.amountSpecified;
-        if (dx >= 0) {
-            // zeroForOne not used.
-            revert();
-        }
-
-        uint256 x = xp0 + (uint256(-dx) * rate0) / 1e18;
-
         uint256 memAmp = amp;
-
         uint256 D = getD(xp0, xp1, memAmp);
-        uint256 y = getY(x, memAmp, D);
-        uint256 dy = xp1 - y - 1;
-        uint256 dy_fee = 0; // TODO
 
-        // Convert all to real units
-        dy = ((dy - dy_fee) * 1e18) / rate1;
+        uint256 dy;
+        // TODO dedup logic
+        if (params.zeroForOne) {
+            // Swapping token0 for token1
+            if (dx < 0) {
+                // Exact input: we know how much token0 is being put in
+                uint256 x = xp0 + (uint256(-dx) * rate0) / RATE_PRECISION;
+
+                uint256 y = getY(x, memAmp, D);
+                dy = xp1 - y - 1;
+
+                // Calculate fee on the output
+                uint256 dy_fee = (dy * FEE) / FEE_DENOMINATOR;
+
+                // Convert to real units
+                dy = ((dy - dy_fee) * RATE_PRECISION) / rate1;
+            } else {
+                // Need to calculate required token0 input including fees
+                // based on how much token1 is desired
+                uint256 dy_desired = uint256(dx);
+
+                uint256 dy_gross = (dy_desired * rate1) / RATE_PRECISION;
+                // Amount desired should take into account fee discount on x
+                // net_change = gross_change - gross_change * 0.01
+                //            = gross_change * (1 - 0.01)
+                //            = gross_change * (1 - (fee/fee_denominator))
+                //            = gross_change * (fee_denominator - fee / fee_denominator)
+                // and solve for gross_change
+                dy_gross = (dy_gross * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
+
+                // Calculate y after swap
+                uint256 y = xp1 - dy_gross;
+
+                // Calculate required x (input in precision units)
+                uint256 x = getY(y, memAmp, D);
+                uint256 dx_required = x - xp0;
+
+                // Convert to real units and return as negative (amount to take from user)
+                dy = (dx_required * RATE_PRECISION) / rate0;
+            }
+        } else {
+            // Swapping token1 for token0
+            if (dx < 0) {
+                // Exact input: we know how much token1 is being put in
+                uint256 y = xp1 + (uint256(-dx) * rate1) / RATE_PRECISION;
+                uint256 x = getY(y, memAmp, D);
+                dy = xp0 - x - 1;
+
+                // Calculate fee on the output
+                uint256 dy_fee = (dy * FEE) / FEE_DENOMINATOR;
+
+                // Convert to real units
+                dy = ((dy - dy_fee) * RATE_PRECISION) / rate0;
+            } else {
+                // Exact output: we know how much token0 should be received
+                uint256 dy_desired = uint256(dx);
+
+                uint256 dy_gross = (dy_desired * rate0) / RATE_PRECISION;
+                dy_gross = (dy_gross * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
+
+                // Calculate x after swap
+                uint256 x = xp0 - dy_gross;
+
+                // Calculate required y (input in precision units)
+                uint256 y = getY(x, memAmp, D);
+                uint256 dx_required = y - xp1;
+
+                // Convert to real units and return as negative (amount to take from user)
+                dy = (dx_required * RATE_PRECISION) / rate1;
+            }
+        }
 
         // TODO
         // self.upkeep_oracles(xp, amp, D)
