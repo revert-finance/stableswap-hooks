@@ -88,6 +88,8 @@ contract StableSwapHooks is BaseHook {
         _setAmp(newAmp);
     }
 
+    /// Hooks
+
     function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
         permissions = Hooks.Permissions({
             beforeInitialize: true,
@@ -106,8 +108,6 @@ contract StableSwapHooks is BaseHook {
             afterRemoveLiquidityReturnDelta: false
         });
     }
-
-    /// Internal
 
     /// @notice Stores which pool this hook belongs to.
     /// Only that pool will be able to interact with this hook.
