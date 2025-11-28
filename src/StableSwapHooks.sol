@@ -158,8 +158,8 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
         returns (int128)
     {
         // xp_mem
-        uint256 xp0 = rate0 * reserves0 / 1e18;
-        uint256 xp1 = rate1 * reserves1 / 1e18;
+        uint256 xp0 = (rate0 * reserves0) / 1e18;
+        uint256 xp1 = (rate1 * reserves1) / 1e18;
 
         // dx should be calculated?
         int256 dx = params.amountSpecified;
