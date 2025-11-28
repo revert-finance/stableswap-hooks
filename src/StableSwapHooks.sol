@@ -25,6 +25,7 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
     /// Constants
 
     uint256 public constant MAX_AMP = 1e6;
+    uint256 public constant RATE_PRECISION = 1e18;
 
     /// Immutables
 
@@ -38,12 +39,16 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
     uint256 public amp;
     uint256 public reserves0;
     uint256 public reserves1;
+    uint256 public totalShares;
+
+    mapping(address => uint256) public sharesByUser;
 
     /// Errors
 
     error InvalidAmp();
     error InvalidPoolId();
     error ModifyLiquidityThroughHook();
+    error InvalidInvariant();
 
     /// Events
 
@@ -92,6 +97,20 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
             revert InvalidPoolId();
         }
 
+        uint256 memAmp = amp;
+
+        uint256 oldReserves0 = reserves0;
+        uint256 oldReserves1 = reserves1;
+
+        uint256 oldInvariant;
+
+        {
+            uint256 oldNormalizedReserves0 = rate0 * oldReserves0 / RATE_PRECISION;
+            uint256 oldNormalizedReserves1 = rate1 * oldReserves1 / RATE_PRECISION;
+
+            oldInvariant = getD(oldNormalizedReserves0, oldNormalizedReserves1, memAmp);
+        }
+
         poolManager.sync(key.currency0);
         poolManager.sync(key.currency1);
 
@@ -102,8 +121,37 @@ contract StableSwapHooks is BaseHooks, IUnlockCallback {
 
         poolManager.settle();
 
-        reserves0 += amount0;
-        reserves1 += amount1;
+        uint256 newReserves0 = oldReserves0 + amount0;
+        uint256 newReserves1 = oldReserves1 + amount1;
+
+        uint256 newInvariant;
+
+        {
+            uint256 newNormalizedReserves0 = rate0 * newReserves0 / RATE_PRECISION;
+            uint256 newNormalizedReserves1 = rate1 * newReserves1 / RATE_PRECISION;
+
+            newInvariant = getD(newNormalizedReserves0, newNormalizedReserves1, memAmp);
+        }
+
+        if (newInvariant <= oldInvariant) {
+            revert InvalidInvariant();
+        }
+
+        reserves0 = newReserves0;
+        reserves1 = newReserves1;
+
+        uint256 newShares;
+        uint256 oldTotalShares = totalShares;
+
+        // TODO: We need to calculate fees for imbalances shares
+        if (oldTotalShares == 0) {
+            newShares = newInvariant;
+        } else {
+            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
+        }
+
+        totalShares = oldTotalShares + newShares;
+        sharesByUser[sender] += newShares;
     }
 
     /// @notice Stores which pool this hook belongs to.
