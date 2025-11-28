@@ -9,12 +9,11 @@ import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
-import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
 // TODO: Move to somewhere else, or use OZ IERC20s
-interface IERC20 is IERC20Minimal {
+interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
