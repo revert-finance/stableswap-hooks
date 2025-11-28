@@ -9,9 +9,16 @@ import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
+import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
+import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {BaseHooks} from "./BaseHooks.sol";
 
-contract StableSwapHooks is BaseHooks {
+// TODO: Move to somewhere else, or use OZ IERC20s
+interface IERC20 is IERC20Minimal {
+    function decimals() external view returns (uint8);
+}
+
+contract StableSwapHooks is BaseHooks, IUnlockCallback {
     using SafeCast for int256;
     using SafeCast for uint256;
 
@@ -21,11 +28,16 @@ contract StableSwapHooks is BaseHooks {
 
     /// Immutables
 
+    IPoolManager public immutable poolManager;
     PoolId public immutable poolId;
+    uint256 public immutable rate0;
+    uint256 public immutable rate1;
 
     /// Variables
 
     uint256 public amp;
+    uint256 public reserves0;
+    uint256 public reserves1;
 
     /// Errors
 
@@ -39,7 +51,9 @@ contract StableSwapHooks is BaseHooks {
 
     /// Deployment
 
-    constructor(uint256 initialAmp, Currency currency0, Currency currency1, uint24 fee) {
+    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1, uint24 fee) {
+        poolManager = manager;
+
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -47,6 +61,9 @@ contract StableSwapHooks is BaseHooks {
             tickSpacing: type(int24).max,
             hooks: IHooks(address(this))
         });
+
+        rate0 = 10 ** (36 - IERC20(Currency.unwrap(key.currency0)).decimals());
+        rate1 = 10 ** (36 - IERC20(Currency.unwrap(key.currency1)).decimals());
 
         poolId = key.toId();
 
@@ -58,6 +75,35 @@ contract StableSwapHooks is BaseHooks {
     /// TODO: Who can call this function?
     function setAmp(uint256 newAmp) external {
         _setAmp(newAmp);
+    }
+
+    function addLiquidity(PoolKey calldata key, uint256 amount0, uint256 amount1) external {
+        bytes memory data = abi.encode(msg.sender, key, amount0, amount1);
+
+        poolManager.unlock(data);
+    }
+
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        // TODO: Parse data in a way that we can include remove liquidity as well.
+        (address sender, PoolKey memory key, uint256 amount0, uint256 amount1) =
+            abi.decode(data, (address, PoolKey, uint256, uint256));
+
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
+        poolManager.sync(key.currency0);
+        poolManager.sync(key.currency1);
+
+        // TODO: This requires approval to be given to the hook contract
+        // what should the experience be?
+        IERC20(Currency.unwrap(key.currency0)).transferFrom(sender, address(poolManager), amount0);
+        IERC20(Currency.unwrap(key.currency1)).transferFrom(sender, address(poolManager), amount1);
+
+        poolManager.settle();
+
+        reserves0 += amount0;
+        reserves1 += amount1;
     }
 
     /// @notice Stores which pool this hook belongs to.
@@ -115,17 +161,9 @@ contract StableSwapHooks is BaseHooks {
         private
         returns (int128)
     {
-        // rates
-        uint256 rate0 = 10 ** 30; // 6 decimals
-        uint256 rate1 = 10 ** 18; // 18 decimals
-
-        // old balances
-        uint256 balance0 = 70 * (10 ** 6);
-        uint256 balance1 = 30 * (10 ** 18);
-
         // xp_mem
-        uint256 xp0 = rate0 * balance0 / 1e18;
-        uint256 xp1 = rate1 * balance1 / 1e18;
+        uint256 xp0 = rate0 * reserves0 / 1e18;
+        uint256 xp1 = rate1 * reserves1 / 1e18;
 
         // dx should be calculated?
         int256 dx = params.amountSpecified;
