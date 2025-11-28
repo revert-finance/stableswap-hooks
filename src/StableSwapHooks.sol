@@ -129,6 +129,7 @@ contract StableSwapHooks is BaseHooks {
         uint256 amount1 = uint256(int256(-delta.amount1()));
 
         uint256 oldTotalShares = totalShares;
+        // TODO: Add min shares minted check (provided in hookData?)
         uint256 newShares = 0;
 
         {
@@ -167,6 +168,72 @@ contract StableSwapHooks is BaseHooks {
         // TODO: Emit event
 
         return (StableSwapHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
+    function afterRemoveLiquidity(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta,
+        bytes calldata
+    ) external override returns (bytes4, BalanceDelta) {
+        // Verify only the pool manager is calling this function
+        if (msg.sender != address(poolManager)) {
+            revert InvalidCaller();
+        }
+
+        // Verify that liquidity is being removed from the targeted pool
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
+        // Verify that only a full ranged position is being removed
+        if (params.tickUpper != TICK_SPACING.maxUsableTick() || params.tickLower != TICK_SPACING.minUsableTick()) {
+            revert InvalidRange();
+        }
+
+        // Extract amounts from delta
+        uint256 amount0 = uint256(int256(delta.amount0()));
+        uint256 amount1 = uint256(int256(delta.amount1()));
+
+        uint256 oldTotalShares = totalShares;
+        uint256 sharesToBurn = 0;
+
+        {
+            // Calculate old invariant
+            uint256 oldReserves0 = reserves0;
+            uint256 oldReserves1 = reserves1;
+            uint256 oldInvariant =
+                getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+
+            // Calculate new invariant
+            uint256 newInvariant = getD(
+                rate0 * (oldReserves0 - amount0) / RATE_PRECISION,
+                rate1 * (oldReserves1 - amount1) / RATE_PRECISION,
+                amp
+            );
+
+            // Verify new invariant is lower (liquidity removed)
+            if (newInvariant >= oldInvariant) {
+                revert InvalidInvariant();
+            }
+
+            // Calculate shares to burn proportional to invariant decrease
+            // TODO: Make sure the whole of the lps of the user are being burned at the end (avoid dust)
+            sharesToBurn = oldTotalShares * (oldInvariant - newInvariant) / oldInvariant;
+        }
+
+        // Update storage
+        // TODO: What would happen for accumulated rounding issues?
+        totalShares = oldTotalShares - sharesToBurn;
+        sharesByUser[sender] -= sharesToBurn;
+        reserves0 -= amount0;
+        reserves1 -= amount1;
+
+        // TODO: Emit event
+
+        return (StableSwapHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
     function beforeSwap(
