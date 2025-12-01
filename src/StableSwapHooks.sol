@@ -26,6 +26,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     bytes32 public constant AMP_ADMIN_ROLE = keccak256("AMP_ADMIN_ROLE");
 
     uint256 public constant MAX_AMP = 1e6;
+    uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
+    uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
     uint256 public constant RATE_PRECISION = 1e18;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
@@ -58,6 +60,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
+    error InsufficientRampTime();
+    error ExcessiveAmpChange();
 
     /// Events
 
@@ -86,8 +90,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
         initialA = initialAmp;
         futureA = initialAmp;
-        initialATime = block.timestamp;
-        futureATime = block.timestamp;
+        // Set to 0 to allow immediate first ramp
+        initialATime = 0;
+        futureATime = 0;
 
         // Grant deployer the default admin role and AMP_ADMIN_ROLE
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -106,14 +111,35 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     /// @param _futureA The target amplification coefficient
     /// @param _futureTime The timestamp when ramping completes
     function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(AMP_ADMIN_ROLE) {
-        if (_futureA >= MAX_AMP) {
-            revert InvalidAmp();
-        }
-        if (_futureTime < block.timestamp) {
+        // Validate future A value
+        if (_futureA == 0 || _futureA >= MAX_AMP) {
             revert InvalidAmp();
         }
 
+        // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
+        if (initialATime != 0 && block.timestamp < initialATime + MIN_RAMP_TIME) {
+            revert InsufficientRampTime();
+        }
+
+        // Ensure sufficient ramp duration
+        if (_futureTime < block.timestamp + MIN_RAMP_TIME) {
+            revert InsufficientRampTime();
+        }
+
         uint256 currentA = _A();
+
+        // Validate A change is not too large
+        if (_futureA < currentA) {
+            // Ramping down: futureA * MAX_A_CHANGE >= currentA
+            if (_futureA * MAX_A_CHANGE < currentA) {
+                revert ExcessiveAmpChange();
+            }
+        } else {
+            // Ramping up: futureA <= currentA * MAX_A_CHANGE
+            if (_futureA > currentA * MAX_A_CHANGE) {
+                revert ExcessiveAmpChange();
+            }
+        }
 
         initialA = currentA;
         futureA = _futureA;
