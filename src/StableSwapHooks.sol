@@ -281,7 +281,7 @@ contract StableSwapHooks is BaseHooks {
                 // Convert to real units
                 dy = ((dy - dy_fee) * RATE_PRECISION) / rate1;
             } else {
-                // Need to calculate required token0 input including fees
+                // Calculate required token0 input to provide desired token1 output (after fees)
                 // based on how much token1 is desired
                 uint256 dy_desired = uint256(dx);
 
