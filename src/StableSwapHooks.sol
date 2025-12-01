@@ -109,8 +109,8 @@ contract StableSwapHooks is BaseHook {
         });
     }
 
-    /// @notice Stores which pool this hook belongs to.
-    /// Only that pool will be able to interact with this hook.
+    /// @notice Validates pool initialization parameters.
+    /// @dev Reverts if the pool ID doesn't match or if the initial price is not 1:1.
     function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
