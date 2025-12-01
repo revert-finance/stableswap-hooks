@@ -264,78 +264,23 @@ contract StableSwapHooks is BaseHooks {
         uint256 memAmp = amp;
         uint256 D = getD(xp0, xp1, memAmp);
 
-        uint256 dy;
-        // TODO dedup logic
-        if (params.zeroForOne) {
-            // Swapping token0 for token1
-            if (dx < 0) {
-                // Exact input: we know how much token0 is being put in
-                uint256 x = xp0 + (uint256(-dx) * rate0) / RATE_PRECISION;
+        int256 dy;
 
-                uint256 y = getY(x, memAmp, D);
-                dy = xp1 - y - 1;
+        // Determine token direction and rates
+        bool isToken0In = params.zeroForOne;
+        uint256 xpIn = isToken0In ? xp0 : xp1;
+        uint256 xpOut = isToken0In ? xp1 : xp0;
+        uint256 rateIn = isToken0In ? rate0 : rate1;
+        uint256 rateOut = isToken0In ? rate1 : rate0;
 
-                // Calculate fee on the output
-                uint256 dy_fee = (dy * FEE) / FEE_DENOMINATOR;
-
-                // Convert to real units
-                dy = ((dy - dy_fee) * RATE_PRECISION) / rate1;
-            } else {
-                // Calculate required token0 input to provide desired token1 output (after fees)
-                // based on how much token1 is desired
-                uint256 dy_desired = uint256(dx);
-
-                uint256 dy_gross = (dy_desired * rate1) / RATE_PRECISION;
-                // The fee is applied to token1 output, so we need to calculate
-                // the gross amount of token1 to be removed from reserves in order
-                // to deliver the desired net amount to the user after fees.
-                // Solve for gross_output such that:
-                //   net_output = gross_output * (FEE_DENOMINATOR - FEE) / FEE_DENOMINATOR
-                //   => gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
-                dy_gross = (dy_gross * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
-
-                // Calculate y after swap
-                uint256 y = xp1 - dy_gross;
-
-                // Calculate required x (input in precision units)
-                uint256 x = getY(y, memAmp, D);
-                uint256 dx_required = x - xp0;
-
-                // Convert to real units and return as negative (amount to take from user)
-                dy = -int256((dx_required * RATE_PRECISION) / rate0);
-            }
+        if (dx < 0) {
+            // Exact input swap: user specifies how much they want to put in
+            // dx is negative, representing amount being taken from user
+            dy = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
         } else {
-            // Swapping token1 for token0
-            if (dx < 0) {
-                // Exact input: we know how much token1 is being put in
-                uint256 y = xp1 + (uint256(-dx) * rate1) / RATE_PRECISION;
-                uint256 x = getY(y, memAmp, D);
-                dy = xp0 - x - 1;
-
-                // Calculate fee on the output
-                uint256 dy_fee = (dy * FEE) / FEE_DENOMINATOR;
-
-                // Convert to real units
-                dy = ((dy - dy_fee) * RATE_PRECISION) / rate0;
-            } else {
-                // Exact output: we know how much token0 should be received
-                uint256 dy_desired = uint256(dx);
-
-                uint256 dy_gross = (dy_desired * rate0) / RATE_PRECISION;
-                dy_gross = (dy_gross * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
-
-                // Calculate x after swap
-                uint256 x = xp0 - dy_gross;
-
-                // Calculate required y (input in precision units)
-                uint256 y = getY(x, memAmp, D);
-                uint256 dx_required = y - xp1;
-
-                // Convert to real units and return as negative (amount to take from user)
-                dy = (dx_required * RATE_PRECISION) / rate1;
-                // Negate dy to indicate amount to take from user
-                dy = -int256(dy);
-            }
+            // Exact output swap: user specifies how much they want to receive
+            // dx is positive, representing desired output amount
+            dy = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
         }
 
         // TODO
@@ -344,6 +289,90 @@ contract StableSwapHooks is BaseHooks {
         // TODO
         // Check dy against amount * sqrtPrice => min to receive
         return dy.toInt128();
+    }
+
+    /// @dev Performs an exact input swap calculation
+    /// @param xpIn Precision-adjusted reserve of input token
+    /// @param xpOut Precision-adjusted reserve of output token
+    /// @param amountIn Amount of input token (in real units)
+    /// @param rateIn Rate multiplier for input token
+    /// @param rateOut Rate multiplier for output token
+    /// @param memAmp Amplification coefficient
+    /// @param D Invariant D
+    /// @return Amount of output token to give to user (positive = user receives)
+    function _swapExactInput(
+        uint256 xpIn,
+        uint256 xpOut,
+        uint256 amountIn,
+        uint256 rateIn,
+        uint256 rateOut,
+        uint256 memAmp,
+        uint256 D
+    ) private pure returns (int256) {
+        // Convert input amount to precision units and add to reserves
+        uint256 xIn = xpIn + (amountIn * rateIn) / RATE_PRECISION;
+
+        uint256 xOut = getY(xIn, memAmp, D);
+
+        // Subtract 1 to round in favor of the pool
+        uint256 dyGross = xpOut - xOut - 1;
+
+        // TODO
+        // Fee handling: Apply fee to the output amount
+        // Fee is deducted from the amount user receives
+        // net_output = gross_output * (1 - fee_rate)
+        // net_output = gross_output * (FEE_DENOMINATOR - FEE) / FEE_DENOMINATOR
+        uint256 dyFee = (dyGross * FEE) / FEE_DENOMINATOR;
+        uint256 dyNet = dyGross - dyFee;
+
+        // Convert from precision units to real token units
+        uint256 amountOut = (dyNet * RATE_PRECISION) / rateOut;
+
+        return int256(amountOut);
+    }
+
+    /// @dev Performs an exact output swap calculation
+    /// @param xpIn Precision-adjusted reserve of input token
+    /// @param xpOut Precision-adjusted reserve of output token
+    /// @param amountOut Desired amount of output token (in real units)
+    /// @param rateIn Rate multiplier for input token
+    /// @param rateOut Rate multiplier for output token
+    /// @param memAmp Amplification coefficient
+    /// @param D Invariant D
+    /// @return Amount of input token to take from user (negative = user pays)
+    function _swapExactOutput(
+        uint256 xpIn,
+        uint256 xpOut,
+        uint256 amountOut,
+        uint256 rateIn,
+        uint256 rateOut,
+        uint256 memAmp,
+        uint256 D
+    ) private pure returns (int256) {
+        // Convert desired output to precision units
+        uint256 dyNet = (amountOut * rateOut) / RATE_PRECISION;
+
+        // TODO
+        // Fee handling: Calculate gross output needed to deliver net output after fees
+        // Since fee is applied to output: net_output = gross_output * (1 - fee_rate)
+        // Solving for gross_output: gross_output = net_output / (1 - fee_rate)
+        // Which equals: gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
+        uint256 dyGross = (dyNet * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
+
+        // Calculate new output reserve after removing gross output
+        uint256 xOut = xpOut - dyGross;
+
+        // Calculate required input reserve using constant product invariant
+        uint256 xIn = getY(xOut, memAmp, D);
+
+        // Calculate required input amount (in precision units)
+        uint256 dxRequired = xIn - xpIn;
+
+        // Convert from precision units to real token units
+        uint256 amountIn = (dxRequired * RATE_PRECISION) / rateIn;
+
+        // Return as negative to indicate amount to take from user
+        return -int256(amountIn);
     }
 
     function getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
