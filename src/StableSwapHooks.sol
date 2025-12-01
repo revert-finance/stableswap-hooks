@@ -302,7 +302,7 @@ contract StableSwapHooks is BaseHooks {
                 uint256 dx_required = x - xp0;
 
                 // Convert to real units and return as negative (amount to take from user)
-                dy = (dx_required * RATE_PRECISION) / rate0;
+                dy = -int256((dx_required * RATE_PRECISION) / rate0);
             }
         } else {
             // Swapping token1 for token0
