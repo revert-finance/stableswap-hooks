@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
-import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
-import {SafeCast} from "v4-core/libraries/SafeCast.sol";
-import {PoolId} from "v4-core/types/PoolId.sol";
-import {Currency} from "v4-core/types/Currency.sol";
-import {IHooks} from "v4-core/interfaces/IHooks.sol";
-import {TickMath} from "v4-core/libraries/TickMath.sol";
-import {BaseHooks} from "./BaseHooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
 // TODO: Move to somewhere else, or use OZ IERC20s
 interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
-contract StableSwapHooks is BaseHooks {
+contract StableSwapHooks is BaseHook {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
@@ -34,7 +36,6 @@ contract StableSwapHooks is BaseHooks {
 
     /// Immutables
 
-    IPoolManager public immutable poolManager;
     PoolId public immutable poolId;
     uint256 public immutable rate0;
     uint256 public immutable rate1;
@@ -54,7 +55,6 @@ contract StableSwapHooks is BaseHooks {
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
-    error InvalidCaller();
 
     /// Events
 
@@ -62,9 +62,7 @@ contract StableSwapHooks is BaseHooks {
 
     /// Deployment
 
-    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) {
-        poolManager = manager;
-
+    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -88,33 +86,45 @@ contract StableSwapHooks is BaseHooks {
         _setAmp(newAmp);
     }
 
-    /// @notice Stores which pool this hook belongs to.
-    /// Only that pool will be able to interact with this hook.
-    function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
-        external
-        override
-        returns (bytes4)
-    {
+    /// Hooks
+
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
+        permissions = Hooks.Permissions({
+            beforeInitialize: true,
+            afterInitialize: false,
+            beforeAddLiquidity: false,
+            afterAddLiquidity: true,
+            beforeRemoveLiquidity: false,
+            afterRemoveLiquidity: true,
+            beforeSwap: true,
+            afterSwap: false,
+            beforeDonate: false,
+            afterDonate: false,
+            beforeSwapReturnDelta: true,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
+        });
+    }
+
+    /// @notice Validates pool initialization parameters.
+    /// @dev Reverts if the pool ID doesn't match.
+    function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
         }
 
-        return StableSwapHooks.beforeInitialize.selector;
+        return BaseHook.beforeInitialize.selector;
     }
 
-    function afterAddLiquidity(
+    function _afterAddLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta,
         bytes calldata
-    ) external override returns (bytes4, BalanceDelta) {
-        // Verify only the pool manager is calling this function
-        if (msg.sender != address(poolManager)) {
-            revert InvalidCaller();
-        }
-
+    ) internal override returns (bytes4, BalanceDelta) {
         // Verify that liquidity is being added to the targeted pool
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
@@ -138,10 +148,10 @@ contract StableSwapHooks is BaseHooks {
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
             uint256 oldInvariant =
-                getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
 
             // Calculate new invariant
-            uint256 newInvariant = getD(
+            uint256 newInvariant = _getD(
                 rate0 * (oldReserves0 + amount0) / RATE_PRECISION,
                 rate1 * (oldReserves1 + amount1) / RATE_PRECISION,
                 amp
@@ -168,22 +178,17 @@ contract StableSwapHooks is BaseHooks {
 
         // TODO: Emit event
 
-        return (StableSwapHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+        return (BaseHook.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    function afterRemoveLiquidity(
+    function _afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta,
         bytes calldata
-    ) external override returns (bytes4, BalanceDelta) {
-        // Verify only the pool manager is calling this function
-        if (msg.sender != address(poolManager)) {
-            revert InvalidCaller();
-        }
-
+    ) internal override returns (bytes4, BalanceDelta) {
         // Verify that liquidity is being removed from the targeted pool
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
@@ -206,10 +211,10 @@ contract StableSwapHooks is BaseHooks {
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
             uint256 oldInvariant =
-                getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
 
             // Calculate new invariant
-            uint256 newInvariant = getD(
+            uint256 newInvariant = _getD(
                 rate0 * (oldReserves0 - amount0) / RATE_PRECISION,
                 rate1 * (oldReserves1 - amount1) / RATE_PRECISION,
                 amp
@@ -234,35 +239,36 @@ contract StableSwapHooks is BaseHooks {
 
         // TODO: Emit event
 
-        return (StableSwapHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+        return (BaseHook.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    function beforeSwap(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        bytes calldata hookData
-    ) external override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
+        // Verify that swap is being performed on the targeted pool
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
         // int128 dy = swap(_sender, _key, _params, amp);
         // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
         // Commented implementation for now until more robust solution.
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
 
-        return (StableSwapHooks.beforeSwap.selector, delta, 0);
+        return (BaseHook.beforeSwap.selector, delta, 0);
     }
 
     /// Internal
 
-    function swap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
-        private
-        returns (int128)
-    {
+    function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
         uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
         uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
         int256 dx = params.amountSpecified;
         uint256 memAmp = amp;
-        uint256 D = getD(xp0, xp1, memAmp);
+        uint256 D = _getD(xp0, xp1, memAmp);
 
         int256 dy;
 
@@ -312,7 +318,7 @@ contract StableSwapHooks is BaseHooks {
         // Convert input amount to precision units and add to reserves
         uint256 xIn = xpIn + (amountIn * rateIn) / RATE_PRECISION;
 
-        uint256 xOut = getY(xIn, memAmp, D);
+        uint256 xOut = _getY(xIn, memAmp, D);
 
         // Subtract 1 to round in favor of the pool
         uint256 dyGross = xpOut - xOut - 1;
@@ -363,7 +369,7 @@ contract StableSwapHooks is BaseHooks {
         uint256 xOut = xpOut - dyGross;
 
         // Calculate required input reserve using constant product invariant
-        uint256 xIn = getY(xOut, memAmp, D);
+        uint256 xIn = _getY(xOut, memAmp, D);
 
         // Calculate required input amount (in precision units)
         uint256 dxRequired = xIn - xpIn;
@@ -375,7 +381,7 @@ contract StableSwapHooks is BaseHooks {
         return -int256(amountIn);
     }
 
-    function getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
+    function _getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
         uint256 S = xp0 + xp1;
 
         uint256 D = S;
@@ -408,7 +414,7 @@ contract StableSwapHooks is BaseHooks {
         revert("Convergence not reached");
     }
 
-    function getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
+    function _getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
         uint256 S_ = x;
         uint256 y_prev = 0;
         uint256 c = D * (D / (x * 2));
