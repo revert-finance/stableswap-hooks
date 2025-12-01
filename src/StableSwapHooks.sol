@@ -262,10 +262,7 @@ contract StableSwapHooks is BaseHook {
 
     /// Internal
 
-    function _swap(address sender, PoolKey calldata key, SwapParams calldata params)
-        private
-        returns (int128)
-    {
+    function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
         uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
         uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
