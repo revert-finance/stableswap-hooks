@@ -28,7 +28,6 @@ contract StableSwapHooks is BaseHook {
 
     uint256 public constant MAX_AMP = 1e6;
     uint256 public constant RATE_PRECISION = 1e18;
-    uint160 public constant SQRT_PRICE_1_1 = 1 << 96;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
