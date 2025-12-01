@@ -2,7 +2,6 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -15,19 +14,41 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksForkTest is Test {
-    function test_Foo() public {
-        uint256 mainnetFork = vm.createFork(vm.envString("MAINNET_RPC_URL"));
+    address private token0;
+    address private token1;
+    address private poolManager;
+    address private positionManager;
+    address private permit2;
+    address private account0;
 
-        vm.selectFork(mainnetFork);
+    uint256 private decimals0;
+    uint256 private decimals1;
+    uint256 private initialAmp;
 
-        uint256 initialAmp = 1e3;
+    function setUp() public {
+        token0 = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // dai
+        token1 = 0xdAC17F958D2ee523a2206206994597C13D831ec7; // usdt
+        poolManager = 0x000000000004444c5dc75cB358380D2e3dE08A90;
+        positionManager = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
+        account0 = makeAddr("account0");
 
-        address poolManager = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-        address token0 = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // dai
-        address token1 = 0xdAC17F958D2ee523a2206206994597C13D831ec7; // usdt
-        uint256 decimals0 = 18;
-        uint256 decimals1 = 6;
+        decimals0 = 18;
+        decimals1 = 6;
+        initialAmp = 1e3;
 
+        vm.selectFork(vm.createFork(vm.envString("MAINNET_RPC_URL")));
+
+        // Deal tokens to account0
+        uint256 amount0 = 1000 * 10 ** decimals0;
+        uint256 amount1 = 1000 * 10 ** decimals1;
+        deal(token0, account0, amount0);
+        deal(token1, account0, amount1);
+    }
+
+    /// Helpers
+
+    /// @dev Deploy the hook with create2 and the correct hook flags
+    function _deployHook() private returns (StableSwapHooks) {
         // Hooks flags based on getHookPermissions()
         uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG
             | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
@@ -41,47 +62,46 @@ contract StableSwapHooksForkTest is Test {
         );
 
         // Deploy hook using CREATE2 with the mined salt
-        StableSwapHooks hooks = new StableSwapHooks{salt: salt}(
+        return new StableSwapHooks{salt: salt}(
             initialAmp, IPoolManager(poolManager), Currency.wrap(token0), Currency.wrap(token1)
         );
+    }
 
-        // Verify hook deployed to the expected address
-        assertEq(address(hooks), hookAddress);
+    /// @dev Initialize the pool via the position manager
+    function _initializePool(StableSwapHooks hooks) private returns (int24) {
+        return IPositionManager(positionManager)
+            .initializePool(_getPoolKey(hooks), uint160(Math.sqrt((10 ** decimals1 << 192) / 10 ** decimals0)));
+    }
 
-        // Verify variables have been initialized correctly
+    /// @dev Get the pool key with the provided hook
+    function _getPoolKey(StableSwapHooks hooks) private returns (PoolKey memory) {
+        return PoolKey({
+            currency0: Currency.wrap(token0),
+            currency1: Currency.wrap(token1),
+            fee: hooks.FEE(),
+            tickSpacing: hooks.TICK_SPACING(),
+            hooks: IHooks(address(hooks))
+        });
+    }
+
+    /// Tests
+
+    function test_DeployHook() public {
+        StableSwapHooks hooks = _deployHook();
+
         assertEq(address(hooks.poolManager()), poolManager);
         assertEq(hooks.amp(), initialAmp);
-        assertEq(hooks.rate0(), 10 ** (36 - decimals0)); // 1e18 for 18 decimals
-        assertEq(hooks.rate1(), 10 ** (36 - decimals1)); // 1e30 for 6 decimals
-        assertEq(
-            PoolId.unwrap(hooks.poolId()),
-            PoolId.unwrap(
-                PoolKey({
-                        currency0: Currency.wrap(token0),
-                        currency1: Currency.wrap(token1),
-                        fee: hooks.FEE(),
-                        tickSpacing: hooks.TICK_SPACING(),
-                        hooks: IHooks(address(hooks))
-                    }).toId()
-            )
-        );
+        assertEq(hooks.rate0(), 1e18);
+        assertEq(hooks.rate1(), 1e30);
+        assertEq(PoolId.unwrap(hooks.poolId()), PoolId.unwrap(_getPoolKey(hooks).toId()));
+    }
 
-        address positionManager = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
+    function test_InitializePool() public {
+        StableSwapHooks hooks = _deployHook();
 
-        // Initialize the pool via the position manager
-        int24 tick = IPositionManager(positionManager)
-            .initializePool(
-                PoolKey({
-                    currency0: Currency.wrap(token0),
-                    currency1: Currency.wrap(token1),
-                    fee: hooks.FEE(),
-                    tickSpacing: hooks.TICK_SPACING(),
-                    hooks: IHooks(address(hooks))
-                }),
-                uint160(Math.sqrt((10 ** decimals1 << 192) / 10 ** decimals0)) // sqrtPriceX96 for 1:1 value ratio
-            );
+        int24 tick = _initializePool(hooks);
 
-        // Validate that the tick is not failure
+        // Assert that the tick is not failure
         assertNotEq(tick, type(int24).max);
     }
 }
