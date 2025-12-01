@@ -286,12 +286,12 @@ contract StableSwapHooks is BaseHooks {
                 uint256 dy_desired = uint256(dx);
 
                 uint256 dy_gross = (dy_desired * rate1) / RATE_PRECISION;
-                // Amount desired should take into account fee discount on x
-                // net_change = gross_change - gross_change * 0.01
-                //            = gross_change * (1 - 0.01)
-                //            = gross_change * (1 - (fee/fee_denominator))
-                //            = gross_change * (fee_denominator - fee / fee_denominator)
-                // and solve for gross_change
+                // The fee is applied to token1 output, so we need to calculate
+                // the gross amount of token1 to be removed from reserves in order
+                // to deliver the desired net amount to the user after fees.
+                // Solve for gross_output such that:
+                //   net_output = gross_output * (FEE_DENOMINATOR - FEE) / FEE_DENOMINATOR
+                //   => gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
                 dy_gross = (dy_gross * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
 
                 // Calculate y after swap
