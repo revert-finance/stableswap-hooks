@@ -333,6 +333,8 @@ contract StableSwapHooks is BaseHooks {
 
                 // Convert to real units and return as negative (amount to take from user)
                 dy = (dx_required * RATE_PRECISION) / rate1;
+                // Negate dy to indicate amount to take from user
+                dy = -int256(dy);
             }
         }
 
