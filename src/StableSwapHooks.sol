@@ -56,7 +56,6 @@ contract StableSwapHooks is BaseHook {
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
-    error InvalidSqrtPrice();
 
     /// Events
 
@@ -110,14 +109,10 @@ contract StableSwapHooks is BaseHook {
     }
 
     /// @notice Validates pool initialization parameters.
-    /// @dev Reverts if the pool ID doesn't match or if the initial price is not 1:1.
+    /// @dev Reverts if the pool ID doesn't match.
     function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
-        }
-
-        if (sqrtPriceX96 != SQRT_PRICE_1_1) {
-            revert InvalidSqrtPrice();
         }
 
         return BaseHook.beforeInitialize.selector;
