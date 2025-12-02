@@ -13,20 +13,21 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
+import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-// TODO: Move to somewhere else, or use OZ IERC20s
-interface IERC20 {
-    function decimals() external view returns (uint8);
-}
-
-contract StableSwapHooks is BaseHook {
+contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
 
     /// Constants
 
-    uint256 public constant MAX_AMP = 1e6;
+    bytes32 public constant A_ADMIN_ROLE = keccak256("A_ADMIN_ROLE");
+
+    uint256 public constant MAX_A = 1e6;
+    uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
+    uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
     uint256 public constant RATE_PRECISION = 1e18;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
@@ -42,7 +43,11 @@ contract StableSwapHooks is BaseHook {
 
     /// Variables
 
-    uint256 public amp;
+    uint256 public initialA;
+    uint256 public futureA;
+    uint256 public initialATime;
+    uint256 public futureATime;
+
     uint256 public reserves0;
     uint256 public reserves1;
     uint256 public totalShares;
@@ -51,18 +56,22 @@ contract StableSwapHooks is BaseHook {
 
     /// Errors
 
-    error InvalidAmp();
+    error InvalidA();
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
+    error InsufficientRampTime();
+    error InsufficientTimeSinceLastAChange();
+    error ExcessiveAmpChange();
 
     /// Events
 
-    event AmpSet(uint256 newAmp);
+    event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
+    event StoppedRampA(uint256 currentA, uint256 time);
 
     /// Deployment
 
-    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
+    constructor(uint256 _initialA, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -76,14 +85,75 @@ contract StableSwapHooks is BaseHook {
 
         poolId = key.toId();
 
-        _setAmp(initialAmp);
+        if (_initialA >= MAX_A) {
+            revert InvalidA();
+        }
+
+        initialA = _initialA;
+        futureA = _initialA;
+        // Set to 0 to allow immediate first ramp
+        initialATime = 0;
+        futureATime = 0;
+
+        // Grant deployer the default admin role and AMP_ADMIN_ROLE
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(A_ADMIN_ROLE, msg.sender);
     }
 
     /// External
 
-    /// TODO: Who can call this function?
-    function setAmp(uint256 newAmp) external {
-        _setAmp(newAmp);
+    /// @notice Ramp A up or down over time
+    /// @param _futureA The target amplification coefficient
+    /// @param _futureTime The timestamp when ramping completes
+    function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(A_ADMIN_ROLE) {
+        // Validate future A value
+        if (_futureA == 0 || _futureA >= MAX_A) {
+            revert InvalidA();
+        }
+
+        // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
+        if (initialATime != 0 && block.timestamp < initialATime + MIN_RAMP_TIME) {
+            revert InsufficientTimeSinceLastAChange();
+        }
+
+        // Ensure sufficient ramp duration
+        if (_futureTime < block.timestamp + MIN_RAMP_TIME) {
+            revert InsufficientRampTime();
+        }
+
+        uint256 currentA = A();
+
+        // Validate A change is not too large
+        if (_futureA < currentA) {
+            // Ramping down: futureA * MAX_A_CHANGE >= currentA
+            if (_futureA * MAX_A_CHANGE < currentA) {
+                revert ExcessiveAmpChange();
+            }
+        } else {
+            // Ramping up: futureA <= currentA * MAX_A_CHANGE
+            if (_futureA > currentA * MAX_A_CHANGE) {
+                revert ExcessiveAmpChange();
+            }
+        }
+
+        initialA = currentA;
+        futureA = _futureA;
+        initialATime = block.timestamp;
+        futureATime = _futureTime;
+
+        emit RampedA(currentA, _futureA, block.timestamp, _futureTime);
+    }
+
+    /// @notice Stop ramping A and fix it at current value
+    function stopRampA() external onlyRole(A_ADMIN_ROLE) {
+        uint256 currentA = A();
+
+        initialA = currentA;
+        futureA = currentA;
+        initialATime = block.timestamp;
+        futureATime = block.timestamp;
+
+        emit StoppedRampA(currentA, block.timestamp);
     }
 
     /// Hooks
@@ -147,14 +217,15 @@ contract StableSwapHooks is BaseHook {
             // Calculate old invariant
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
+            uint256 currentAmp = A();
             uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
 
             // Calculate new invariant
             uint256 newInvariant = _getD(
                 rate0 * (oldReserves0 + amount0) / RATE_PRECISION,
                 rate1 * (oldReserves1 + amount1) / RATE_PRECISION,
-                amp
+                currentAmp
             );
 
             // Verify new invariant is higher
@@ -210,14 +281,15 @@ contract StableSwapHooks is BaseHook {
             // Calculate old invariant
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
+            uint256 currentAmp = A();
             uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
 
             // Calculate new invariant
             uint256 newInvariant = _getD(
                 rate0 * (oldReserves0 - amount0) / RATE_PRECISION,
                 rate1 * (oldReserves1 - amount1) / RATE_PRECISION,
-                amp
+                currentAmp
             );
 
             // Verify new invariant is lower (liquidity removed)
@@ -262,12 +334,39 @@ contract StableSwapHooks is BaseHook {
 
     /// Internal
 
+    /// @dev Get current amplification coefficient with ramping
+    /// @return Current A value, interpolated if ramping is in progress
+    function A() public view returns (uint256) {
+        uint256 t1 = futureATime;
+        uint256 A1 = futureA;
+
+        if (block.timestamp < t1) {
+            uint256 A0 = initialA;
+            uint256 t0 = initialATime;
+
+            uint256 timeDelta = block.timestamp - t0;
+            uint256 totalTime = t1 - t0;
+
+            // Linear interpolation between A0 and A1
+            if (A1 > A0) {
+                // Ramping up
+                return A0 + ((A1 - A0) * timeDelta) / totalTime;
+            } else {
+                // Ramping down
+                return A0 - ((A0 - A1) * timeDelta) / totalTime;
+            }
+        } else {
+            // When t1 == 0 or block.timestamp >= t1, ramping is complete
+            return A1;
+        }
+    }
+
     function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
         uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
         uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
         int256 dx = params.amountSpecified;
-        uint256 memAmp = amp;
+        uint256 memAmp = A();
         uint256 D = _getD(xp0, xp1, memAmp);
 
         int256 dy;
@@ -445,15 +544,5 @@ contract StableSwapHooks is BaseHook {
         }
 
         revert("Convergence not reached (y)");
-    }
-
-    function _setAmp(uint256 newAmp) private {
-        if (newAmp >= MAX_AMP) {
-            revert InvalidAmp();
-        }
-
-        emit AmpSet(newAmp);
-
-        amp = newAmp;
     }
 }

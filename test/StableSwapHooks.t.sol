@@ -1,64 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {Test, stdError} from "forge-std/Test.sol";
+import {stdError} from "forge-std/Test.sol";
+import {StableSwapHooksBaseTest} from "./StableSwapHooks.base.t.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
-// TODO: Move to mocks folder
-contract MockERC20 {
-    uint8 public decimals = 18;
-}
-
-contract StableSwapHooksTest is Test {
+/// @title StableSwapHooksTest
+/// @notice Tests for core swap functionality
+contract StableSwapHooksTest is StableSwapHooksBaseTest {
     using BeforeSwapDeltaLibrary for BeforeSwapDelta;
-
-    StableSwapHooks private hooks;
-    PoolKey private key;
-    address private poolManager;
-
-    function setUp() public {
-        MockERC20 mockToken0 = new MockERC20();
-        MockERC20 mockToken1 = new MockERC20();
-
-        poolManager = address(0x1);
-
-        uint256 initialAmp = 1e3;
-
-        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
-
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            flags,
-            type(StableSwapHooks).creationCode,
-            abi.encode(initialAmp, poolManager, address(mockToken0), address(mockToken1))
-        );
-
-        hooks = new StableSwapHooks{salt: salt}(
-            initialAmp,
-            IPoolManager(poolManager),
-            Currency.wrap(address(mockToken0)),
-            Currency.wrap(address(mockToken1))
-        );
-
-        key = PoolKey({
-            currency0: Currency.wrap(address(mockToken0)),
-            currency1: Currency.wrap(address(mockToken1)),
-            fee: hooks.FEE(),
-            tickSpacing: hooks.TICK_SPACING(),
-            hooks: IHooks(address(hooks))
-        });
-    }
 
     function testFuzz_beforeSwap_ShouldReturnCorrectDelta(int128 amountSpecified) public {
         vm.assume(amountSpecified != type(int128).min);
