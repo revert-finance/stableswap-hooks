@@ -50,8 +50,8 @@ contract StableSwapHooksForkTest is Test {
     /// @dev Deploy the hook with create2 and the correct hook flags
     function _deployHook() private returns (StableSwapHooks) {
         // Hooks flags based on getHookPermissions()
-        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
+        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
         // Mine a salt that produces an address with the correct hook flags
         (address hookAddress, bytes32 salt) = HookMiner.find(
