@@ -65,8 +65,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// Events
 
-    event RampA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
-    event StopRampA(uint256 currentA, uint256 time);
+    event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
+    event StoppedRampA(uint256 currentA, uint256 time);
 
     /// Deployment
 
@@ -146,7 +146,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
         initialATime = block.timestamp;
         futureATime = _futureTime;
 
-        emit RampA(currentA, _futureA, block.timestamp, _futureTime);
+        emit RampedA(currentA, _futureA, block.timestamp, _futureTime);
     }
 
     /// @notice Stop ramping A and fix it at current value
@@ -158,7 +158,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
         initialATime = block.timestamp;
         futureATime = block.timestamp;
 
-        emit StopRampA(currentA, block.timestamp);
+        emit StoppedRampA(currentA, block.timestamp);
     }
 
     /// Hooks

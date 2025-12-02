@@ -13,7 +13,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.prank(ampAdmin);
         vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.RampA(1e3, futureA, block.timestamp, futureTime);
+        emit StableSwapHooks.RampedA(1e3, futureA, block.timestamp, futureTime);
         hooks.rampA(futureA, futureTime);
 
         assertEq(hooks.initialA(), 1e3);
@@ -28,7 +28,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.prank(ampAdmin);
         vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.RampA(1e3, futureA, block.timestamp, futureTime);
+        emit StableSwapHooks.RampedA(1e3, futureA, block.timestamp, futureTime);
         hooks.rampA(futureA, futureTime);
 
         assertEq(hooks.initialA(), 1e3);
@@ -95,7 +95,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Stop ramping
         vm.prank(ampAdmin);
         vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.StopRampA(currentAmpBeforeStop, block.timestamp);
+        emit StableSwapHooks.StoppedRampA(currentAmpBeforeStop, block.timestamp);
         hooks.stopRampA();
 
         // Verify amp is frozen at current value
