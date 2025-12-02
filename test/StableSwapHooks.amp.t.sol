@@ -63,7 +63,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         assertEq(hooks.A(), futureA);
     }
 
-    function test_rampA_ShouldRevertWhenFutureAGreaterThanMaxA() public {
+    function test_rampA_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
         uint256 futureA = hooks.MAX_A();
         uint256 futureTime = block.timestamp + 1 days;
 
@@ -110,7 +110,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         assertEq(hooks.A(), currentAmpBeforeStop);
     }
 
-    function test_rampA_ShouldRevertWhenInsufficientTimeSinceLastRA() public {
+    function test_rampA_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
         uint256 futureA = 2e3;
         uint256 futureTime = block.timestamp + 1 days;
 
