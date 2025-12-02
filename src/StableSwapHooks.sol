@@ -357,12 +357,14 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
             poolManager.sync(currency0);
             IERC20(Currency.unwrap(currency0)).safeTransferFrom(sender, address(poolManager), amount0);
             poolManager.settle();
+            poolManager.mint(address(this), currency0.toId(), amount0);
         }
 
         if (amount1 > 0) {
             poolManager.sync(currency1);
             IERC20(Currency.unwrap(currency1)).safeTransferFrom(sender, address(poolManager), amount1);
             poolManager.settle();
+            poolManager.mint(address(this), currency1.toId(), amount1);
         }
 
         // Update storage
@@ -395,12 +397,14 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
             revert InsufficientAmounts();
         }
 
-        // Transfer tokens from PoolManager to sender
+        // Burn claims and transfer tokens from PoolManager to sender
         if (amount0 > 0) {
+            poolManager.burn(address(this), currency0.toId(), amount0);
             poolManager.take(currency0, sender, amount0);
         }
 
         if (amount1 > 0) {
+            poolManager.burn(address(this), currency1.toId(), amount1);
             poolManager.take(currency1, sender, amount1);
         }
 
