@@ -62,6 +62,6 @@ abstract contract StableSwapHooksBaseTest is Test {
         });
 
         // Grant AMP_ADMIN_ROLE to ampAdmin
-        hooks.grantRole(hooks.AMP_ADMIN_ROLE(), ampAdmin);
+        hooks.grantRole(hooks.A_ADMIN_ROLE(), ampAdmin);
     }
 }

@@ -23,9 +23,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// Constants
 
-    bytes32 public constant AMP_ADMIN_ROLE = keccak256("AMP_ADMIN_ROLE");
+    bytes32 public constant A_ADMIN_ROLE = keccak256("A_ADMIN_ROLE");
 
-    uint256 public constant MAX_AMP = 1e6;
+    uint256 public constant MAX_A = 1e6;
     uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
     uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
     uint256 public constant RATE_PRECISION = 1e18;
@@ -56,7 +56,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// Errors
 
-    error InvalidAmp();
+    error InvalidA();
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
@@ -70,7 +70,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// Deployment
 
-    constructor(uint256 initialAmp, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
+    constructor(uint256 _initialA, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -84,19 +84,19 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
         poolId = key.toId();
 
-        if (initialAmp >= MAX_AMP) {
-            revert InvalidAmp();
+        if (_initialA >= MAX_A) {
+            revert InvalidA();
         }
 
-        initialA = initialAmp;
-        futureA = initialAmp;
+        initialA = _initialA;
+        futureA = _initialA;
         // Set to 0 to allow immediate first ramp
         initialATime = 0;
         futureATime = 0;
 
         // Grant deployer the default admin role and AMP_ADMIN_ROLE
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(AMP_ADMIN_ROLE, msg.sender);
+        _grantRole(A_ADMIN_ROLE, msg.sender);
     }
 
     /// External
@@ -110,10 +110,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     /// @notice Ramp A up or down over time
     /// @param _futureA The target amplification coefficient
     /// @param _futureTime The timestamp when ramping completes
-    function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(AMP_ADMIN_ROLE) {
+    function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(A_ADMIN_ROLE) {
         // Validate future A value
-        if (_futureA == 0 || _futureA >= MAX_AMP) {
-            revert InvalidAmp();
+        if (_futureA == 0 || _futureA >= MAX_A) {
+            revert InvalidA();
         }
 
         // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
@@ -150,7 +150,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     }
 
     /// @notice Stop ramping A and fix it at current value
-    function stopRampA() external onlyRole(AMP_ADMIN_ROLE) {
+    function stopRampA() external onlyRole(A_ADMIN_ROLE) {
         uint256 currentA = _A();
 
         initialA = currentA;

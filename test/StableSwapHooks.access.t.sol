@@ -12,7 +12,7 @@ contract StableSwapHooksAccessTest is StableSwapHooksBaseTest {
         uint256 futureA = 2e3;
         uint256 futureTime = block.timestamp + 1 days;
 
-        bytes32 ampAdminRole = hooks.AMP_ADMIN_ROLE();
+        bytes32 ampAdminRole = hooks.A_ADMIN_ROLE();
 
         vm.prank(unauthorizedUser);
         vm.expectRevert(
@@ -24,7 +24,7 @@ contract StableSwapHooksAccessTest is StableSwapHooksBaseTest {
     }
 
     function test_stopRampA_ShouldRevertWhenCalledByUnauthorizedUser() public {
-        bytes32 ampAdminRole = hooks.AMP_ADMIN_ROLE();
+        bytes32 ampAdminRole = hooks.A_ADMIN_ROLE();
 
         vm.prank(unauthorizedUser);
         vm.expectRevert(
