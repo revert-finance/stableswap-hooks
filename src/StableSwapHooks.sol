@@ -61,6 +61,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     error InvalidInvariant();
     error InvalidRange();
     error InsufficientRampTime();
+    error InsufficientTimeSinceLastAChange();
     error ExcessiveAmpChange();
 
     /// Events
@@ -112,7 +113,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
         // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
         if (initialATime != 0 && block.timestamp < initialATime + MIN_RAMP_TIME) {
-            revert InsufficientRampTime();
+            revert InsufficientTimeSinceLastAChange();
         }
 
         // Ensure sufficient ramp duration
@@ -120,7 +121,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
             revert InsufficientRampTime();
         }
 
-        uint256 currentA = _A();
+        uint256 currentA = A();
 
         // Validate A change is not too large
         if (_futureA < currentA) {
@@ -145,7 +146,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// @notice Stop ramping A and fix it at current value
     function stopRampA() external onlyRole(A_ADMIN_ROLE) {
-        uint256 currentA = _A();
+        uint256 currentA = A();
 
         initialA = currentA;
         futureA = currentA;
@@ -216,7 +217,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
             // Calculate old invariant
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
-            uint256 currentAmp = _A();
+            uint256 currentAmp = A();
             uint256 oldInvariant =
                 _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
 
@@ -280,7 +281,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
             // Calculate old invariant
             uint256 oldReserves0 = reserves0;
             uint256 oldReserves1 = reserves1;
-            uint256 currentAmp = _A();
+            uint256 currentAmp = A();
             uint256 oldInvariant =
                 _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
 
@@ -335,7 +336,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// @dev Get current amplification coefficient with ramping
     /// @return Current A value, interpolated if ramping is in progress
-    function _A() internal view returns (uint256) {
+    function A() public view returns (uint256) {
         uint256 t1 = futureATime;
         uint256 A1 = futureA;
 
@@ -365,7 +366,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
         uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
         int256 dx = params.amountSpecified;
-        uint256 memAmp = _A();
+        uint256 memAmp = A();
         uint256 D = _getD(xp0, xp1, memAmp);
 
         int256 dy;

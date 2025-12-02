@@ -46,7 +46,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.warp(block.timestamp + 1 days);
 
         // Should be approximately halfway between 1e3 and 2e3
-        uint256 currentAmp = hooks.amp();
+        uint256 currentAmp = hooks.A();
         assertApproxEqAbs(currentAmp, 1500, 1);
     }
 
@@ -60,15 +60,15 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Fast forward past ramping completion
         vm.warp(futureTime + 1);
 
-        assertEq(hooks.amp(), futureA);
+        assertEq(hooks.A(), futureA);
     }
 
-    function test_rampA_ShouldRevertWhenFutureAGreaterThanMaxAmp() public {
-        uint256 futureA = hooks.MAX_AMP();
+    function test_rampA_ShouldRevertWhenFutureAGreaterThanMaxA() public {
+        uint256 futureA = hooks.MAX_A();
         uint256 futureTime = block.timestamp + 1 days;
 
         vm.prank(ampAdmin);
-        vm.expectRevert(StableSwapHooks.InvalidAmp.selector);
+        vm.expectRevert(StableSwapHooks.InvalidA.selector);
         hooks.rampA(futureA, futureTime);
     }
 
@@ -90,7 +90,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Fast forward halfway through ramping
         vm.warp(block.timestamp + 1 days);
-        uint256 currentAmpBeforeStop = hooks.amp();
+        uint256 currentAmpBeforeStop = hooks.A();
 
         // Stop ramping
         vm.prank(ampAdmin);
@@ -99,7 +99,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         hooks.stopRampA();
 
         // Verify amp is frozen at current value
-        assertEq(hooks.amp(), currentAmpBeforeStop);
+        assertEq(hooks.A(), currentAmpBeforeStop);
         assertEq(hooks.initialA(), currentAmpBeforeStop);
         assertEq(hooks.futureA(), currentAmpBeforeStop);
         assertEq(hooks.initialATime(), block.timestamp);
@@ -107,10 +107,10 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Warp further and verify amp doesn't change
         vm.warp(block.timestamp + 1 days);
-        assertEq(hooks.amp(), currentAmpBeforeStop);
+        assertEq(hooks.A(), currentAmpBeforeStop);
     }
 
-    function test_rampA_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
+    function test_rampA_ShouldRevertWhenInsufficientTimeSinceLastRA() public {
         uint256 futureA = 2e3;
         uint256 futureTime = block.timestamp + 1 days;
 
@@ -119,7 +119,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         hooks.rampA(futureA, futureTime);
 
         vm.prank(ampAdmin);
-        vm.expectRevert(StableSwapHooks.InsufficientRampTime.selector);
+        vm.expectRevert(StableSwapHooks.InsufficientTimeSinceLastAChange.selector);
         hooks.rampA(3e3, block.timestamp + 2 days);
     }
 
@@ -154,7 +154,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         uint256 futureTime = block.timestamp + 1 days;
 
         vm.prank(ampAdmin);
-        vm.expectRevert(StableSwapHooks.InvalidAmp.selector);
+        vm.expectRevert(StableSwapHooks.InvalidA.selector);
         hooks.rampA(0, futureTime);
     }
 
@@ -200,7 +200,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         assertEq(hooks.futureA(), futureA);
     }
 
-    function test_rampA_ShouldRespectMaxChangeAfterPartialRamp() public {
+    function test_rampA_ShouldRespectMaxChangeAfterPartialRA() public {
         // Start ramp from 1000 to 2000
         vm.prank(ampAdmin);
         hooks.rampA(2e3, block.timestamp + 2 days);
@@ -208,7 +208,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Warp halfway (current A should be ~1500)
         vm.warp(block.timestamp + 1 days);
 
-        uint256 currentA = hooks.amp();
+        uint256 currentA = hooks.A();
         assertApproxEqAbs(currentA, 1500, 1);
 
         // Wait for MIN_RAMP_TIME
@@ -228,11 +228,11 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Bound multiplier to reasonable range (1 to 20x)
         multiplier = bound(multiplier, 1, 20);
 
-        uint256 currentA = hooks.amp();
+        uint256 currentA = hooks.A();
         uint256 futureA = currentA * multiplier;
 
         // Ensure futureA doesn't exceed MAX_AMP
-        if (futureA >= hooks.MAX_AMP()) {
+        if (futureA >= hooks.MAX_A()) {
             return;
         }
 
@@ -252,9 +252,9 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
     }
 
     function testFuzz_rampA_ShouldHandleValidAmpValues(uint256 futureA) public {
-        vm.assume(futureA > 0 && futureA < hooks.MAX_AMP());
+        vm.assume(futureA > 0 && futureA < hooks.MAX_A());
 
-        uint256 currentA = hooks.amp();
+        uint256 currentA = hooks.A();
 
         // Ensure futureA is within MAX_A_CHANGE bounds
         if (futureA < currentA) {

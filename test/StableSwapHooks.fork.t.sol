@@ -90,7 +90,7 @@ contract StableSwapHooksForkTest is Test {
         StableSwapHooks hooks = _deployHook();
 
         assertEq(address(hooks.poolManager()), poolManager);
-        assertEq(hooks.amp(), initialAmp);
+        assertEq(hooks.A(), initialAmp);
         assertEq(hooks.rate0(), 1e18);
         assertEq(hooks.rate1(), 1e30);
         assertEq(PoolId.unwrap(hooks.poolId()), PoolId.unwrap(_getPoolKey(hooks).toId()));
