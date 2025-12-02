@@ -5,7 +5,6 @@ pragma solidity 0.8.30;
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -18,12 +17,13 @@ import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockC
 // OpenZeppelin
 import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
 // Uniswap Hooks
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
-contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
+contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
@@ -89,7 +89,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
 
     /// Deployment
 
-    constructor(uint256 _initialA, IPoolManager manager, Currency currency0_, Currency currency1_) BaseHook(manager) {
+    constructor(uint256 _initialA, IPoolManager manager, Currency currency0_, Currency currency1_)
+        BaseHook(manager)
+        ERC20("StableSwap LP", "ssLP")
+    {
         currency0 = currency0_;
         currency1 = currency1_;
 
@@ -259,7 +262,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
 
     /// @notice Validates pool initialization parameters.
     /// @dev Reverts if the pool ID doesn't match.
-    function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
+    function _beforeInitialize(address, PoolKey calldata key, uint160) internal override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
         }
@@ -373,6 +376,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         reserves0 += amount0;
         reserves1 += amount1;
 
+        _mint(sender, newShares);
+
         emit LiquidityAdded(sender, amount0, amount1, newShares);
     }
 
@@ -413,6 +418,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         sharesByUser[sender] = userShares - shares;
         reserves0 -= amount0;
         reserves1 -= amount1;
+
+        _burn(sender, shares);
 
         emit LiquidityRemoved(sender, amount0, amount1, shares);
     }

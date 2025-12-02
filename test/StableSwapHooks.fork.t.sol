@@ -102,7 +102,7 @@ contract StableSwapHooksForkTest is Test {
         _initializePool(hooks);
     }
 
-    function test_AddLiquidity() public {
+    function test_AddThenRemoveLiquidity() public {
         StableSwapHooks hooks = _deployHook();
 
         _initializePool(hooks);
@@ -112,43 +112,30 @@ contract StableSwapHooksForkTest is Test {
 
         uint256 balance0 = IERC20(token0).balanceOf(account0);
         uint256 balance1 = IERC20(token1).balanceOf(account0);
+        uint256 balanceS = hooks.balanceOf(account0);
+
+        uint256 expectedShares = 200e18;
 
         vm.startPrank(account0);
         IERC20(token0).forceApprove(address(hooks), amount0);
         IERC20(token1).forceApprove(address(hooks), amount1);
         vm.expectEmit(address(hooks));
-        emit StableSwapHooks.LiquidityAdded(account0, amount0, amount1, 200e18);
+        emit StableSwapHooks.LiquidityAdded(account0, amount0, amount1, expectedShares);
         hooks.addLiquidity(amount0, amount1, 0);
         vm.stopPrank();
 
         assertEq(IERC20(token0).balanceOf(account0), balance0 - amount0);
         assertEq(IERC20(token1).balanceOf(account0), balance1 - amount1);
-    }
-
-    function test_RemoveLiquidity() public {
-        StableSwapHooks hooks = _deployHook();
-
-        _initializePool(hooks);
-
-        uint256 amount0 = 100 * 10 ** decimals0;
-        uint256 amount1 = 100 * 10 ** decimals1;
-
-        uint256 balance0 = IERC20(token0).balanceOf(account0);
-        uint256 balance1 = IERC20(token1).balanceOf(account0);
-
-        vm.startPrank(account0);
-        IERC20(token0).forceApprove(address(hooks), amount0);
-        IERC20(token1).forceApprove(address(hooks), amount1);
-        hooks.addLiquidity(amount0, amount1, 0);
-        vm.stopPrank();
+        assertEq(hooks.balanceOf(account0), balanceS + expectedShares);
 
         vm.startPrank(account0);
         vm.expectEmit(address(hooks));
-        emit StableSwapHooks.LiquidityRemoved(account0, amount0, amount1, 200e18);
-        hooks.removeLiquidity(200e18, 0, 0);
+        emit StableSwapHooks.LiquidityRemoved(account0, amount0, amount1, expectedShares);
+        hooks.removeLiquidity(expectedShares, 0, 0);
         vm.stopPrank();
 
         assertEq(IERC20(token0).balanceOf(account0), balance0);
         assertEq(IERC20(token1).balanceOf(account0), balance1);
+        assertEq(hooks.balanceOf(account0), balanceS);
     }
 }
