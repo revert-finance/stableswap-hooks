@@ -3,7 +3,6 @@ pragma solidity 0.8.30;
 
 import {stdError} from "forge-std/Test.sol";
 import {StableSwapHooksBaseTest} from "./StableSwapHooks.base.t.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";

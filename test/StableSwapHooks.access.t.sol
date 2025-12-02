@@ -2,7 +2,6 @@
 pragma solidity 0.8.30;
 
 import {StableSwapHooksBaseTest} from "./StableSwapHooks.base.t.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title StableSwapHooksAccessTest
