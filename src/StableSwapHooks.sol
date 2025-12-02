@@ -209,6 +209,33 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         }
     }
 
+    /// @notice Get current amplification coefficient with ramping
+    /// @return The current A value, interpolated if ramping is in progress
+    function A() public view returns (uint256) {
+        uint256 t1 = futureATime;
+        uint256 A1 = futureA;
+
+        if (block.timestamp < t1) {
+            uint256 A0 = initialA;
+            uint256 t0 = initialATime;
+
+            uint256 timeDelta = block.timestamp - t0;
+            uint256 totalTime = t1 - t0;
+
+            // Linear interpolation between A0 and A1
+            if (A1 > A0) {
+                // Ramping up
+                return A0 + ((A1 - A0) * timeDelta) / totalTime;
+            } else {
+                // Ramping down
+                return A0 - ((A0 - A1) * timeDelta) / totalTime;
+            }
+        } else {
+            // When t1 == 0 or block.timestamp >= t1, ramping is complete
+            return A1;
+        }
+    }
+
     /// Hooks
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
@@ -279,33 +306,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
     }
 
     /// Internal
-
-    /// @dev Get current amplification coefficient with ramping
-    /// @return Current A value, interpolated if ramping is in progress
-    function A() public view returns (uint256) {
-        uint256 t1 = futureATime;
-        uint256 A1 = futureA;
-
-        if (block.timestamp < t1) {
-            uint256 A0 = initialA;
-            uint256 t0 = initialATime;
-
-            uint256 timeDelta = block.timestamp - t0;
-            uint256 totalTime = t1 - t0;
-
-            // Linear interpolation between A0 and A1
-            if (A1 > A0) {
-                // Ramping up
-                return A0 + ((A1 - A0) * timeDelta) / totalTime;
-            } else {
-                // Ramping down
-                return A0 - ((A0 - A1) * timeDelta) / totalTime;
-            }
-        } else {
-            // When t1 == 0 or block.timestamp >= t1, ramping is complete
-            return A1;
-        }
-    }
 
     function _handleAddLiquidityCallback(bytes calldata data) private {
         (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
