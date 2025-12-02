@@ -327,7 +327,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         uint256 newReserves1 = oldReserves1 + amount1;
 
         // Calculate new invariant
-        uint256 newInvariant = _getD(rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, amp);
+        uint256 newInvariant = _getD(rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A());
 
         // TODO: Handle min liquidity to prevent dust attacks
         if (oldTotalShares == 0) {
@@ -336,7 +336,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         } else {
             // Compute the old invariant
             uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, amp);
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A());
 
             // Check that the new invariant is higher
             if (newInvariant <= oldInvariant) {
