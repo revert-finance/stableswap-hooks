@@ -75,7 +75,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
     error InsufficientRampTime();
     error InsufficientTimeSinceLastAChange();
     error ExcessiveAmpChange();
-    error NewSharesTooLow();
+    error InsufficientShares();
+    error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
 
@@ -84,6 +85,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
     event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
     event StoppedRampA(uint256 currentA, uint256 time);
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
 
     /// Deployment
 
@@ -187,8 +189,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
 
     /// @notice Remove liquidity from the pool
     /// @param shares The number of shares to burn
-    function removeLiquidity(uint256 shares) external {
-        bytes memory data = abi.encode(REMOVE_LIQUIDITY_ACTION, shares, msg.sender);
+    /// @param minAmount0 The minimum amount of currency0 to receive
+    /// @param minAmount1 The minimum amount of currency1 to receive
+    function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
+        bytes memory data = abi.encode(REMOVE_LIQUIDITY_ACTION, shares, minAmount0, minAmount1, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -345,7 +349,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
 
         // Check that the new shares are above the minimum
         if (newShares < minShares) {
-            revert NewSharesTooLow();
+            revert InsufficientShares();
         }
 
         // Transfer tokens from sender to PoolManager
@@ -370,8 +374,43 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback {
         emit LiquidityAdded(sender, amount0, amount1, newShares);
     }
 
-    function _handleRemoveLiquidityCallback(bytes calldata data) internal {
-        (, uint256 shares, address sender) = abi.decode(data, (uint256, uint256, address));
+    function _handleRemoveLiquidityCallback(bytes calldata data) private {
+        (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
+            abi.decode(data, (uint256, uint256, uint256, uint256, address));
+
+        uint256 userShares = sharesByUser[sender];
+
+        // Check that user has enough shares
+        if (shares > userShares) {
+            revert InsufficientShares();
+        }
+
+        // Calculate proportional amounts to withdraw
+        uint256 currentTotalShares = totalShares;
+        uint256 amount0 = (shares * reserves0) / currentTotalShares;
+        uint256 amount1 = (shares * reserves1) / currentTotalShares;
+
+        // Check slippage
+        if (amount0 < minAmount0 || amount1 < minAmount1) {
+            revert InsufficientAmounts();
+        }
+
+        // Transfer tokens from PoolManager to sender
+        if (amount0 > 0) {
+            poolManager.take(currency0, sender, amount0);
+        }
+
+        if (amount1 > 0) {
+            poolManager.take(currency1, sender, amount1);
+        }
+
+        // Update storage
+        totalShares = currentTotalShares - shares;
+        sharesByUser[sender] = userShares - shares;
+        reserves0 -= amount0;
+        reserves1 -= amount1;
+
+        emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
     function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
