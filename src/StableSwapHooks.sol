@@ -101,12 +101,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
 
     /// External
 
-    /// @notice Get the current amplification coefficient
-    /// @return Current A value (with ramping applied if in progress)
-    function amp() external view returns (uint256) {
-        return _A();
-    }
-
     /// @notice Ramp A up or down over time
     /// @param _futureA The target amplification coefficient
     /// @param _futureTime The timestamp when ramping completes
