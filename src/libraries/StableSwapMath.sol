@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
+
 library StableSwapMath {
     /// @dev Precision divisor for amplification coefficient calculations.
     uint256 internal constant AMPLIFICATION_PRECISION = 100;
@@ -54,13 +55,13 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
-    /// @notice Compute the missing reserve given the other reserve and invariant.
+    /// @notice Compute the missing reserves given the other reserve and invariant.
     /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserve.
     /// @param knownReserves The known reserve after a swap (scaled).
     /// @param amplification Amplification coefficient A.
     /// @param invariant The invariant D that must be preserved.
     /// @return otherReserve The calculated missing reserve.
-    function getOtherReserve(uint256 knownReserves, uint256 amplification, uint256 invariant)
+    function getOtherReserves(uint256 knownReserves, uint256 amplification, uint256 invariant)
         internal
         pure
         returns (uint256 otherReserve)

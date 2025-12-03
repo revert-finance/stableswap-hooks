@@ -56,19 +56,19 @@ contract StableSwapMathTest is Test {
         assertTrue(diffHighA < diffLowA);
     }
 
-    function test_getOtherReserve_balancedPool() public pure {
+    function test_getOtherReserves_balancedPool() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
 
         uint256 invariant = StableSwapMath.getInvariant(reserves0, reserves1, amplification);
-        uint256 otherReserve = StableSwapMath.getOtherReserve(reserves0, amplification, invariant);
+        uint256 otherReserve = StableSwapMath.getOtherReserves(reserves0, amplification, invariant);
 
         // For balanced pool, y should equal x1
         assertEq(otherReserve, reserves1);
     }
 
-    function test_getOtherReserve_preservesInvariant() public pure {
+    function test_getOtherReserves_preservesInvariant() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -77,7 +77,7 @@ contract StableSwapMathTest is Test {
 
         // Simulate swap: add 50e18 to x0
         uint256 newReserves0 = reserves0 + 50e18;
-        uint256 newReserves1 = StableSwapMath.getOtherReserve(newReserves0, amplification, invariant);
+        uint256 newReserves1 = StableSwapMath.getOtherReserves(newReserves0, amplification, invariant);
 
         // Recalculate D with new reserves
         uint256 newInvariant = StableSwapMath.getInvariant(newReserves0, newReserves1, amplification);
@@ -86,7 +86,7 @@ contract StableSwapMathTest is Test {
         assertApproxEqAbs(newInvariant, invariant, 1);
     }
 
-    function test_getOtherReserve_outputDecreasesReserve() public pure {
+    function test_getOtherReserves_outputDecreasesReserve() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -95,12 +95,12 @@ contract StableSwapMathTest is Test {
 
         // Add to x0, y should decrease
         uint256 newReserves0 = reserves0 + 100e18;
-        uint256 newOtherReserve = StableSwapMath.getOtherReserve(newReserves0, amplification, invariant);
+        uint256 newOtherReserve = StableSwapMath.getOtherReserves(newReserves0, amplification, invariant);
 
         assertTrue(newOtherReserve < reserves1);
     }
 
-    function test_getOtherReserve_lowSlippage() public pure {
+    function test_getOtherReserves_lowSlippage() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -110,7 +110,7 @@ contract StableSwapMathTest is Test {
         // Small swap: 1% of pool
         uint256 swapIn = 10e18;
         uint256 newReserves0 = reserves0 + swapIn;
-        uint256 newOtherReserve = StableSwapMath.getOtherReserve(newReserves0, amplification, invariant);
+        uint256 newOtherReserve = StableSwapMath.getOtherReserves(newReserves0, amplification, invariant);
         uint256 swapOut = reserves1 - newOtherReserve;
 
         // Slippage should be < 1% for small swap on balanced pool
@@ -118,19 +118,19 @@ contract StableSwapMathTest is Test {
         assertTrue(slippageBps < 100);
     }
 
-    function test_getOtherReserve_higherA_lowerSlippage() public pure {
+    function test_getOtherReserves_higherA_lowerSlippage() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 swapIn = 100e18;
 
         // Low A
         uint256 invariantLowA = StableSwapMath.getInvariant(reserves0, reserves1, 50);
-        uint256 otherReserveLowA = StableSwapMath.getOtherReserve(reserves0 + swapIn, 50, invariantLowA);
+        uint256 otherReserveLowA = StableSwapMath.getOtherReserves(reserves0 + swapIn, 50, invariantLowA);
         uint256 outLowA = reserves1 - otherReserveLowA;
 
         // High A
         uint256 invariantHighA = StableSwapMath.getInvariant(reserves0, reserves1, 1000);
-        uint256 otherReserveHighA = StableSwapMath.getOtherReserve(reserves0 + swapIn, 1000, invariantHighA);
+        uint256 otherReserveHighA = StableSwapMath.getOtherReserves(reserves0 + swapIn, 1000, invariantHighA);
         uint256 outHighA = reserves1 - otherReserveHighA;
 
         // Higher A should give more output (less slippage)

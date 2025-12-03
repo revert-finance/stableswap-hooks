@@ -23,6 +23,9 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 // Uniswap Hooks
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
+// Local
+import {StableSwapMath} from "./libraries/StableSwapMath.sol";
+
 contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
@@ -339,7 +342,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 newReserves1 = oldReserves1 + amount1;
 
         // Calculate new invariant
-        uint256 newInvariant = _getD(rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A());
+        uint256 newInvariant = StableSwapMath.getInvariant(
+            rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A()
+        );
 
         // TODO: Handle min liquidity to prevent dust attacks
         if (oldTotalShares == 0) {
@@ -347,8 +352,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             newShares = newInvariant;
         } else {
             // Compute the old invariant
-            uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A());
+            uint256 oldInvariant = StableSwapMath.getInvariant(
+                rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A()
+            );
 
             // Check that the new invariant is higher
             if (newInvariant <= oldInvariant) {
@@ -439,7 +445,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         int256 dx = params.amountSpecified;
         uint256 memAmp = A();
-        uint256 D = _getD(xp0, xp1, memAmp);
+        uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
 
         int256 dy;
 
@@ -489,7 +495,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         // Convert input amount to precision units and add to reserves
         uint256 xIn = xpIn + (amountIn * rateIn) / RATE_PRECISION;
 
-        uint256 xOut = _getY(xIn, memAmp, D);
+        uint256 xOut = StableSwapMath.getOtherReserves(xIn, memAmp, D);
 
         // Subtract 1 to round in favor of the pool
         uint256 dyGross = xpOut - xOut - 1;
@@ -540,7 +546,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 xOut = xpOut - dyGross;
 
         // Calculate required input reserve using constant product invariant
-        uint256 xIn = _getY(xOut, memAmp, D);
+        uint256 xIn = StableSwapMath.getOtherReserves(xOut, memAmp, D);
 
         // Calculate required input amount (in precision units)
         uint256 dxRequired = xIn - xpIn;
@@ -550,71 +556,5 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // Return as negative to indicate amount to take from user
         return -int256(amountIn);
-    }
-
-    function _getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
-        uint256 S = xp0 + xp1;
-
-        uint256 D = S;
-        uint256 Ann = memAmp * 2;
-
-        for (uint256 i = 0; i < 255; ++i) {
-            uint256 D_P = D;
-
-            D_P = (D_P * D) / xp0;
-            D_P = (D_P * D) / xp1;
-
-            D_P = D_P / 4;
-
-            uint256 D_prev = D;
-
-            // (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
-            D = (((Ann * S) / 100 + D_P * 2) * D) / (((Ann - 100) * D) / 100 + (2 + 1) * D_P);
-
-            if (D > D_prev) {
-                if (D - D_prev <= 1) {
-                    return D;
-                }
-            } else {
-                if (D - D_prev <= 1) {
-                    return D;
-                }
-            }
-        }
-
-        revert("Convergence not reached");
-    }
-
-    function _getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
-        uint256 S_ = x;
-        uint256 y_prev = 0;
-        uint256 c = (D * D) / (x * 2);
-        uint256 Ann = memAmp * 2;
-
-        // c = c * D * A_PRECISION / (Ann * N_COINS)
-        c = (c * D * 100) / (Ann * 2);
-
-        // b: uint256 = S_ + D * A_PRECISION / Ann  # - D
-        uint256 b = S_ + (D * 100) / Ann;
-
-        // y: uint256 = D
-        uint256 y = D;
-
-        for (uint256 i = 0; i < 255; ++i) {
-            y_prev = y;
-            y = (y * y + c) / (2 * y + b - D);
-
-            if (y > y_prev) {
-                if (y - y_prev <= 1) {
-                    return y;
-                }
-            } else {
-                if (y_prev - y <= 1) {
-                    return y;
-                }
-            }
-        }
-
-        revert("Convergence not reached (y)");
     }
 }
