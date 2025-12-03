@@ -290,20 +290,29 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // Verify that swap is being performed on the targeted pool
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
         }
 
-        // int128 dy = swap(_sender, _key, _params, amp);
-        // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
-        // Commented implementation for now until more robust solution.
-        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
+        int128 dy = _swap(sender, key, params);
+        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
+
+        if (params.zeroForOne) {
+            poolManager.burn(address(this), currency1.toId(), uint128(dy));
+            poolManager.mint(address(this), currency0.toId(), uint256(-params.amountSpecified));
+            reserves0 += uint256(-params.amountSpecified);
+            reserves1 -= uint128(dy);
+        } else {
+            poolManager.burn(address(this), currency0.toId(), uint128(dy));
+            poolManager.mint(address(this), currency1.toId(), uint256(-params.amountSpecified));
+            reserves1 += uint256(-params.amountSpecified);
+            reserves0 -= uint128(dy);
+        }
 
         return (BaseHook.beforeSwap.selector, delta, 0);
     }
@@ -579,7 +588,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     function _getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
         uint256 S_ = x;
         uint256 y_prev = 0;
-        uint256 c = D * (D / (x * 2));
+        uint256 c = (D * D) / (x * 2);
         uint256 Ann = memAmp * 2;
 
         // c = c * D * A_PRECISION / (Ann * N_COINS)
@@ -600,7 +609,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
                     return y;
                 }
             } else {
-                if (y - y_prev <= 1) {
+                if (y_prev - y <= 1) {
                     return y;
                 }
             }
