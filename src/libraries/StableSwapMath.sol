@@ -101,13 +101,13 @@ library StableSwapMath {
     ///   A·n^n·(x + y) + D = A·D·n^n + D^3 / (n^n · x · y)
     ///
     /// Rearranging into quadratic form for Newton-Raphson:
-    ///   y^2 + (x + D/A·n^n - D)·y = D^3 / (A · n^2n · x)
+    ///   y^2 + (x + D/A·n^n - D)·y = D^3 / (Ann · n · x)
     ///
     /// Which gives iteration:
     ///   y_new = (y^2 + c) / (2y + b - D)
     ///
     /// Where:
-    ///   c = D^3 / (A · n^2n · x)  (constant term)
+    ///   c = D^3 / (Ann · n · x)  (constant term)
     ///   b = x + D / (A · n^n)     (linear coefficient)
     ///
     /// This is used during swaps: given input amount changes x, find new y.
