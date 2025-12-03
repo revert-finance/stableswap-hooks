@@ -47,8 +47,8 @@ library StableSwapMath {
     /// D represents the total liquidity when the pool is perfectly balanced.
     /// When reserves are equal, D = n · x (where x is each reserve).
     ///
-    /// @param x0 Precision-adjusted reserves of token 0
-    /// @param x1 Precision-adjusted reserves of token 1
+    /// @param x0 Scaled reserves of token 0
+    /// @param x1 Scaled reserves of token 1
     /// @param A Amplification coefficient
     /// @return D The invariant
     function getD(uint256 x0, uint256 x1, uint256 A) internal pure returns (uint256) {
@@ -113,7 +113,7 @@ library StableSwapMath {
     /// This is used during swaps: given input amount changes x, find new y.
     /// The difference (old_y - new_y) is the output amount.
     ///
-    /// @param x The known reserve amount after swap (precision-adjusted)
+    /// @param x The known reserve amount after swap (scaled)
     /// @param A Amplification coefficient
     /// @param D The invariant (must remain constant during swap)
     /// @return y The calculated reserve for the other token
