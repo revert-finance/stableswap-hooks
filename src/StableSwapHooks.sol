@@ -308,10 +308,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             reserves0 += uint256(-params.amountSpecified);
             reserves1 -= uint128(dy);
         } else {
-            poolManager.burn(address(this), currency0.toId(), uint128(dy));
             poolManager.mint(address(this), currency1.toId(), uint256(-params.amountSpecified));
-            reserves1 += uint256(-params.amountSpecified);
+            poolManager.burn(address(this), currency0.toId(), uint128(dy));
             reserves0 -= uint128(dy);
+            reserves1 += uint256(-params.amountSpecified);
         }
 
         return (BaseHook.beforeSwap.selector, delta, 0);
