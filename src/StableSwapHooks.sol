@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+// V4 Core
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -12,14 +12,22 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
-import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
-contract StableSwapHooks is BaseHook, AccessControlEnumerable {
+// OpenZeppelin
+import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+
+// Uniswap Hooks
+import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
+
+contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
+    using SafeERC20 for IERC20;
 
     /// Constants
 
@@ -29,6 +37,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
     uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
     uint256 public constant RATE_PRECISION = 1e18;
+    uint256 public constant ADD_LIQUIDITY_ACTION = 1;
+    uint256 public constant REMOVE_LIQUIDITY_ACTION = 2;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
@@ -40,6 +50,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     PoolId public immutable poolId;
     uint256 public immutable rate0;
     uint256 public immutable rate1;
+    Currency public immutable currency0;
+    Currency public immutable currency1;
 
     /// Variables
 
@@ -63,25 +75,37 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
     error InsufficientRampTime();
     error InsufficientTimeSinceLastAChange();
     error ExcessiveAmpChange();
+    error InsufficientShares();
+    error InsufficientAmounts();
+    error UseHookLiquidityModifiers(address hookAddress);
+    error AddLiquidityAmountsCannotBeZero();
 
     /// Events
 
     event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
     event StoppedRampA(uint256 currentA, uint256 time);
+    event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
 
     /// Deployment
 
-    constructor(uint256 _initialA, IPoolManager manager, Currency currency0, Currency currency1) BaseHook(manager) {
+    constructor(uint256 _initialA, IPoolManager manager, Currency currency0_, Currency currency1_)
+        BaseHook(manager)
+        ERC20("StableSwap LP", "ssLP")
+    {
+        currency0 = currency0_;
+        currency1 = currency1_;
+
         PoolKey memory key = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
+            currency0: currency0_,
+            currency1: currency1_,
             fee: FEE,
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(this))
         });
 
-        rate0 = 10 ** (36 - IERC20(Currency.unwrap(key.currency0)).decimals());
-        rate1 = 10 ** (36 - IERC20(Currency.unwrap(key.currency1)).decimals());
+        rate0 = 10 ** (36 - IERC20(Currency.unwrap(currency0_)).decimals());
+        rate1 = 10 ** (36 - IERC20(Currency.unwrap(currency1_)).decimals());
 
         poolId = key.toId();
 
@@ -156,186 +180,40 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
         emit StoppedRampA(currentA, block.timestamp);
     }
 
-    /// Hooks
+    /// @notice Add liquidity to the pool
+    /// @param amount0 The amount of currency0 to add
+    /// @param amount1 The amount of currency1 to add
+    /// @param minShares The minimum number of shares to receive
+    function addLiquidity(uint256 amount0, uint256 amount1, uint256 minShares) external {
+        bytes memory data = abi.encode(ADD_LIQUIDITY_ACTION, amount0, amount1, minShares, msg.sender);
 
-    function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
-        permissions = Hooks.Permissions({
-            beforeInitialize: true,
-            afterInitialize: false,
-            beforeAddLiquidity: false,
-            afterAddLiquidity: true,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: true,
-            beforeSwap: true,
-            afterSwap: false,
-            beforeDonate: false,
-            afterDonate: false,
-            beforeSwapReturnDelta: true,
-            afterSwapReturnDelta: false,
-            afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
-        });
+        poolManager.unlock(data);
     }
 
-    /// @notice Validates pool initialization parameters.
-    /// @dev Reverts if the pool ID doesn't match.
-    function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
+    /// @notice Remove liquidity from the pool
+    /// @param shares The number of shares to burn
+    /// @param minAmount0 The minimum amount of currency0 to receive
+    /// @param minAmount1 The minimum amount of currency1 to receive
+    function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
+        bytes memory data = abi.encode(REMOVE_LIQUIDITY_ACTION, shares, minAmount0, minAmount1, msg.sender);
 
-        return BaseHook.beforeInitialize.selector;
+        poolManager.unlock(data);
     }
 
-    function _afterAddLiquidity(
-        address sender,
-        PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
-        BalanceDelta delta,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, BalanceDelta) {
-        // Verify that liquidity is being added to the targeted pool
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
+    /// @notice Callback function for the pool manager
+    /// @param data The data passed to the unlock function
+    function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
+        uint256 action = abi.decode(data, (uint256));
+
+        if (action == ADD_LIQUIDITY_ACTION) {
+            _handleAddLiquidityCallback(data);
+        } else if (action == REMOVE_LIQUIDITY_ACTION) {
+            _handleRemoveLiquidityCallback(data);
         }
-
-        // Verify that only a full ranged position is being created
-        if (params.tickUpper != TICK_SPACING.maxUsableTick() || params.tickLower != TICK_SPACING.minUsableTick()) {
-            revert InvalidRange();
-        }
-
-        // Extract amounts from delta
-        uint256 amount0 = uint256(int256(-delta.amount0()));
-        uint256 amount1 = uint256(int256(-delta.amount1()));
-
-        uint256 oldTotalShares = totalShares;
-        // TODO: Add min shares minted check (provided in hookData?)
-        uint256 newShares = 0;
-
-        {
-            // Calculate old invariant
-            uint256 oldReserves0 = reserves0;
-            uint256 oldReserves1 = reserves1;
-            uint256 currentAmp = A();
-            uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
-
-            // Calculate new invariant
-            uint256 newInvariant = _getD(
-                rate0 * (oldReserves0 + amount0) / RATE_PRECISION,
-                rate1 * (oldReserves1 + amount1) / RATE_PRECISION,
-                currentAmp
-            );
-
-            // Verify new invariant is higher
-            if (newInvariant <= oldInvariant) {
-                revert InvalidInvariant();
-            }
-
-            // Calculate new shares
-            if (oldTotalShares == 0) {
-                newShares = newInvariant;
-            } else {
-                newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
-            }
-        }
-
-        // Update storage
-        totalShares = oldTotalShares + newShares;
-        sharesByUser[sender] += newShares;
-        reserves0 += amount0;
-        reserves1 += amount1;
-
-        // TODO: Emit event
-
-        return (BaseHook.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    function _afterRemoveLiquidity(
-        address sender,
-        PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
-        BalanceDelta delta,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, BalanceDelta) {
-        // Verify that liquidity is being removed from the targeted pool
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
-
-        // Verify that only a full ranged position is being removed
-        if (params.tickUpper != TICK_SPACING.maxUsableTick() || params.tickLower != TICK_SPACING.minUsableTick()) {
-            revert InvalidRange();
-        }
-
-        // Extract amounts from delta
-        uint256 amount0 = uint256(int256(delta.amount0()));
-        uint256 amount1 = uint256(int256(delta.amount1()));
-
-        uint256 oldTotalShares = totalShares;
-        uint256 sharesToBurn = 0;
-
-        {
-            // Calculate old invariant
-            uint256 oldReserves0 = reserves0;
-            uint256 oldReserves1 = reserves1;
-            uint256 currentAmp = A();
-            uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, currentAmp);
-
-            // Calculate new invariant
-            uint256 newInvariant = _getD(
-                rate0 * (oldReserves0 - amount0) / RATE_PRECISION,
-                rate1 * (oldReserves1 - amount1) / RATE_PRECISION,
-                currentAmp
-            );
-
-            // Verify new invariant is lower (liquidity removed)
-            if (newInvariant >= oldInvariant) {
-                revert InvalidInvariant();
-            }
-
-            // Calculate shares to burn proportional to invariant decrease
-            // TODO: Make sure the whole of the lps of the user are being burned at the end (avoid dust)
-            sharesToBurn = oldTotalShares * (oldInvariant - newInvariant) / oldInvariant;
-        }
-
-        // Update storage
-        // TODO: What would happen for accumulated rounding issues?
-        totalShares = oldTotalShares - sharesToBurn;
-        sharesByUser[sender] -= sharesToBurn;
-        reserves0 -= amount0;
-        reserves1 -= amount1;
-
-        // TODO: Emit event
-
-        return (BaseHook.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
-    }
-
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
-        internal
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        // Verify that swap is being performed on the targeted pool
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
-
-        // int128 dy = swap(_sender, _key, _params, amp);
-        // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
-        // Commented implementation for now until more robust solution.
-        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
-
-        return (BaseHook.beforeSwap.selector, delta, 0);
-    }
-
-    /// Internal
-
-    /// @dev Get current amplification coefficient with ramping
-    /// @return Current A value, interpolated if ramping is in progress
+    /// @notice Get current amplification coefficient with ramping
+    /// @return The current A value, interpolated if ramping is in progress
     function A() public view returns (uint256) {
         uint256 t1 = futureATime;
         uint256 A1 = futureA;
@@ -359,6 +237,191 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable {
             // When t1 == 0 or block.timestamp >= t1, ramping is complete
             return A1;
         }
+    }
+
+    /// Hooks
+
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
+        permissions = Hooks.Permissions({
+            beforeInitialize: true,
+            afterInitialize: false,
+            beforeAddLiquidity: true,
+            afterAddLiquidity: false,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: false,
+            beforeSwap: true,
+            afterSwap: false,
+            beforeDonate: false,
+            afterDonate: false,
+            beforeSwapReturnDelta: true,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
+        });
+    }
+
+    /// @notice Validates pool initialization parameters.
+    /// @dev Reverts if the pool ID doesn't match.
+    function _beforeInitialize(address, PoolKey calldata key, uint160) internal override returns (bytes4) {
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
+        return BaseHook.beforeInitialize.selector;
+    }
+
+    /// @dev Reverts if liquidity is modified via PoolManager.modifyLiquidity function.
+    /// Liquidity should be provided via the addLiquidity function of this contract.
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
+        revert UseHookLiquidityModifiers(address(this));
+    }
+
+    /// @dev Reverts if liquidity is modified via PoolManager.modifyLiquidity function.
+    /// Liquidity should be removed via the removeLiquidity function of this contract.
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
+        revert UseHookLiquidityModifiers(address(this));
+    }
+
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
+        // Verify that swap is being performed on the targeted pool
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
+            revert InvalidPoolId();
+        }
+
+        // int128 dy = swap(_sender, _key, _params, amp);
+        // BeforeSwapDelta delta = toBeforeSwapDelta(-_params.amountSpecified.toInt128(), dy);
+        // Commented implementation for now until more robust solution.
+        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), 0);
+
+        return (BaseHook.beforeSwap.selector, delta, 0);
+    }
+
+    /// Internal
+
+    function _handleAddLiquidityCallback(bytes calldata data) private {
+        (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
+            abi.decode(data, (uint256, uint256, uint256, uint256, address));
+
+        // Check that amount0 and amount1 are not both zero.
+        // The invariant takes into consideration single sided deposits
+        if (amount0 == 0 && amount1 == 0) {
+            revert AddLiquidityAmountsCannotBeZero();
+        }
+
+        uint256 oldTotalShares = totalShares;
+        uint256 newShares;
+
+        uint256 oldReserves0 = reserves0;
+        uint256 oldReserves1 = reserves1;
+
+        uint256 newReserves0 = oldReserves0 + amount0;
+        uint256 newReserves1 = oldReserves1 + amount1;
+
+        // Calculate new invariant
+        uint256 newInvariant = _getD(rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A());
+
+        // TODO: Handle min liquidity to prevent dust attacks
+        if (oldTotalShares == 0) {
+            // Shares equal the invariant on the first deposit
+            newShares = newInvariant;
+        } else {
+            // Compute the old invariant
+            uint256 oldInvariant =
+                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A());
+
+            // Check that the new invariant is higher
+            if (newInvariant <= oldInvariant) {
+                revert InvalidInvariant();
+            }
+
+            // Compute the new shares
+            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
+        }
+
+        // Check that the new shares are above the minimum
+        if (newShares < minShares) {
+            revert InsufficientShares();
+        }
+
+        // Transfer tokens from sender to PoolManager
+        if (amount0 > 0) {
+            poolManager.sync(currency0);
+            IERC20(Currency.unwrap(currency0)).safeTransferFrom(sender, address(poolManager), amount0);
+            poolManager.settle();
+            poolManager.mint(address(this), currency0.toId(), amount0);
+        }
+
+        if (amount1 > 0) {
+            poolManager.sync(currency1);
+            IERC20(Currency.unwrap(currency1)).safeTransferFrom(sender, address(poolManager), amount1);
+            poolManager.settle();
+            poolManager.mint(address(this), currency1.toId(), amount1);
+        }
+
+        // Update storage
+        totalShares += newShares;
+        sharesByUser[sender] += newShares;
+        reserves0 += amount0;
+        reserves1 += amount1;
+
+        _mint(sender, newShares);
+
+        emit LiquidityAdded(sender, amount0, amount1, newShares);
+    }
+
+    function _handleRemoveLiquidityCallback(bytes calldata data) private {
+        (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
+            abi.decode(data, (uint256, uint256, uint256, uint256, address));
+
+        uint256 userShares = sharesByUser[sender];
+
+        // Check that user has enough shares
+        if (shares > userShares) {
+            revert InsufficientShares();
+        }
+
+        // Calculate proportional amounts to withdraw
+        uint256 currentTotalShares = totalShares;
+        uint256 amount0 = (shares * reserves0) / currentTotalShares;
+        uint256 amount1 = (shares * reserves1) / currentTotalShares;
+
+        // Check slippage
+        if (amount0 < minAmount0 || amount1 < minAmount1) {
+            revert InsufficientAmounts();
+        }
+
+        // Burn claims and transfer tokens from PoolManager to sender
+        if (amount0 > 0) {
+            poolManager.burn(address(this), currency0.toId(), amount0);
+            poolManager.take(currency0, sender, amount0);
+        }
+
+        if (amount1 > 0) {
+            poolManager.burn(address(this), currency1.toId(), amount1);
+            poolManager.take(currency1, sender, amount1);
+        }
+
+        // Update storage
+        totalShares = currentTotalShares - shares;
+        sharesByUser[sender] = userShares - shares;
+        reserves0 -= amount0;
+        reserves1 -= amount1;
+
+        _burn(sender, shares);
+
+        emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
     function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {

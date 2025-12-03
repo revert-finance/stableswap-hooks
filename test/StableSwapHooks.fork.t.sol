@@ -8,12 +8,14 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksForkTest is Test {
+    using SafeERC20 for IERC20;
+
     address private token0;
     address private token1;
     address private poolManager;
@@ -29,7 +31,6 @@ contract StableSwapHooksForkTest is Test {
         token0 = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // dai
         token1 = 0xdAC17F958D2ee523a2206206994597C13D831ec7; // usdt
         poolManager = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-        positionManager = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
         account0 = makeAddr("account0");
 
         decimals0 = 18;
@@ -50,8 +51,8 @@ contract StableSwapHooksForkTest is Test {
     /// @dev Deploy the hook with create2 and the correct hook flags
     function _deployHook() private returns (StableSwapHooks) {
         // Hooks flags based on getHookPermissions()
-        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
+        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
         // Mine a salt that produces an address with the correct hook flags
         (address hookAddress, bytes32 salt) = HookMiner.find(
@@ -69,8 +70,7 @@ contract StableSwapHooksForkTest is Test {
 
     /// @dev Initialize the pool via the position manager
     function _initializePool(StableSwapHooks hooks) private returns (int24) {
-        return IPositionManager(positionManager)
-            .initializePool(_getPoolKey(hooks), uint160(Math.sqrt((10 ** decimals1 << 192) / 10 ** decimals0)));
+        return IPoolManager(poolManager).initialize(_getPoolKey(hooks), 1 << 96);
     }
 
     /// @dev Get the pool key with the provided hook
@@ -99,9 +99,43 @@ contract StableSwapHooksForkTest is Test {
     function test_InitializePool() public {
         StableSwapHooks hooks = _deployHook();
 
-        int24 tick = _initializePool(hooks);
+        _initializePool(hooks);
+    }
 
-        // Assert that the tick is not failure
-        assertNotEq(tick, type(int24).max);
+    function test_AddThenRemoveLiquidity() public {
+        StableSwapHooks hooks = _deployHook();
+
+        _initializePool(hooks);
+
+        uint256 amount0 = 100 * 10 ** decimals0;
+        uint256 amount1 = 100 * 10 ** decimals1;
+
+        uint256 balance0 = IERC20(token0).balanceOf(account0);
+        uint256 balance1 = IERC20(token1).balanceOf(account0);
+        uint256 balanceS = hooks.balanceOf(account0);
+
+        uint256 expectedShares = 200e18;
+
+        vm.startPrank(account0);
+        IERC20(token0).forceApprove(address(hooks), amount0);
+        IERC20(token1).forceApprove(address(hooks), amount1);
+        vm.expectEmit(address(hooks));
+        emit StableSwapHooks.LiquidityAdded(account0, amount0, amount1, expectedShares);
+        hooks.addLiquidity(amount0, amount1, 0);
+        vm.stopPrank();
+
+        assertEq(IERC20(token0).balanceOf(account0), balance0 - amount0);
+        assertEq(IERC20(token1).balanceOf(account0), balance1 - amount1);
+        assertEq(hooks.balanceOf(account0), balanceS + expectedShares);
+
+        vm.startPrank(account0);
+        vm.expectEmit(address(hooks));
+        emit StableSwapHooks.LiquidityRemoved(account0, amount0, amount1, expectedShares);
+        hooks.removeLiquidity(expectedShares, 0, 0);
+        vm.stopPrank();
+
+        assertEq(IERC20(token0).balanceOf(account0), balance0);
+        assertEq(IERC20(token1).balanceOf(account0), balance1);
+        assertEq(hooks.balanceOf(account0), balanceS);
     }
 }
