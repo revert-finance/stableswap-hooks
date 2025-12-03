@@ -23,7 +23,7 @@ pragma solidity 0.8.30;
 ///
 /// Solutions for D and y are found iteratively using Newton-Raphson method.
 library StableSwapMath {
-    /// @dev Precision for amplification coefficient (A should be stored as A * A_PRECISION)
+    /// @dev Precision divisor for amplification coefficient calculations
     uint256 internal constant A_PRECISION = 100;
 
     /// @dev Number of coins in the pool (n in the invariant formula)
@@ -64,7 +64,7 @@ library StableSwapMath {
         uint256 D = S;
 
         // Ann = A·n^n (amplification scaled by number of coins)
-        uint256 ann = A * N_COINS;
+        uint256 Ann = A * N_COINS;
 
         // Newton-Raphson iteration to find D
         for (uint256 i = 0; i < 255; ++i) {
@@ -79,8 +79,8 @@ library StableSwapMath {
 
             // Newton-Raphson step:
             // D = (Ann · S / precision + dP · n) · D / ((Ann - precision) · D / precision + (n+1) · dP)
-            uint256 numerator = ((ann * S) / A_PRECISION + dP * N_COINS) * D;
-            uint256 denominator = ((ann - A_PRECISION) * D) / A_PRECISION + (N_COINS + 1) * dP;
+            uint256 numerator = ((Ann * S) / A_PRECISION + dP * N_COINS) * D;
+            uint256 denominator = ((Ann - A_PRECISION) * D) / A_PRECISION + (N_COINS + 1) * dP;
             D = numerator / denominator;
 
             // Convergence check: stop when D changes by ≤ 1 wei
@@ -119,15 +119,15 @@ library StableSwapMath {
     /// @return y The calculated reserve for the other token
     function getY(uint256 x, uint256 A, uint256 D) internal pure returns (uint256 y) {
         // Ann = A·n^n
-        uint256 ann = A * N_COINS;
+        uint256 Ann = A * N_COINS;
 
         // c = D^3 / (Ann · n^n · x)
         // Computed as: (D^2 / (x · n)) · (D · precision / (Ann · n))
         uint256 c = (D * D) / (x * N_COINS);
-        c = (c * D * A_PRECISION) / (ann * N_COINS);
+        c = (c * D * A_PRECISION) / (Ann * N_COINS);
 
-        // b = x + D · precision / ann
-        uint256 b = x + (D * A_PRECISION) / ann;
+        // b = x + D · precision / Ann
+        uint256 b = x + (D * A_PRECISION) / Ann;
 
         // Initial guess: y = D (assumes near-balanced state)
         y = D;
