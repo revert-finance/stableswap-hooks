@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {StableSwapMath} from "../src/libraries/StableSwapMath.sol";
+import {StableSwapMath} from "../../src/libraries/StableSwapMath.sol";
 
 contract StableSwapMathTest is Test {
     function test_getInvariant_returnsZeroForEmptyPool() public pure {

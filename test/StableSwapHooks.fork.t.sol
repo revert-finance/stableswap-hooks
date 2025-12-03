@@ -15,8 +15,8 @@ import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {IAllowanceTransfer} from "@uniswap/v4-periphery/lib/permit2/src/interfaces/IAllowanceTransfer.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {StableSwapHooks} from "../src/StableSwapHooks.sol";
-import {IUniversalRouter} from "./interfaces/IUniversalRouter.sol";
-import {Commands} from "./libraries/Commands.sol";
+import {IUniversalRouter} from "./external/interfaces/IUniversalRouter.sol";
+import {Commands} from "./external/libraries/Commands.sol";
 
 contract StableSwapHooksForkTest is Test {
     using SafeERC20 for IERC20;
