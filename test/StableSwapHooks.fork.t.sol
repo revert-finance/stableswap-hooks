@@ -193,6 +193,7 @@ contract StableSwapHooksForkTest is Test {
         // Swap
 
         PoolKey memory poolKey = _getPoolKey(hooks);
+        uint256 amount0In = 1 * 10 ** decimals0;
 
         // V4 Router Actions
 
@@ -203,12 +204,12 @@ contract StableSwapHooksForkTest is Test {
             IV4Router.ExactInputSingleParams({
                 poolKey: poolKey,
                 zeroForOne: true,
-                amountIn: uint128(1 * 10 ** decimals0),
+                amountIn: uint128(amount0In),
                 amountOutMinimum: 0,
                 hookData: bytes("")
             })
         );
-        params[1] = abi.encode(poolKey.currency0, 1 * 10 ** decimals0);
+        params[1] = abi.encode(poolKey.currency0, amount0In);
         params[2] = abi.encode(poolKey.currency1, 0);
 
         // Universal Router Command
@@ -219,7 +220,12 @@ contract StableSwapHooksForkTest is Test {
 
         // Execute swap
 
+        uint256 swapperBalance0 = IERC20(token0).balanceOf(swapper);
+
         vm.prank(swapper);
         IUniversalRouter(universalRouter).execute(commands, inputs, block.timestamp + 100);
+
+        assertEq(IERC20(token0).balanceOf(swapper), swapperBalance0 - amount0In);
+        assertEq(IERC20(token1).balanceOf(swapper), 1000998991);
     }
 }
