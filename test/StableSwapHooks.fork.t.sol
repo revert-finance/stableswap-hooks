@@ -15,8 +15,8 @@ import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {IAllowanceTransfer} from "@uniswap/v4-periphery/lib/permit2/src/interfaces/IAllowanceTransfer.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {StableSwapHooks} from "../src/StableSwapHooks.sol";
-import {IUniversalRouter} from "./interfaces/IUniversalRouter.sol";
-import {Commands} from "./libraries/Commands.sol";
+import {IUniversalRouter} from "./external/interfaces/IUniversalRouter.sol";
+import {Commands} from "./external/libraries/Commands.sol";
 
 contract StableSwapHooksForkTest is Test {
     using SafeERC20 for IERC20;
@@ -66,7 +66,7 @@ contract StableSwapHooksForkTest is Test {
             | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
         // Mine a salt that produces an address with the correct hook flags
-        (address hookAddress, bytes32 salt) = HookMiner.find(
+        (, bytes32 salt) = HookMiner.find(
             address(this),
             flags,
             type(StableSwapHooks).creationCode,
@@ -85,7 +85,7 @@ contract StableSwapHooksForkTest is Test {
     }
 
     /// @dev Get the pool key with the provided hook
-    function _getPoolKey(StableSwapHooks hooks) private returns (PoolKey memory) {
+    function _getPoolKey(StableSwapHooks hooks) private view returns (PoolKey memory) {
         return PoolKey({
             currency0: Currency.wrap(token0),
             currency1: Currency.wrap(token1),

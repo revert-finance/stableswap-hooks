@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-// V4 Core
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
@@ -14,14 +13,15 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
-// OpenZeppelin
 import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
-// Uniswap Hooks
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
+
+import {StableSwapMath} from "./libraries/StableSwapMath.sol";
+import {Actions} from "./libraries/Actions.sol";
 
 contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
     using SafeCast for int256;
@@ -36,9 +36,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     uint256 public constant MAX_A = 1e6;
     uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
     uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
-    uint256 public constant RATE_PRECISION = 1e18;
-    uint256 public constant ADD_LIQUIDITY_ACTION = 1;
-    uint256 public constant REMOVE_LIQUIDITY_ACTION = 2;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
@@ -79,6 +76,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
+    error InvalidAction();
 
     /// Events
 
@@ -104,8 +102,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             hooks: IHooks(address(this))
         });
 
-        rate0 = 10 ** (36 - IERC20(Currency.unwrap(currency0_)).decimals());
-        rate1 = 10 ** (36 - IERC20(Currency.unwrap(currency1_)).decimals());
+        rate0 = StableSwapMath.getRate(currency0_);
+        rate1 = StableSwapMath.getRate(currency1_);
 
         poolId = key.toId();
 
@@ -185,7 +183,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param amount1 The amount of currency1 to add
     /// @param minShares The minimum number of shares to receive
     function addLiquidity(uint256 amount0, uint256 amount1, uint256 minShares) external {
-        bytes memory data = abi.encode(ADD_LIQUIDITY_ACTION, amount0, amount1, minShares, msg.sender);
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, amount0, amount1, minShares, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -195,7 +193,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param minAmount0 The minimum amount of currency0 to receive
     /// @param minAmount1 The minimum amount of currency1 to receive
     function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
-        bytes memory data = abi.encode(REMOVE_LIQUIDITY_ACTION, shares, minAmount0, minAmount1, msg.sender);
+        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, shares, minAmount0, minAmount1, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -205,11 +203,15 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         uint256 action = abi.decode(data, (uint256));
 
-        if (action == ADD_LIQUIDITY_ACTION) {
+        if (action == Actions.ADD_LIQUIDITY) {
             _handleAddLiquidityCallback(data);
-        } else if (action == REMOVE_LIQUIDITY_ACTION) {
+        } else if (action == Actions.REMOVE_LIQUIDITY) {
             _handleRemoveLiquidityCallback(data);
+        } else {
+            revert InvalidAction();
         }
+
+        return "";
     }
 
     /// @notice Get current amplification coefficient with ramping
@@ -262,7 +264,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     /// @notice Validates pool initialization parameters.
     /// @dev Reverts if the pool ID doesn't match.
-    function _beforeInitialize(address, PoolKey calldata key, uint160) internal override returns (bytes4) {
+    function _beforeInitialize(address, PoolKey calldata key, uint160) internal view override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
         }
@@ -274,6 +276,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// Liquidity should be provided via the addLiquidity function of this contract.
     function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
+        view
         override
         returns (bytes4)
     {
@@ -284,13 +287,14 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// Liquidity should be removed via the removeLiquidity function of this contract.
     function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
+        view
         override
         returns (bytes4)
     {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -299,7 +303,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             revert InvalidPoolId();
         }
 
-        int128 dy = _swap(sender, key, params);
+        int128 dy = _swap(params);
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
 
         if (params.zeroForOne) {
@@ -339,7 +343,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 newReserves1 = oldReserves1 + amount1;
 
         // Calculate new invariant
-        uint256 newInvariant = _getD(rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A());
+        uint256 newInvariant = StableSwapMath.getInvariant(
+            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), A()
+        );
 
         // TODO: Handle min liquidity to prevent dust attacks
         if (oldTotalShares == 0) {
@@ -347,8 +353,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             newShares = newInvariant;
         } else {
             // Compute the old invariant
-            uint256 oldInvariant =
-                _getD(rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A());
+            uint256 oldInvariant = StableSwapMath.getInvariant(
+                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), A()
+            );
 
             // Check that the new invariant is higher
             if (newInvariant <= oldInvariant) {
@@ -433,13 +440,13 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
-    function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
-        uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
-        uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
+    function _swap(SwapParams calldata params) private view returns (int128) {
+        uint256 xp0 = StableSwapMath.scaleTo(reserves0, rate0);
+        uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
 
         int256 dx = params.amountSpecified;
         uint256 memAmp = A();
-        uint256 D = _getD(xp0, xp1, memAmp);
+        uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
 
         int256 dy;
 
@@ -487,9 +494,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert input amount to precision units and add to reserves
-        uint256 xIn = xpIn + (amountIn * rateIn) / RATE_PRECISION;
+        uint256 xIn = xpIn + StableSwapMath.scaleTo(amountIn, rateIn);
 
-        uint256 xOut = _getY(xIn, memAmp, D);
+        uint256 xOut = StableSwapMath.getOtherReserves(xIn, memAmp, D);
 
         // Subtract 1 to round in favor of the pool
         uint256 dyGross = xpOut - xOut - 1;
@@ -503,7 +510,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dyNet = dyGross - dyFee;
 
         // Convert from precision units to real token units
-        uint256 amountOut = (dyNet * RATE_PRECISION) / rateOut;
+        uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
 
         return int256(amountOut);
     }
@@ -527,7 +534,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert desired output to precision units
-        uint256 dyNet = (amountOut * rateOut) / RATE_PRECISION;
+        uint256 dyNet = StableSwapMath.scaleTo(amountOut, rateOut);
 
         // TODO
         // Fee handling: Calculate gross output needed to deliver net output after fees
@@ -540,81 +547,15 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 xOut = xpOut - dyGross;
 
         // Calculate required input reserve using constant product invariant
-        uint256 xIn = _getY(xOut, memAmp, D);
+        uint256 xIn = StableSwapMath.getOtherReserves(xOut, memAmp, D);
 
         // Calculate required input amount (in precision units)
         uint256 dxRequired = xIn - xpIn;
 
         // Convert from precision units to real token units
-        uint256 amountIn = (dxRequired * RATE_PRECISION) / rateIn;
+        uint256 amountIn = StableSwapMath.descale(dxRequired, rateIn);
 
         // Return as negative to indicate amount to take from user
         return -int256(amountIn);
-    }
-
-    function _getD(uint256 xp0, uint256 xp1, uint256 memAmp) private pure returns (uint256) {
-        uint256 S = xp0 + xp1;
-
-        uint256 D = S;
-        uint256 Ann = memAmp * 2;
-
-        for (uint256 i = 0; i < 255; ++i) {
-            uint256 D_P = D;
-
-            D_P = (D_P * D) / xp0;
-            D_P = (D_P * D) / xp1;
-
-            D_P = D_P / 4;
-
-            uint256 D_prev = D;
-
-            // (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
-            D = (((Ann * S) / 100 + D_P * 2) * D) / (((Ann - 100) * D) / 100 + (2 + 1) * D_P);
-
-            if (D > D_prev) {
-                if (D - D_prev <= 1) {
-                    return D;
-                }
-            } else {
-                if (D - D_prev <= 1) {
-                    return D;
-                }
-            }
-        }
-
-        revert("Convergence not reached");
-    }
-
-    function _getY(uint256 x, uint256 memAmp, uint256 D) private pure returns (uint256) {
-        uint256 S_ = x;
-        uint256 y_prev = 0;
-        uint256 c = (D * D) / (x * 2);
-        uint256 Ann = memAmp * 2;
-
-        // c = c * D * A_PRECISION / (Ann * N_COINS)
-        c = (c * D * 100) / (Ann * 2);
-
-        // b: uint256 = S_ + D * A_PRECISION / Ann  # - D
-        uint256 b = S_ + (D * 100) / Ann;
-
-        // y: uint256 = D
-        uint256 y = D;
-
-        for (uint256 i = 0; i < 255; ++i) {
-            y_prev = y;
-            y = (y * y + c) / (2 * y + b - D);
-
-            if (y > y_prev) {
-                if (y - y_prev <= 1) {
-                    return y;
-                }
-            } else {
-                if (y_prev - y <= 1) {
-                    return y;
-                }
-            }
-        }
-
-        revert("Convergence not reached (y)");
     }
 }
