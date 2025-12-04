@@ -97,10 +97,18 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
+    /// @dev Scales a token amount into 1e18 precision using the given rate.
+    /// @param amount Token-denominated amount.
+    /// @param rate Scaling factor for the token.
+    /// @return Scaled amount in 1e18 precision.
     function scaleTo(uint256 amount, uint256 rate) internal pure returns (uint256) {
         return rate * amount / RATE_PRECISION;
     }
 
+    /// @dev Converts a 1e18-precision amount back to token units using the given rate.
+    /// @param amount 1e18-scaled amount.
+    /// @param rate Scaling factor for the token.
+    /// @return Token-denominated amount.
     function descale(uint256 amount, uint256 rate) internal pure returns (uint256) {
         return amount * RATE_PRECISION / rate;
     }
