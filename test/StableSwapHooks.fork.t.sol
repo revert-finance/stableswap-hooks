@@ -31,7 +31,7 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
 
     /// Tests
 
-    function test_DeployHook() public {
+    function test_DeployHook() public view {
         assertEq(address(hooks.poolManager()), address(poolManager));
         assertEq(hooks.A(), 100);
         assertEq(hooks.rate0(), 1e18);

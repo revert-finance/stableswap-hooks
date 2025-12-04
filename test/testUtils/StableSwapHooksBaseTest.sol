@@ -41,7 +41,8 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
 
     function _deployHooks() private {
         uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
+            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+            | Hooks.BEFORE_DONATE_FLAG;
 
         uint256 amplification = 100;
 
