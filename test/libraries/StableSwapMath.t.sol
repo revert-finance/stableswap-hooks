@@ -2,7 +2,16 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {StableSwapMath} from "../../src/libraries/StableSwapMath.sol";
+
+contract TokenMock {
+    uint8 public decimals;
+
+    constructor(uint8 _decimals) {
+        decimals = _decimals;
+    }
+}
 
 contract StableSwapMathTest is Test {
     function test_getInvariant_returnsZeroForEmptyPool() public pure {
@@ -147,5 +156,40 @@ contract StableSwapMathTest is Test {
 
         assertEq(scaledTo, 123e18);
         assertEq(descaled, tokenAmount);
+    }
+
+    function test_scaleTo_zeroAmount() public pure {
+        uint256 rate = 1e30;
+
+        assertEq(StableSwapMath.scaleTo(0, rate), 0);
+    }
+
+    function test_descale_zeroAmount() public pure {
+        uint256 rate = 1e30;
+
+        assertEq(StableSwapMath.descale(0, rate), 0);
+    }
+
+    function test_descale_inverts_scaleTo_forArbitraryAmounts() public pure {
+        // Token with 7 decimals => stored rate 1e29 (effective factor 1e11)
+        uint256 rate = 1e29;
+        uint256 amount = 123_456_789;
+
+        uint256 scaled = StableSwapMath.scaleTo(amount, rate);
+        uint256 back = StableSwapMath.descale(scaled, rate);
+
+        assertEq(back, amount);
+    }
+
+    function test_getRate_returnsExpectedDecimals() public {
+        TokenMock token = new TokenMock(6);
+        Currency currency = Currency.wrap(address(token));
+        uint256 rate = StableSwapMath.getRate(currency);
+        assertEq(rate, 1e30); // 10**(36 - 6)
+
+        token = new TokenMock(18);
+        currency = Currency.wrap(address(token));
+        rate = StableSwapMath.getRate(currency);
+        assertEq(rate, 1e18); // 10**(36 - 18)
     }
 }
