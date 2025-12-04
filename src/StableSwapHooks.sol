@@ -42,9 +42,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     uint256 public constant FEE_DENOMINATOR = 1e6; // 100%
     int24 public constant TICK_SPACING = 1;
 
-    // Hook fee percentage (of the total FEE). Example: 2000 = 20% of fees go to hook
-    uint256 public constant HOOK_FEE_PERCENTAGE = 2000; // 20% of swap fees
-    uint256 public constant HOOK_FEE_PERCENTAGE_DENOMINATOR = 10000; // 100%
+    // Hook fee percentage (of the total FEE).
+    uint256 public constant HOOK_FEE_PERCENTAGE = 2e5; // 20% of swap fees
 
     /// Immutables
 
@@ -609,7 +608,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dyNet = dyGross - dyFee;
 
         // Calculate hook fee portion (in precision units)
-        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / HOOK_FEE_PERCENTAGE_DENOMINATOR;
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
 
         // Convert from precision units to real token units
         uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
@@ -648,7 +647,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // Calculate total fee and hook portion
         uint256 dyFee = dyGross - dyNet;
-        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / HOOK_FEE_PERCENTAGE_DENOMINATOR;
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
 
         // Calculate new output reserve after removing gross output
         uint256 xOut = xpOut - dyGross;
