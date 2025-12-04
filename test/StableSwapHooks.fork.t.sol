@@ -66,7 +66,7 @@ contract StableSwapHooksForkTest is Test {
             | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
         // Mine a salt that produces an address with the correct hook flags
-        (address hookAddress, bytes32 salt) = HookMiner.find(
+        (, bytes32 salt) = HookMiner.find(
             address(this),
             flags,
             type(StableSwapHooks).creationCode,
@@ -85,7 +85,7 @@ contract StableSwapHooksForkTest is Test {
     }
 
     /// @dev Get the pool key with the provided hook
-    function _getPoolKey(StableSwapHooks hooks) private returns (PoolKey memory) {
+    function _getPoolKey(StableSwapHooks hooks) private view returns (PoolKey memory) {
         return PoolKey({
             currency0: Currency.wrap(token0),
             currency1: Currency.wrap(token1),

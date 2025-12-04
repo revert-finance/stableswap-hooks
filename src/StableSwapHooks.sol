@@ -21,6 +21,7 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
 import {StableSwapMath} from "./libraries/StableSwapMath.sol";
+import {Actions} from "./libraries/Actions.sol";
 
 contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
     using SafeCast for int256;
@@ -36,8 +37,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
     uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
     uint256 public constant RATE_PRECISION = 1e18;
-    uint256 public constant ADD_LIQUIDITY_ACTION = 1;
-    uint256 public constant REMOVE_LIQUIDITY_ACTION = 2;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
@@ -185,7 +184,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param amount1 The amount of currency1 to add
     /// @param minShares The minimum number of shares to receive
     function addLiquidity(uint256 amount0, uint256 amount1, uint256 minShares) external {
-        bytes memory data = abi.encode(ADD_LIQUIDITY_ACTION, amount0, amount1, minShares, msg.sender);
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, amount0, amount1, minShares, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -195,7 +194,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param minAmount0 The minimum amount of currency0 to receive
     /// @param minAmount1 The minimum amount of currency1 to receive
     function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
-        bytes memory data = abi.encode(REMOVE_LIQUIDITY_ACTION, shares, minAmount0, minAmount1, msg.sender);
+        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, shares, minAmount0, minAmount1, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -205,13 +204,15 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         uint256 action = abi.decode(data, (uint256));
 
-        if (action == ADD_LIQUIDITY_ACTION) {
+        if (action == Actions.ADD_LIQUIDITY) {
             _handleAddLiquidityCallback(data);
-        } else if (action == REMOVE_LIQUIDITY_ACTION) {
+        } else if (action == Actions.REMOVE_LIQUIDITY) {
             _handleRemoveLiquidityCallback(data);
         } else {
             revert InvalidAction();
         }
+
+        return "";
     }
 
     /// @notice Get current amplification coefficient with ramping
@@ -264,7 +265,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     /// @notice Validates pool initialization parameters.
     /// @dev Reverts if the pool ID doesn't match.
-    function _beforeInitialize(address, PoolKey calldata key, uint160) internal override returns (bytes4) {
+    function _beforeInitialize(address, PoolKey calldata key, uint160) internal view override returns (bytes4) {
         if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
             revert InvalidPoolId();
         }
@@ -276,6 +277,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// Liquidity should be provided via the addLiquidity function of this contract.
     function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
+        view
         override
         returns (bytes4)
     {
@@ -286,13 +288,14 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// Liquidity should be removed via the removeLiquidity function of this contract.
     function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
+        view
         override
         returns (bytes4)
     {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -301,7 +304,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             revert InvalidPoolId();
         }
 
-        int128 dy = _swap(sender, key, params);
+        int128 dy = _swap(params);
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
 
         if (params.zeroForOne) {
@@ -438,7 +441,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
-    function _swap(address sender, PoolKey calldata key, SwapParams calldata params) private returns (int128) {
+    function _swap(SwapParams calldata params) private view returns (int128) {
         uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
         uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
 
