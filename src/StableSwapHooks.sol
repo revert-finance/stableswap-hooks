@@ -42,6 +42,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     uint256 public constant FEE_DENOMINATOR = 1e6; // 100%
     int24 public constant TICK_SPACING = 1;
 
+    // Hook fee percentage (of the total FEE). Example: 2000 = 20% of fees go to hook
+    uint256 public constant HOOK_FEE_PERCENTAGE = 2000; // 20% of swap fees
+    uint256 public constant HOOK_FEE_PERCENTAGE_DENOMINATOR = 10000; // 100%
+
     /// Immutables
 
     PoolId public immutable poolId;
@@ -63,7 +67,10 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     mapping(address => uint256) public sharesByUser;
 
-    address public protocolFeeCollector;
+    address public hookFeeCollector;
+
+    uint256 public hookFeesAccrued0;
+    uint256 public hookFeesAccrued1;
 
     /// Errors
 
@@ -79,6 +86,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
     error InvalidAction();
+    error NoHookFeeCollector();
+    error NoFeesToClaim();
 
     /// Events
 
@@ -86,7 +95,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     event StoppedRampA(uint256 currentA, uint256 time);
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
-    event ProtocolFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
+    event HookFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
+    event HookFeesClaimed(address indexed collector, uint256 amount0, uint256 amount1);
 
     /// Deployment
 
@@ -181,12 +191,47 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         emit StoppedRampA(currentA, block.timestamp);
     }
 
-    /// @notice Set the protocol fee collector address
-    /// @param _protocolFeeCollector The new protocol fee collector address
-    function setProtocolFeeCollector(address _protocolFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        address oldCollector = protocolFeeCollector;
-        protocolFeeCollector = _protocolFeeCollector;
-        emit ProtocolFeeCollectorChanged(oldCollector, _protocolFeeCollector);
+    /// @notice Set the hook fee collector address
+    /// @param _hookFeeCollector The new hook fee collector address
+    function setHookFeeCollector(address _hookFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address oldCollector = hookFeeCollector;
+        hookFeeCollector = _hookFeeCollector;
+        emit HookFeeCollectorChanged(oldCollector, _hookFeeCollector);
+    }
+
+    /// @notice Claim accrued hook fees and send them to the hook fee collector
+    /// @dev This function is permissionless - anyone can call it to trigger the fee transfer
+    /// @dev This only claims fees accrued by this hook, NOT Uniswap v4's protocol fees
+    function claimHookFees() external {
+        address collector = hookFeeCollector;
+        if (collector == address(0)) {
+            revert NoHookFeeCollector();
+        }
+
+        uint256 amount0 = hookFeesAccrued0;
+        uint256 amount1 = hookFeesAccrued1;
+
+        if (amount0 == 0 && amount1 == 0) {
+            revert NoFeesToClaim();
+        }
+
+        // Reset accrued fees before transfer (reentrancy protection)
+        hookFeesAccrued0 = 0;
+        hookFeesAccrued1 = 0;
+
+        // Transfer accrued fees from this contract to the collector
+        // These tokens are held as ERC6909 claims in the PoolManager
+        if (amount0 > 0) {
+            poolManager.burn(address(this), currency0.toId(), amount0);
+            poolManager.take(currency0, collector, amount0);
+        }
+
+        if (amount1 > 0) {
+            poolManager.burn(address(this), currency1.toId(), amount1);
+            poolManager.take(currency1, collector, amount1);
+        }
+
+        emit HookFeesClaimed(collector, amount0, amount1);
     }
 
     /// @notice Add liquidity to the pool
@@ -325,19 +370,31 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             revert InvalidPoolId();
         }
 
-        int128 dy = _swap(params);
+        (int128 dy, uint256 protocolFee) = _swap(params);
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
 
         if (params.zeroForOne) {
+            // Swap: token0 -> token1
+            // User pays token0, receives token1
+            // Hook fee is in token1 (the output token)
             poolManager.burn(address(this), currency1.toId(), uint128(dy));
             poolManager.mint(address(this), currency0.toId(), uint256(-params.amountSpecified));
             reserves0 += uint256(-params.amountSpecified);
             reserves1 -= uint128(dy);
+
+            // Accrue hook fee (stays as ERC6909 claims in this contract)
+            hookFeesAccrued1 += protocolFee;
         } else {
+            // Swap: token1 -> token0
+            // User pays token1, receives token0
+            // Hook fee is in token0 (the output token)
             poolManager.mint(address(this), currency1.toId(), uint256(-params.amountSpecified));
             poolManager.burn(address(this), currency0.toId(), uint128(dy));
             reserves0 -= uint128(dy);
             reserves1 += uint256(-params.amountSpecified);
+
+            // Accrue hook fee (stays as ERC6909 claims in this contract)
+            hookFeesAccrued0 += protocolFee;
         }
 
         return (BaseHook.beforeSwap.selector, delta, 0);
@@ -462,7 +519,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
-    function _swap(SwapParams calldata params) private view returns (int128) {
+    function _swap(SwapParams calldata params) private view returns (int128, uint256) {
         uint256 xp0 = StableSwapMath.scaleTo(reserves0, rate0);
         uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
 
@@ -471,6 +528,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
 
         int256 dy;
+        uint256 protocolFee;
 
         // Determine token direction and rates
         bool isToken0In = params.zeroForOne;
@@ -482,11 +540,11 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         if (dx < 0) {
             // Exact input swap: user specifies how much they want to put in
             // dx is negative, representing amount being taken from user
-            dy = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
+            (dy, protocolFee) = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
         } else {
             // Exact output swap: user specifies how much they want to receive
             // dx is positive, representing desired output amount
-            dy = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
+            (dy, protocolFee) = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
         }
 
         // TODO
@@ -494,7 +552,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // TODO
         // Check dy against amount * sqrtPrice => min to receive
-        return dy.toInt128();
+        return (dy.toInt128(), protocolFee);
     }
 
     /// @dev Performs an exact input swap calculation
@@ -505,7 +563,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param rateOut Rate multiplier for output token
     /// @param memAmp Amplification coefficient
     /// @param D Invariant D
-    /// @return Amount of output token to give to user (positive = user receives)
+    /// @return dy Amount of output token to give to user (positive = user receives)
+    /// @return protocolFee Amount of output token to accrue as hook fee
     function _swapExactInput(
         uint256 xpIn,
         uint256 xpOut,
@@ -514,7 +573,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 rateOut,
         uint256 memAmp,
         uint256 D
-    ) private pure returns (int256) {
+    ) private pure returns (int256 dy, uint256 protocolFee) {
         // Convert input amount to precision units and add to reserves
         uint256 xIn = xpIn + StableSwapMath.scaleTo(amountIn, rateIn);
 
@@ -523,18 +582,27 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         // Subtract 1 to round in favor of the pool
         uint256 dyGross = xpOut - xOut - 1;
 
-        // TODO
         // Fee handling: Apply fee to the output amount
-        // Fee is deducted from the amount user receives
-        // net_output = gross_output * (1 - fee_rate)
-        // net_output = gross_output * (FEE_DENOMINATOR - FEE) / FEE_DENOMINATOR
+        // Total fee is split between:
+        // 1. LP fees (stay in reserves, benefit liquidity providers)
+        // 2. Hook fees (tracked separately, claimable by hook fee collector)
+        //
+        // Fee calculation:
+        // - dyFee = total fee amount
+        // - hookPortion = fee amount for hook
+        // - lpPortion = fee amount for LPs (implicitly: dyFee - hookPortion)
+        // - dyNet = amount user receives after all fees
         uint256 dyFee = (dyGross * FEE) / FEE_DENOMINATOR;
         uint256 dyNet = dyGross - dyFee;
 
+        // Calculate hook fee portion (in precision units)
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / HOOK_FEE_PERCENTAGE_DENOMINATOR;
+
         // Convert from precision units to real token units
         uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
+        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
 
-        return int256(amountOut);
+        return (int256(amountOut), protocolFee);
     }
 
     /// @dev Performs an exact output swap calculation
@@ -545,7 +613,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param rateOut Rate multiplier for output token
     /// @param memAmp Amplification coefficient
     /// @param D Invariant D
-    /// @return Amount of input token to take from user (negative = user pays)
+    /// @return dy Amount of input token to take from user (negative = user pays)
+    /// @return protocolFee Amount of output token to accrue as hook fee
     function _swapExactOutput(
         uint256 xpIn,
         uint256 xpOut,
@@ -554,16 +623,19 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 rateOut,
         uint256 memAmp,
         uint256 D
-    ) private pure returns (int256) {
+    ) private pure returns (int256 dy, uint256 protocolFee) {
         // Convert desired output to precision units
         uint256 dyNet = StableSwapMath.scaleTo(amountOut, rateOut);
 
-        // TODO
         // Fee handling: Calculate gross output needed to deliver net output after fees
         // Since fee is applied to output: net_output = gross_output * (1 - fee_rate)
         // Solving for gross_output: gross_output = net_output / (1 - fee_rate)
         // Which equals: gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
         uint256 dyGross = (dyNet * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
+
+        // Calculate total fee and hook portion
+        uint256 dyFee = dyGross - dyNet;
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / HOOK_FEE_PERCENTAGE_DENOMINATOR;
 
         // Calculate new output reserve after removing gross output
         uint256 xOut = xpOut - dyGross;
@@ -576,8 +648,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // Convert from precision units to real token units
         uint256 amountIn = StableSwapMath.descale(dxRequired, rateIn);
+        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
 
         // Return as negative to indicate amount to take from user
-        return -int256(amountIn);
+        return (-int256(amountIn), protocolFee);
     }
 }
