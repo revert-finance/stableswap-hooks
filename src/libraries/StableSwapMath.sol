@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+
+import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+
 library StableSwapMath {
     /// @dev Precision divisor for amplification coefficient calculations.
     uint256 internal constant AMPLIFICATION_PRECISION = 100;
@@ -111,5 +115,12 @@ library StableSwapMath {
     /// @return Token-denominated amount.
     function descale(uint256 amount, uint256 rate) internal pure returns (uint256) {
         return amount * RATE_PRECISION / rate;
+    }
+
+    /// @dev Returns the rate for a given currency.
+    /// @param currency The currency to get the rate for.
+    /// @return The rate for the currency.
+    function getRate(Currency currency) internal view returns (uint256) {
+        return 10 ** (36 - IERC20Metadata(Currency.unwrap(currency)).decimals());
     }
 }

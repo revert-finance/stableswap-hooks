@@ -29,6 +29,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     using TickMath for int24;
     using SafeERC20 for IERC20;
     using StableSwapMath for uint256;
+    using StableSwapMath for Currency;
 
     /// Constants
 
@@ -103,8 +104,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             hooks: IHooks(address(this))
         });
 
-        rate0 = 10 ** (36 - IERC20(Currency.unwrap(currency0_)).decimals());
-        rate1 = 10 ** (36 - IERC20(Currency.unwrap(currency1_)).decimals());
+        rate0 = currency0_.getRate();
+        rate1 = currency1_.getRate();
 
         poolId = key.toId();
 
