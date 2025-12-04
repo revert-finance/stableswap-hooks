@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {StableSwapHooksBaseTest} from "./StableSwapHooks.base.t.sol";
+import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title StableSwapHooksAccessTest
 /// @notice Tests for role-based access control
 contract StableSwapHooksAccessTest is StableSwapHooksBaseTest {
     function test_rampA_ShouldRevertWhenCalledByUnauthorizedUser() public {
-        uint256 futureA = 2e3;
+        uint256 futureA = 200;
         uint256 futureTime = block.timestamp + 1 days;
 
         bytes32 ampAdminRole = hooks.A_ADMIN_ROLE();
@@ -35,10 +35,10 @@ contract StableSwapHooksAccessTest is StableSwapHooksBaseTest {
     }
 
     function test_rampA_ShouldSucceedWhenCalledByAmpAdmin() public {
-        uint256 futureA = 2e3;
+        uint256 futureA = 200;
         uint256 futureTime = block.timestamp + 1 days;
 
-        vm.prank(ampAdmin);
+        vm.prank(amplificationAdmin);
         hooks.rampA(futureA, futureTime);
 
         assertEq(hooks.futureA(), futureA);
@@ -46,11 +46,11 @@ contract StableSwapHooksAccessTest is StableSwapHooksBaseTest {
 
     function test_stopRampA_ShouldSucceedWhenCalledByAmpAdmin() public {
         // First ramp
-        vm.prank(ampAdmin);
-        hooks.rampA(2e3, block.timestamp + 1 days);
+        vm.prank(amplificationAdmin);
+        hooks.rampA(200, block.timestamp + 1 days);
 
         // Then stop
-        vm.prank(ampAdmin);
+        vm.prank(amplificationAdmin);
         hooks.stopRampA();
 
         assertEq(hooks.initialA(), hooks.futureA());
