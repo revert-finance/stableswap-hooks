@@ -63,6 +63,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     mapping(address => uint256) public sharesByUser;
 
+    address public protocolFeeCollector;
+
     /// Errors
 
     error InvalidA();
@@ -84,6 +86,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     event StoppedRampA(uint256 currentA, uint256 time);
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    event ProtocolFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
 
     /// Deployment
 
@@ -176,6 +179,14 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         futureATime = block.timestamp;
 
         emit StoppedRampA(currentA, block.timestamp);
+    }
+
+    /// @notice Set the protocol fee collector address
+    /// @param _protocolFeeCollector The new protocol fee collector address
+    function setProtocolFeeCollector(address _protocolFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address oldCollector = protocolFeeCollector;
+        protocolFeeCollector = _protocolFeeCollector;
+        emit ProtocolFeeCollectorChanged(oldCollector, _protocolFeeCollector);
     }
 
     /// @notice Add liquidity to the pool
