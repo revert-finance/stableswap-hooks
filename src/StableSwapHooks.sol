@@ -253,7 +253,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: false,
-            beforeDonate: false,
+            beforeDonate: true,
             afterDonate: false,
             beforeSwapReturnDelta: true,
             afterSwapReturnDelta: false,
@@ -286,6 +286,17 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @dev Reverts if liquidity is modified via PoolManager.modifyLiquidity function.
     /// Liquidity should be removed via the removeLiquidity function of this contract.
     function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        view
+        override
+        returns (bytes4)
+    {
+        revert UseHookLiquidityModifiers(address(this));
+    }
+
+    /// @dev Reverts if someone tries to donate tokens to the pool.
+    /// All liquidity must be handled via the liquidity modifier functions of this contract.
+    function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         internal
         view
         override
