@@ -136,4 +136,16 @@ contract StableSwapMathTest is Test {
         // Higher A should give more output (less slippage)
         assertTrue(outHighA > outLowA);
     }
+
+    function test_scaleTo_and_descale_roundTrip() public pure {
+        // Token with 6 decimals => rate stored as 1e30, effective factor 1e12 after / 1e18
+        uint256 rate = 1e30;
+        uint256 tokenAmount = 123e6; // 123 token with 6 decimals
+
+        uint256 scaledTo = StableSwapMath.scaleTo(tokenAmount, rate);
+        uint256 descaled = StableSwapMath.descale(scaledTo, rate);
+
+        assertEq(scaledTo, 123e18);
+        assertEq(descaled, tokenAmount);
+    }
 }
