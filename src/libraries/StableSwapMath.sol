@@ -12,6 +12,7 @@ library StableSwapMath {
 
     /// @notice Compute the StableSwap invariant D for two reserves.
     /// @dev Iteratively solves A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i), starting with D = Σx_i.
+    /// Reserves must be pre-scaled to 1e18 precision; 
     /// @param reserves0 Scaled reserve of currency 0.
     /// @param reserves1 Scaled reserve of currency 1.
     /// @param amplification Amplification coefficient A.
@@ -57,10 +58,10 @@ library StableSwapMath {
 
     /// @notice Compute the missing reserves given the other reserve and invariant.
     /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserve.
-    /// @param knownReserves The known reserve after a swap (scaled).
+    /// @param knownReserves The known reserve after a swap (scaled to 1e18 decimals).
     /// @param amplification Amplification coefficient A.
     /// @param invariant The invariant D that must be preserved.
-    /// @return otherReserve The calculated missing reserve.
+    /// @return otherReserve The calculated missing reserve (scaled).
     function getOtherReserves(uint256 knownReserves, uint256 amplification, uint256 invariant)
         internal
         pure
