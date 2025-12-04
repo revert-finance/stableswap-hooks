@@ -78,6 +78,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
+    error InvalidAction();
 
     /// Events
 
@@ -208,6 +209,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             _handleAddLiquidityCallback(data);
         } else if (action == REMOVE_LIQUIDITY_ACTION) {
             _handleRemoveLiquidityCallback(data);
+        } else {
+            revert InvalidAction();
         }
     }
 
