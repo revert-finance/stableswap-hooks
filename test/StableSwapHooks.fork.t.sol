@@ -15,8 +15,6 @@ import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
-    using SafeERC20 for IERC20;
-
     function setUp() public override {
         vm.selectFork(vm.createFork(vm.envString("MAINNET_RPC_URL")));
         super.setUp();
