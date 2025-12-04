@@ -8,11 +8,14 @@ library StableSwapMath {
     /// @dev Number of currencies in the pool (n in the invariant formula).
     uint256 internal constant CURRENCY_COUNT = 2;
 
+    /// @dev Fixed-point precision (1e18) used when scaling token rates and amounts.
+    uint256 internal constant RATE_PRECISION = 1e18;
+
     error ConvergenceNotReached();
 
     /// @notice Compute the StableSwap invariant D for two reserves.
     /// @dev Iteratively solves A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i), starting with D = Σx_i.
-    /// Reserves must be pre-scaled to 1e18 precision; 
+    /// Reserves must be pre-scaled to 1e18 precision;
     /// @param reserves0 Scaled reserve of currency 0.
     /// @param reserves1 Scaled reserve of currency 1.
     /// @param amplification Amplification coefficient A.
@@ -92,5 +95,13 @@ library StableSwapMath {
         }
 
         revert ConvergenceNotReached();
+    }
+
+    function scaleTo(uint256 amount, uint256 rate) internal pure returns (uint256) {
+        return rate * amount / RATE_PRECISION;
+    }
+
+    function descale(uint256 amount, uint256 rate) internal pure returns (uint256) {
+        return amount * RATE_PRECISION / rate;
     }
 }

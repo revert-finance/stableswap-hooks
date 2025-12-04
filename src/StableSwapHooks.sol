@@ -28,6 +28,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     using SafeCast for uint256;
     using TickMath for int24;
     using SafeERC20 for IERC20;
+    using StableSwapMath for uint256;
 
     /// Constants
 
@@ -36,7 +37,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     uint256 public constant MAX_A = 1e6;
     uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
     uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
-    uint256 public constant RATE_PRECISION = 1e18;
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
@@ -344,9 +344,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 newReserves1 = oldReserves1 + amount1;
 
         // Calculate new invariant
-        uint256 newInvariant = StableSwapMath.getInvariant(
-            rate0 * newReserves0 / RATE_PRECISION, rate1 * newReserves1 / RATE_PRECISION, A()
-        );
+        uint256 newInvariant =
+            StableSwapMath.getInvariant(newReserves0.scaleTo(rate0), newReserves1.scaleTo(rate1), A());
 
         // TODO: Handle min liquidity to prevent dust attacks
         if (oldTotalShares == 0) {
@@ -354,9 +353,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             newShares = newInvariant;
         } else {
             // Compute the old invariant
-            uint256 oldInvariant = StableSwapMath.getInvariant(
-                rate0 * oldReserves0 / RATE_PRECISION, rate1 * oldReserves1 / RATE_PRECISION, A()
-            );
+            uint256 oldInvariant =
+                StableSwapMath.getInvariant(oldReserves0.scaleTo(rate0), oldReserves1.scaleTo(rate1), A());
 
             // Check that the new invariant is higher
             if (newInvariant <= oldInvariant) {
@@ -442,8 +440,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     }
 
     function _swap(SwapParams calldata params) private view returns (int128) {
-        uint256 xp0 = (rate0 * reserves0) / RATE_PRECISION;
-        uint256 xp1 = (rate1 * reserves1) / RATE_PRECISION;
+        uint256 xp0 = rate0.scaleTo(reserves0);
+        uint256 xp1 = rate1.scaleTo(reserves1);
 
         int256 dx = params.amountSpecified;
         uint256 memAmp = A();
@@ -495,7 +493,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert input amount to precision units and add to reserves
-        uint256 xIn = xpIn + (amountIn * rateIn) / RATE_PRECISION;
+        uint256 xIn = xpIn + amountIn.scaleTo(rateIn);
 
         uint256 xOut = StableSwapMath.getOtherReserves(xIn, memAmp, D);
 
@@ -511,7 +509,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dyNet = dyGross - dyFee;
 
         // Convert from precision units to real token units
-        uint256 amountOut = (dyNet * RATE_PRECISION) / rateOut;
+        uint256 amountOut = dyNet.descale(rateOut);
 
         return int256(amountOut);
     }
@@ -535,7 +533,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert desired output to precision units
-        uint256 dyNet = (amountOut * rateOut) / RATE_PRECISION;
+        uint256 dyNet = amountOut.scaleTo(rateOut);
 
         // TODO
         // Fee handling: Calculate gross output needed to deliver net output after fees
@@ -554,7 +552,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dxRequired = xIn - xpIn;
 
         // Convert from precision units to real token units
-        uint256 amountIn = (dxRequired * RATE_PRECISION) / rateIn;
+        uint256 amountIn = dxRequired.descale(rateIn);
 
         // Return as negative to indicate amount to take from user
         return -int256(amountIn);
