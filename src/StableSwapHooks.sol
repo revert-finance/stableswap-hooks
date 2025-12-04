@@ -88,6 +88,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     error InvalidAction();
     error NoHookFeeCollector();
     error NoFeesToClaim();
+    error InvalidFeeCollector();
 
     /// Events
 
@@ -100,10 +101,17 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     /// Deployment
 
-    constructor(uint256 _initialA, IPoolManager manager, Currency currency0_, Currency currency1_)
-        BaseHook(manager)
-        ERC20("StableSwap LP", "ssLP")
-    {
+    constructor(
+        uint256 _initialA,
+        IPoolManager manager,
+        Currency currency0_,
+        Currency currency1_,
+        address _feeCollector
+    ) BaseHook(manager) ERC20("StableSwap LP", "ssLP") {
+        if (_feeCollector == address(0)) {
+            revert InvalidFeeCollector();
+        }
+
         currency0 = currency0_;
         currency1 = currency1_;
 
@@ -129,6 +137,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         // Set to 0 to allow immediate first ramp
         initialATime = 0;
         futureATime = 0;
+
+        hookFeeCollector = _feeCollector;
 
         // Grant deployer the default admin role and AMP_ADMIN_ROLE
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -194,6 +204,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @notice Set the hook fee collector address
     /// @param _hookFeeCollector The new hook fee collector address
     function setHookFeeCollector(address _hookFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_hookFeeCollector == address(0)) {
+            revert InvalidFeeCollector();
+        }
         address oldCollector = hookFeeCollector;
         hookFeeCollector = _hookFeeCollector;
         emit HookFeeCollectorChanged(oldCollector, _hookFeeCollector);
