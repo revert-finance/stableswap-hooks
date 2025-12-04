@@ -28,8 +28,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     using SafeCast for uint256;
     using TickMath for int24;
     using SafeERC20 for IERC20;
-    using StableSwapMath for uint256;
-    using StableSwapMath for Currency;
 
     /// Constants
 
@@ -104,8 +102,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             hooks: IHooks(address(this))
         });
 
-        rate0 = currency0_.getRate();
-        rate1 = currency1_.getRate();
+        rate0 = StableSwapMath.getRate(currency0_);
+        rate1 = StableSwapMath.getRate(currency1_);
 
         poolId = key.toId();
 
@@ -345,8 +343,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 newReserves1 = oldReserves1 + amount1;
 
         // Calculate new invariant
-        uint256 newInvariant =
-            StableSwapMath.getInvariant(newReserves0.scaleTo(rate0), newReserves1.scaleTo(rate1), A());
+        uint256 newInvariant = StableSwapMath.getInvariant(
+            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), A()
+        );
 
         // TODO: Handle min liquidity to prevent dust attacks
         if (oldTotalShares == 0) {
@@ -354,8 +353,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             newShares = newInvariant;
         } else {
             // Compute the old invariant
-            uint256 oldInvariant =
-                StableSwapMath.getInvariant(oldReserves0.scaleTo(rate0), oldReserves1.scaleTo(rate1), A());
+            uint256 oldInvariant = StableSwapMath.getInvariant(
+                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), A()
+            );
 
             // Check that the new invariant is higher
             if (newInvariant <= oldInvariant) {
@@ -441,8 +441,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     }
 
     function _swap(SwapParams calldata params) private view returns (int128) {
-        uint256 xp0 = rate0.scaleTo(reserves0);
-        uint256 xp1 = rate1.scaleTo(reserves1);
+        uint256 xp0 = StableSwapMath.scaleTo(reserves0, rate0);
+        uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
 
         int256 dx = params.amountSpecified;
         uint256 memAmp = A();
@@ -494,7 +494,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert input amount to precision units and add to reserves
-        uint256 xIn = xpIn + amountIn.scaleTo(rateIn);
+        uint256 xIn = xpIn + StableSwapMath.scaleTo(amountIn, rateIn);
 
         uint256 xOut = StableSwapMath.getOtherReserves(xIn, memAmp, D);
 
@@ -510,7 +510,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dyNet = dyGross - dyFee;
 
         // Convert from precision units to real token units
-        uint256 amountOut = dyNet.descale(rateOut);
+        uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
 
         return int256(amountOut);
     }
@@ -534,7 +534,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 D
     ) private pure returns (int256) {
         // Convert desired output to precision units
-        uint256 dyNet = amountOut.scaleTo(rateOut);
+        uint256 dyNet = StableSwapMath.scaleTo(amountOut, rateOut);
 
         // TODO
         // Fee handling: Calculate gross output needed to deliver net output after fees
@@ -553,7 +553,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 dxRequired = xIn - xpIn;
 
         // Convert from precision units to real token units
-        uint256 amountIn = dxRequired.descale(rateIn);
+        uint256 amountIn = StableSwapMath.descale(dxRequired, rateIn);
 
         // Return as negative to indicate amount to take from user
         return -int256(amountIn);
