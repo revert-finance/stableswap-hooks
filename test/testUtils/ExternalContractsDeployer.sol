@@ -32,6 +32,8 @@ abstract contract ExternalContractsDeployer is Test {
         }
 
         poolManager = IPoolManager(poolManagerAddress);
+
+        vm.label(poolManagerAddress, "PoolManager");
     }
 
     function _deployPermit2() private {
@@ -44,6 +46,8 @@ abstract contract ExternalContractsDeployer is Test {
         }
 
         permit2 = IAllowanceTransfer(permit2Address);
+
+        vm.label(permit2Address, "Permit2");
     }
 
     function _deployUniversalRouter() private {
@@ -56,6 +60,8 @@ abstract contract ExternalContractsDeployer is Test {
         }
 
         universalRouter = IUniversalRouter(universalRouterAddress);
+
+        vm.label(universalRouterAddress, "UniversalRouter");
     }
 
     function _deployCurrency0() private {
@@ -69,6 +75,8 @@ abstract contract ExternalContractsDeployer is Test {
         }
 
         currency0 = Currency.wrap(currency0Address);
+
+        vm.label(currency0Address, "Currency0");
     }
 
     function _deployCurrency1() private {
@@ -82,6 +90,8 @@ abstract contract ExternalContractsDeployer is Test {
         }
 
         currency1 = Currency.wrap(currency1Address);
+
+        vm.label(currency1Address, "Currency1");
     }
 
     function _deploy(bytes memory _initcode) private returns (address contractAddress) {
