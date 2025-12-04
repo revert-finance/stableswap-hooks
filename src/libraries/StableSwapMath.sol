@@ -63,16 +63,16 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
-    /// @notice Compute the missing reserves given the other reserve and invariant.
-    /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserve.
-    /// @param knownReserves The known reserve after a swap (scaled to 1e18 decimals).
+    /// @notice Compute the missing reserves given the other reserves and invariant.
+    /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserves.
+    /// @param knownReserves The known reserves after a swap (scaled to 1e18 decimals).
     /// @param amplification Amplification coefficient A.
     /// @param invariant The invariant D that must be preserved.
-    /// @return otherReserve The calculated missing reserve (scaled).
+    /// @return otherReserves The calculated missing reserves (scaled).
     function getOtherReserves(uint256 knownReserves, uint256 amplification, uint256 invariant)
         internal
         pure
-        returns (uint256 otherReserve)
+        returns (uint256 otherReserves)
     {
         uint256 ampTimesCoins = amplification * CURRENCY_COUNT;
 
@@ -83,18 +83,18 @@ library StableSwapMath {
         // linearCoefficient = x + D / (A * n^n)
         uint256 linearCoefficient = knownReserves + (invariant * AMPLIFICATION_PRECISION) / ampTimesCoins;
 
-        otherReserve = invariant;
+        otherReserves = invariant;
 
         for (uint256 i = 0; i < 255; ++i) {
-            uint256 previousOtherReserve = otherReserve;
+            uint256 previousOtherReserves = otherReserves;
 
-            otherReserve =
-                (otherReserve * otherReserve + constantTerm) / (2 * otherReserve + linearCoefficient - invariant);
+            otherReserves =
+                (otherReserves * otherReserves + constantTerm) / (2 * otherReserves + linearCoefficient - invariant);
 
-            if (otherReserve > previousOtherReserve) {
-                if (otherReserve - previousOtherReserve <= 1) return otherReserve;
+            if (otherReserves > previousOtherReserves) {
+                if (otherReserves - previousOtherReserves <= 1) return otherReserves;
             } else {
-                if (previousOtherReserve - otherReserve <= 1) return otherReserve;
+                if (previousOtherReserves - otherReserves <= 1) return otherReserves;
             }
         }
 
