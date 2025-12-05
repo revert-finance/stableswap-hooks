@@ -28,4 +28,20 @@ contract StableSwapHooksHarness is StableSwapHooks {
             _lpFeePercentage
         )
     {}
+
+    function handleWithdrawProtocolFeesCallback() external {
+        _handleWithdrawProtocolFeesCallback();
+    }
+
+    function handleWithdrawHookFeesCallback(bytes memory data) external {
+        _handleWithdrawHookFeesCallback(data);
+    }
+
+    function getFees(uint256 _amount) external view returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees) {
+        return _getFees(_amount);
+    }
+
+    function addFees(bool _isCurrency0, uint256 _protocolFees, uint256 _hookFees) external {
+        _addFees(_isCurrency0, _protocolFees, _hookFees);
+    }
 }
