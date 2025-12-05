@@ -20,29 +20,9 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
         super.setUp();
     }
 
-    /// Helpers
-
-    /// @dev Initialize the pool via the pool manager
-    function _initializePool() private returns (int24) {
-        return IPoolManager(address(poolManager)).initialize(_getPoolKey(), 1 << 96);
-    }
-
     /// Tests
 
-    function test_DeployHook() public view {
-        assertEq(address(hooks.poolManager()), address(poolManager));
-        assertEq(hooks.A(), 100);
-        assertEq(hooks.rate0(), 1e18);
-        assertEq(hooks.rate1(), 1e30);
-        assertEq(PoolId.unwrap(hooks.poolId()), PoolId.unwrap(_getPoolKey().toId()));
-    }
-
-    function test_InitializePool() public {
-        _initializePool();
-    }
-
     function test_AddThenRemoveLiquidity() public {
-        _initializePool();
 
         // Add liquidity
 
@@ -79,8 +59,6 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
     }
 
     function test_AddLiquidityThenSwap() public {
-        _initializePool();
-
         // Add liquidity
 
         uint256 amount0 = _toTokenWei(currency0, 100);

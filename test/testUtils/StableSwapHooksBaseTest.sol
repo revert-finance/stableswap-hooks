@@ -19,6 +19,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
     uint256 internal constant BASE_FEE_PERCENTAGE = 1000;
+    uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
 
     StableSwapHooks internal hooks;
 
@@ -29,7 +30,9 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     address internal swapper;
     address internal protocolFeeCollector;
 
-    function setUp() public virtual {
+    function setUp() public override virtual {
+        super.setUp();
+
         defaultAdmin = makeAddr("defaultAdmin");
         amplificationAdmin = makeAddr("amplificationAdmin");
         liquidityProvider = makeAddr("liquidityProvider");
@@ -37,10 +40,20 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         unauthorizedUser = makeAddr("unauthorizedUser");
         protocolFeeCollector = makeAddr("protocolFeeCollector");
 
-        _deployExternalContracts();
         _deployHooks();
         _grantRoles();
         _dealTokens();
+        _initializePool();
+    }
+
+    function _getPoolKey() internal view returns (PoolKey memory) {
+        return PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            fee: uint24(BASE_FEE_PERCENTAGE),
+            tickSpacing: hooks.TICK_SPACING(),
+            hooks: IHooks(address(hooks))
+        });
     }
 
     function _deployHooks() private {
@@ -78,16 +91,6 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         );
     }
 
-    function _getPoolKey() internal view returns (PoolKey memory) {
-        return PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: BASE_FEE_PERCENTAGE,
-            tickSpacing: hooks.TICK_SPACING(),
-            hooks: IHooks(address(hooks))
-        });
-    }
-
     function _grantRoles() private {
         hooks.grantRole(hooks.DEFAULT_ADMIN_ROLE(), defaultAdmin);
         hooks.grantRole(hooks.A_ADMIN_ROLE(), amplificationAdmin);
@@ -110,6 +113,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         permit2.approve(Currency.unwrap(currency0), address(universalRouter), type(uint160).max, type(uint48).max);
         permit2.approve(Currency.unwrap(currency1), address(universalRouter), type(uint160).max, type(uint48).max);
         vm.stopPrank();
+    }
+
+    function _initializePool() private {
+        poolManager.initialize(_getPoolKey(), BASE_SQRT_PRICE_X96);
     }
 
     function _toTokenWei(Currency _currency, uint256 _amount) internal view returns (uint256) {
