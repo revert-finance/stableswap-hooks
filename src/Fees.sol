@@ -276,17 +276,14 @@ abstract contract Fees is AccessControlEnumerable, Base {
             revert InvalidAddress();
         }
 
-        Currency _currency0 = currency0;
-        Currency _currency1 = currency1;
-
         if (_fees0 != 0) {
-            poolManager.burn(address(this), _currency0.toId(), _fees0);
-            poolManager.take(_currency0, _beneficiary, _fees0);
+            poolManager.burn(address(this), currency0.toId(), _fees0);
+            poolManager.take(currency0, _beneficiary, _fees0);
         }
 
         if (_fees1 != 0) {
-            poolManager.burn(address(this), _currency1.toId(), _fees1);
-            poolManager.take(_currency1, _beneficiary, _fees1);
+            poolManager.burn(address(this), currency1.toId(), _fees1);
+            poolManager.take(currency1, _beneficiary, _fees1);
         }
     }
 }
