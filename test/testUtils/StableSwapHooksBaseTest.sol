@@ -25,6 +25,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     address internal unauthorizedUser;
     address internal liquidityProvider;
     address internal swapper;
+    address internal protocolFeeCollector;
 
     function setUp() public virtual {
         defaultAdmin = makeAddr("defaultAdmin");
@@ -32,6 +33,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
         unauthorizedUser = makeAddr("unauthorizedUser");
+        protocolFeeCollector = makeAddr("protocolFeeCollector");
 
         _deployExternalContracts();
         _deployHooks();
@@ -50,10 +52,12 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             address(this),
             flags,
             type(StableSwapHooks).creationCode,
-            abi.encode(amplification, poolManager, currency0, currency1)
+            abi.encode(amplification, poolManager, currency0, currency1, protocolFeeCollector)
         );
 
-        hooks = new StableSwapHooks{salt: salt}(amplification, IPoolManager(poolManager), currency0, currency1);
+        hooks = new StableSwapHooks{salt: salt}(
+            amplification, IPoolManager(poolManager), currency0, currency1, protocolFeeCollector
+        );
     }
 
     function _getPoolKey() internal view returns (PoolKey memory) {
