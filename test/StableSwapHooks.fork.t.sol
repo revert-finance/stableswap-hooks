@@ -23,7 +23,6 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
     /// Tests
 
     function test_AddThenRemoveLiquidity() public {
-
         // Add liquidity
 
         uint256 amount0 = _toTokenWei(currency0, 100);

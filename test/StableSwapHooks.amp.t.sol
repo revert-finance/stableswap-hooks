@@ -238,13 +238,13 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         uint256 futureTime = block.timestamp + 1 days;
 
-        vm.prank(amplificationAdmin);
-
         if (multiplier > hooks.MAX_A_CHANGE()) {
+            vm.prank(amplificationAdmin);
             // Should revert if change is too large
             vm.expectRevert(StableSwapHooks.ExcessiveAmpChange.selector);
             hooks.rampA(futureA, futureTime);
         } else {
+            vm.prank(amplificationAdmin);
             // Should succeed if within limits
             hooks.rampA(futureA, futureTime);
             assertEq(hooks.futureA(), futureA);
