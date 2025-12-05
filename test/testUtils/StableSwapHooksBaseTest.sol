@@ -18,6 +18,8 @@ import {ExternalContractsDeployer} from "./ExternalContractsDeployer.sol";
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
+    uint256 internal constant BASE_FEE_PERCENTAGE = 1000;
+
     StableSwapHooks internal hooks;
 
     address internal defaultAdmin;
@@ -52,11 +54,27 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             address(this),
             flags,
             type(StableSwapHooks).creationCode,
-            abi.encode(amplification, poolManager, currency0, currency1, protocolFeeCollector)
+            abi.encode(
+                amplification,
+                poolManager,
+                currency0,
+                currency1,
+                protocolFeeCollector,
+                BASE_FEE_PERCENTAGE,
+                BASE_FEE_PERCENTAGE,
+                BASE_FEE_PERCENTAGE
+            )
         );
 
         hooks = new StableSwapHooks{salt: salt}(
-            amplification, IPoolManager(poolManager), currency0, currency1, protocolFeeCollector
+            amplification,
+            IPoolManager(poolManager),
+            currency0,
+            currency1,
+            protocolFeeCollector,
+            BASE_FEE_PERCENTAGE,
+            BASE_FEE_PERCENTAGE,
+            BASE_FEE_PERCENTAGE
         );
     }
 
@@ -64,7 +82,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         return PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: hooks.FEE(),
+            fee: BASE_FEE_PERCENTAGE,
             tickSpacing: hooks.TICK_SPACING(),
             hooks: IHooks(address(hooks))
         });

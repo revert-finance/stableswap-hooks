@@ -20,10 +20,12 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
-import {StableSwapMath} from "./libraries/StableSwapMath.sol";
-import {Actions} from "./libraries/Actions.sol";
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
+import {Actions} from "src/libraries/Actions.sol";
+import {Fees} from "src/Fees.sol";
+import {Base} from "src/Base.sol";
 
-contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
+contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
@@ -50,8 +52,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     PoolId public immutable poolId;
     uint256 public immutable rate0;
     uint256 public immutable rate1;
-    Currency public immutable currency0;
-    Currency public immutable currency1;
 
     /// Variables
 
@@ -102,28 +102,29 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     constructor(
         uint256 _initialA,
-        IPoolManager manager,
-        Currency currency0_,
-        Currency currency1_,
-        address _feeCollector
-    ) BaseHook(manager) ERC20("StableSwap LP", "ssLP") {
-        if (_feeCollector == address(0)) {
-            revert InvalidFeeCollector();
-        }
-
-        currency0 = currency0_;
-        currency1 = currency1_;
-
+        IPoolManager _poolManager,
+        Currency _currency0,
+        Currency _currency1,
+        address _protocolFeeCollector,
+        uint256 _protocolFeePercentage,
+        uint256 _hookFeePercentage,
+        uint256 _lpFeePercentage
+    )
+        BaseHook(_poolManager)
+        Base(_currency0, _currency1)
+        Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
+        ERC20("StableSwap LP", "ssLP")
+    {
         PoolKey memory key = PoolKey({
-            currency0: currency0_,
-            currency1: currency1_,
-            fee: FEE,
+            currency0: _currency0,
+            currency1: _currency1,
+            fee: uint24(_lpFeePercentage),
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(this))
         });
 
-        rate0 = StableSwapMath.getRate(currency0_);
-        rate1 = StableSwapMath.getRate(currency1_);
+        rate0 = StableSwapMath.getRate(_currency0);
+        rate1 = StableSwapMath.getRate(_currency1);
 
         poolId = key.toId();
 
@@ -136,8 +137,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         // Set to 0 to allow immediate first ramp
         initialATime = 0;
         futureATime = 0;
-
-        hookFeeCollector = _feeCollector;
 
         // Grant deployer the default admin role and AMP_ADMIN_ROLE
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
