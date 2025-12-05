@@ -9,19 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
-
-abstract contract Base {
-    IPoolManager public poolManager;
-
-    Currency public currency0;
-    Currency public currency1;
-
-    constructor(IPoolManager _poolManager, address _currency0, address _currency1) {
-        currency0 = Currency.wrap(_currency0);
-        currency1 = Currency.wrap(_currency1);
-        poolManager = _poolManager;
-    }
-}
+import {Base} from "src/Base.sol";
 
 abstract contract Fees is AccessControlEnumerable, Base {
     uint256 public constant FEE_PRECISION = 1e6;
@@ -114,6 +102,22 @@ abstract contract Fees is AccessControlEnumerable, Base {
         hookFees1 = 0;
 
         emit HookFeesWithdrawn(_msgSender(), _beneficiary, _hookFees0, _hookFees1);
+    }
+
+    function _getFees(uint256 _amount) internal returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees) {
+        lpFees = _amount * lpFeePercentage / FEE_PRECISION;
+        hookFees = _amount * hookFeePercentage / FEE_PRECISION;
+        protocolFees = _amount * protocolFeePercentage / FEE_PRECISION;
+    }
+
+    function _addFees(bool _isCurrency0, uint256 _protocolFees, uint256 _hookFees) internal {
+        if (_isCurrency0) {
+            protocolFees0 += _protocolFees;
+            hookFees0 += _hookFees;
+        } else {
+            protocolFees1 += _protocolFees;
+            hookFees1 += _hookFees;
+        }
     }
 
     function _setProtocolFeeCollector(address _protocolFeeCollector) private {
