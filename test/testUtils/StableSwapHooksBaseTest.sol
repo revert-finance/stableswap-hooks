@@ -12,8 +12,8 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
-import {ExternalContractsDeployer} from "./ExternalContractsDeployer.sol";
+import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
+import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
@@ -21,7 +21,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     uint256 internal constant BASE_FEE_PERCENTAGE = 1000;
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
 
-    StableSwapHooks internal hooks;
+    StableSwapHooksHarness internal hooks;
 
     address internal defaultAdmin;
     address internal amplificationAdmin;
@@ -30,7 +30,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     address internal swapper;
     address internal protocolFeeCollector;
 
-    function setUp() public override virtual {
+    function setUp() public virtual override {
         super.setUp();
 
         defaultAdmin = makeAddr("defaultAdmin");
@@ -66,7 +66,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         (, bytes32 salt) = HookMiner.find(
             address(this),
             flags,
-            type(StableSwapHooks).creationCode,
+            type(StableSwapHooksHarness).creationCode,
             abi.encode(
                 amplification,
                 poolManager,
@@ -79,7 +79,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             )
         );
 
-        hooks = new StableSwapHooks{salt: salt}(
+        hooks = new StableSwapHooksHarness{salt: salt}(
             amplification,
             IPoolManager(poolManager),
             currency0,
