@@ -18,7 +18,9 @@ import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeploye
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
-    uint256 internal constant BASE_FEE_PERCENTAGE = 1000;
+    uint256 internal constant BASE_PROTOCOL_FEE_PERCENTAGE = 100;
+    uint256 internal constant BASE_HOOK_FEE_PERCENTAGE = 200;
+    uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
 
     StableSwapHooksHarness internal hooks;
@@ -50,7 +52,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         return PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: uint24(BASE_FEE_PERCENTAGE),
+            fee: uint24(BASE_LP_FEE_PERCENTAGE),
             tickSpacing: hooks.TICK_SPACING(),
             hooks: IHooks(address(hooks))
         });
@@ -73,9 +75,9 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
                 currency0,
                 currency1,
                 protocolFeeCollector,
-                BASE_FEE_PERCENTAGE,
-                BASE_FEE_PERCENTAGE,
-                BASE_FEE_PERCENTAGE
+                BASE_PROTOCOL_FEE_PERCENTAGE,
+                BASE_HOOK_FEE_PERCENTAGE,
+                BASE_LP_FEE_PERCENTAGE
             )
         );
 
@@ -85,15 +87,17 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             currency0,
             currency1,
             protocolFeeCollector,
-            BASE_FEE_PERCENTAGE,
-            BASE_FEE_PERCENTAGE,
-            BASE_FEE_PERCENTAGE
+            BASE_PROTOCOL_FEE_PERCENTAGE,
+            BASE_HOOK_FEE_PERCENTAGE,
+            BASE_LP_FEE_PERCENTAGE
         );
     }
 
     function _grantRoles() private {
         hooks.grantRole(hooks.DEFAULT_ADMIN_ROLE(), defaultAdmin);
         hooks.grantRole(hooks.A_ADMIN_ROLE(), amplificationAdmin);
+        hooks.renounceRole(hooks.DEFAULT_ADMIN_ROLE(), address(this));
+        hooks.renounceRole(hooks.A_ADMIN_ROLE(), address(this));
     }
 
     function _dealTokens() private {
