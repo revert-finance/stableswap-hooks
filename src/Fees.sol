@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
-
 import {Actions} from "src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
-abstract contract Fees is AccessControlEnumerable, Base {
+abstract contract Fees is Base {
     /// @notice Precision constant for fee calculations (1,000,000 = 100%)
     uint256 public constant FEE_PRECISION = 1e6;
 

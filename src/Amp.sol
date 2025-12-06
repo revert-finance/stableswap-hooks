@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {Base} from "src/Base.sol";
 
 /// @notice Abstract contract that manages the amplification coefficient (A) for StableSwap pools
-abstract contract Amp is AccessControlEnumerable {
+abstract contract Amp is Base {
     /// @notice Maximum allowed amplification coefficient value
     uint256 public constant MAX_AMP = 1_000_000;
 

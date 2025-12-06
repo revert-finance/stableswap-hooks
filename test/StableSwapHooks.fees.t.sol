@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+
+import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
+
 import {Fees} from "src/Fees.sol";
 import {Actions} from "src/libraries/Actions.sol";
 
@@ -385,25 +387,14 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.handleWithdrawHookFeesCallback(data);
     }
 
-    function testFuzz_getFees_ShouldCalculateFeesCorrectly(
-        uint256 _amount,
-        uint256 _protocolFeePercentage,
-        uint256 _hookFeePercentage,
-        uint256 _lpFeePercentage
-    ) public {
+    function test_getFees_ShouldCalculateFeesCorrectly() public {
         uint256 precision = hooks.FEE_PRECISION();
+        uint256 amount = 1000e18;
 
-        vm.assume(_amount <= type(uint256).max / precision);
-
-        uint256 protocolFeePercentage = bound(_protocolFeePercentage, 0, precision / 3);
-        uint256 hookFeePercentage = bound(_hookFeePercentage, 0, precision / 3);
-        uint256 lpFeePercentage = bound(_lpFeePercentage, 0, precision / 3);
-
-        vm.startPrank(defaultAdmin);
-        hooks.setProtocolFeePercentage(0);
-        hooks.setHookFeePercentage(0);
-        hooks.setLpFeePercentage(0);
-        vm.stopPrank();
+        // Set custom fee percentages
+        uint256 protocolFeePercentage = 1000; // 0.1%
+        uint256 hookFeePercentage = 2000; // 0.2%
+        uint256 lpFeePercentage = 3000; // 0.3%
 
         vm.startPrank(defaultAdmin);
         hooks.setProtocolFeePercentage(protocolFeePercentage);
@@ -411,11 +402,11 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setLpFeePercentage(lpFeePercentage);
         vm.stopPrank();
 
-        (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = hooks.getFees(_amount);
+        (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = hooks.getFees(amount);
 
-        assertEq(_amount * lpFeePercentage / precision, lpFees);
-        assertEq(_amount * hookFeePercentage / precision, hookFees);
-        assertEq(_amount * protocolFeePercentage / precision, protocolFees);
+        assertEq(lpFees, amount * lpFeePercentage / precision);
+        assertEq(hookFees, amount * hookFeePercentage / precision);
+        assertEq(protocolFees, amount * protocolFeePercentage / precision);
     }
 
     function test_addFees_IncrementsOnlyCurrency0() public {

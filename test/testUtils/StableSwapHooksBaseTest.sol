@@ -2,16 +2,21 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
+
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
+
 import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 
@@ -22,11 +27,11 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     uint256 internal constant BASE_HOOK_FEE_PERCENTAGE = 200;
     uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
+    uint256 internal constant BASE_AMP = 100;
 
     StableSwapHooksHarness internal hooks;
 
     address internal defaultAdmin;
-    address internal amplificationAdmin;
     address internal unauthorizedUser;
     address internal liquidityProvider;
     address internal swapper;
@@ -35,15 +40,18 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     function setUp() public virtual override {
         super.setUp();
 
+        // Warp to realistic timestamp on local chain to avoid time-based issues
+        if (block.chainid == 31337) {
+            vm.warp(1731337000); // Monday, November 11, 2024 11:56:40 AM GMT-03:00
+        }
+
         defaultAdmin = makeAddr("defaultAdmin");
-        amplificationAdmin = makeAddr("amplificationAdmin");
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
         unauthorizedUser = makeAddr("unauthorizedUser");
         protocolFeeCollector = makeAddr("protocolFeeCollector");
 
         _deployHooks();
-        _grantRoles();
         _dealTokens();
         _initializePool();
     }
@@ -63,41 +71,33 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             | Hooks.BEFORE_DONATE_FLAG;
 
-        uint256 amplification = 100;
-
         (, bytes32 salt) = HookMiner.find(
-            address(this),
+            defaultAdmin,
             flags,
             type(StableSwapHooksHarness).creationCode,
             abi.encode(
-                amplification,
                 poolManager,
                 currency0,
                 currency1,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE
+                BASE_LP_FEE_PERCENTAGE,
+                BASE_AMP
             )
         );
 
+        vm.prank(defaultAdmin);
         hooks = new StableSwapHooksHarness{salt: salt}(
-            amplification,
             IPoolManager(poolManager),
             currency0,
             currency1,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE
+            BASE_LP_FEE_PERCENTAGE,
+            BASE_AMP
         );
-    }
-
-    function _grantRoles() private {
-        hooks.grantRole(hooks.DEFAULT_ADMIN_ROLE(), defaultAdmin);
-        hooks.grantRole(hooks.A_ADMIN_ROLE(), amplificationAdmin);
-        hooks.renounceRole(hooks.DEFAULT_ADMIN_ROLE(), address(this));
-        hooks.renounceRole(hooks.A_ADMIN_ROLE(), address(this));
     }
 
     function _dealTokens() private {

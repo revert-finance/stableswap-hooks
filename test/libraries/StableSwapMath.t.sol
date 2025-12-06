@@ -2,8 +2,10 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
+
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {StableSwapMath} from "../../src/libraries/StableSwapMath.sol";
+
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 contract TokenMock {
     uint8 public decimals;
@@ -14,12 +16,12 @@ contract TokenMock {
 }
 
 contract StableSwapMathTest is Test {
-    function test_getInvariant_returnsZeroForEmptyPool() public pure {
+    function test_getInvariant_ShouldReturnZeroForEmptyPool() public pure {
         uint256 invariant = StableSwapMath.getInvariant(0, 0, 100);
         assertEq(invariant, 0);
     }
 
-    function test_getInvariant_balancedPool() public pure {
+    function test_getInvariant_ShouldCalculateCorrectlyForBalancedPool() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -30,7 +32,7 @@ contract StableSwapMathTest is Test {
         assertEq(invariant, reserves0 + reserves1);
     }
 
-    function test_getInvariant_symmetry() public pure {
+    function test_getInvariant_ShouldBeSymmetric() public pure {
         uint256 reserves0 = 1234e18;
         uint256 reserves1 = 5678e18;
         uint256 amplification = 100;
@@ -41,7 +43,7 @@ contract StableSwapMathTest is Test {
         assertEq(invariant1, invariant2);
     }
 
-    function test_getInvariant_increasesWithReserves() public pure {
+    function test_getInvariant_ShouldIncreaseWithReserves() public pure {
         uint256 amplification = 100;
 
         uint256 invariantSmall = StableSwapMath.getInvariant(100e18, 100e18, amplification);
@@ -50,7 +52,7 @@ contract StableSwapMathTest is Test {
         assertTrue(invariantLarge > invariantSmall);
     }
 
-    function test_getInvariant_higherA_closerToSum() public pure {
+    function test_getInvariant_ShouldBeCloserToSumWithHigherA() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 2000e18;
         uint256 sum = reserves0 + reserves1;
@@ -65,7 +67,7 @@ contract StableSwapMathTest is Test {
         assertTrue(diffHighA < diffLowA);
     }
 
-    function test_getOtherReserves_balancedPool() public pure {
+    function test_getOtherReserves_ShouldCalculateCorrectlyForBalancedPool() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -77,7 +79,7 @@ contract StableSwapMathTest is Test {
         assertEq(otherReserve, reserves1);
     }
 
-    function test_getOtherReserves_preservesInvariant() public pure {
+    function test_getOtherReserves_ShouldPreserveInvariant() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -95,7 +97,7 @@ contract StableSwapMathTest is Test {
         assertApproxEqAbs(newInvariant, invariant, 1);
     }
 
-    function test_getOtherReserves_outputDecreasesReserve() public pure {
+    function test_getOtherReserves_ShouldDecreaseOutputReserve() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -109,7 +111,7 @@ contract StableSwapMathTest is Test {
         assertTrue(newOtherReserve < reserves1);
     }
 
-    function test_getOtherReserves_lowSlippage() public pure {
+    function test_getOtherReserves_ShouldHaveLowSlippageForSmallSwaps() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 amplification = 100;
@@ -127,7 +129,7 @@ contract StableSwapMathTest is Test {
         assertTrue(slippageBps < 100);
     }
 
-    function test_getOtherReserves_higherA_lowerSlippage() public pure {
+    function test_getOtherReserves_ShouldHaveLowerSlippageWithHigherA() public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
         uint256 swapIn = 100e18;
@@ -146,7 +148,7 @@ contract StableSwapMathTest is Test {
         assertTrue(outHighA > outLowA);
     }
 
-    function test_scaleTo_and_descale_roundTrip() public pure {
+    function test_scaleTo_ShouldRoundTripWithDescale() public pure {
         // Token with 6 decimals => rate stored as 1e30, effective factor 1e12 after / 1e18
         uint256 rate = 1e30;
         uint256 tokenAmount = 123e6; // 123 tokens with 6 decimals
@@ -158,19 +160,19 @@ contract StableSwapMathTest is Test {
         assertEq(descaled, tokenAmount);
     }
 
-    function test_scaleTo_zeroAmount() public pure {
+    function test_scaleTo_ShouldReturnZeroForZeroAmount() public pure {
         uint256 rate = 1e30;
 
         assertEq(StableSwapMath.scaleTo(0, rate), 0);
     }
 
-    function test_descale_zeroAmount() public pure {
+    function test_descale_ShouldReturnZeroForZeroAmount() public pure {
         uint256 rate = 1e30;
 
         assertEq(StableSwapMath.descale(0, rate), 0);
     }
 
-    function test_descale_inverts_scaleTo_forArbitraryAmounts() public pure {
+    function test_descale_ShouldInvertScaleToForArbitraryAmounts() public pure {
         // Token with 7 decimals => stored rate 1e29 (effective factor 1e11)
         uint256 rate = 1e29;
         uint256 amount = 123_456_789;
@@ -181,7 +183,7 @@ contract StableSwapMathTest is Test {
         assertEq(back, amount);
     }
 
-    function test_getRate_returnsExpectedDecimals() public {
+    function test_getRate_ShouldReturnExpectedDecimalsConversion() public {
         TokenMock token = new TokenMock(6);
         Currency currency = Currency.wrap(address(token));
         uint256 rate = StableSwapMath.getRate(currency);
