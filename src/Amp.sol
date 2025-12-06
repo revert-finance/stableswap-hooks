@@ -130,11 +130,11 @@ abstract contract Amp is AccessControlEnumerable {
     /// @return Current amplification coefficient (scaled by AMP_PRECISION)
     function _currentAmp() internal view returns (uint256) {
         uint256 _nextAmp = nextAmp;
+        uint256 _nextAmpTime = nextAmpTime;
 
         if (block.timestamp < _nextAmpTime) {
             uint256 _baseAmp = baseAmp;
             uint256 _baseAmpTime = baseAmpTime;
-            uint256 _nextAmpTime = nextAmpTime;
 
             return _nextAmp > _baseAmp
                 ? _baseAmp + (_nextAmp - _baseAmp) * (block.timestamp - _baseAmpTime) / (_nextAmpTime - _baseAmpTime)
