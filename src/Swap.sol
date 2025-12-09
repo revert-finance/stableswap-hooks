@@ -24,21 +24,22 @@ abstract contract Swap is Amp, Fees {
             revert InvalidPoolId();
         }
 
-        BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _stableSwap(_params));
+        BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_params));
 
         return (this.beforeSwap.selector, delta, 0);
     }
 
-    function _stableSwap(SwapParams calldata _params) private returns (int128) {
+    function _swap(SwapParams calldata _params) private returns (int128) {
         uint256 scaledReserves0 = StableSwapMath.scaleTo(reserves0, rate0);
         uint256 scaledReserves1 = StableSwapMath.scaleTo(reserves1, rate1);
         uint256 amp = _currentAmp();
         uint256 invariant = StableSwapMath.getInvariant(scaledReserves0, scaledReserves1, amp);
+        bool isExactInput = _params.amountSpecified < 0;
 
         uint256 unspecifiedAmount;
 
         if (_params.zeroForOne) {
-            if (_params.amountSpecified < 0) {
+            if (isExactInput) {
                 uint256 amountSpecified = uint256(-_params.amountSpecified);
                 uint256 newScaledReserves0 = scaledReserves0 + StableSwapMath.scaleTo(amountSpecified, rate0);
                 uint256 newScaledReserves1 = StableSwapMath.getOtherReserves(newScaledReserves0, amp, invariant);
@@ -68,7 +69,7 @@ abstract contract Swap is Amp, Fees {
                 unspecifiedAmount = inputPlusFees;
             }
         } else {
-            if (_params.amountSpecified < 0) {
+            if (isExactInput) {
                 uint256 amountSpecified = uint256(-_params.amountSpecified);
                 uint256 newScaledReserves1 = scaledReserves1 + StableSwapMath.scaleTo(amountSpecified, rate1);
                 uint256 newScaledReserves0 = StableSwapMath.getOtherReserves(newScaledReserves1, amp, invariant);
@@ -101,6 +102,6 @@ abstract contract Swap is Amp, Fees {
 
         int128 unspecifiedDelta = SafeCast.toInt128(SafeCast.toInt256(unspecifiedAmount));
 
-        return _params.amountSpecified < 0 ? -unspecifiedDelta : unspecifiedDelta;
+        return isExactInput ? -unspecifiedDelta : unspecifiedDelta;
     }
 }
