@@ -20,10 +20,13 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
-import {StableSwapMath} from "./libraries/StableSwapMath.sol";
-import {Actions} from "./libraries/Actions.sol";
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
+import {Actions} from "src/libraries/Actions.sol";
+import {Fees} from "src/Fees.sol";
+import {Base} from "src/Base.sol";
+import {Amp} from "src/Amp.sol";
 
-contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, ERC20 {
+contract StableSwapHooks is Amp, Fees, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
@@ -31,31 +34,21 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     /// Constants
 
-    bytes32 public constant A_ADMIN_ROLE = keccak256("A_ADMIN_ROLE");
-
-    uint256 public constant MAX_A = 1e6;
-    uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
-    uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
-
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
     uint256 public constant FEE_DENOMINATOR = 1e6; // 100%
     int24 public constant TICK_SPACING = 1;
+
+    // Hook fee percentage (of the total FEE).
+    uint256 public constant HOOK_FEE_PERCENTAGE = 2e5; // 20% of swap fees
 
     /// Immutables
 
     PoolId public immutable poolId;
     uint256 public immutable rate0;
     uint256 public immutable rate1;
-    Currency public immutable currency0;
-    Currency public immutable currency1;
 
     /// Variables
-
-    uint256 public initialA;
-    uint256 public futureA;
-    uint256 public initialATime;
-    uint256 public futureATime;
 
     uint256 public reserves0;
     uint256 public reserves1;
@@ -63,119 +56,114 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
     mapping(address => uint256) public sharesByUser;
 
+    address public hookFeeCollector;
+
+    uint256 public hookFeesAccrued0;
+    uint256 public hookFeesAccrued1;
+
     /// Errors
 
     error InvalidA();
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
-    error InsufficientRampTime();
     error InsufficientTimeSinceLastAChange();
-    error ExcessiveAmpChange();
     error InsufficientShares();
     error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
     error InvalidAction();
+    error NoHookFeeCollector();
+    error NoFeesToClaim();
+    error InvalidFeeCollector();
 
     /// Events
 
-    event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
-    event StoppedRampA(uint256 currentA, uint256 time);
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    event HookFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
+    event HookFeesClaimed(address indexed collector, uint256 amount0, uint256 amount1);
 
     /// Deployment
 
-    constructor(uint256 _initialA, IPoolManager manager, Currency currency0_, Currency currency1_)
-        BaseHook(manager)
+    constructor(
+        IPoolManager _poolManager,
+        Currency _currency0,
+        Currency _currency1,
+        address _protocolFeeCollector,
+        uint256 _protocolFeePercentage,
+        uint256 _hookFeePercentage,
+        uint256 _lpFeePercentage,
+        uint256 _baseAmp
+    )
+        Base(_poolManager, _currency0, _currency1)
+        Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
+        Amp(_baseAmp)
         ERC20("StableSwap LP", "ssLP")
     {
-        currency0 = currency0_;
-        currency1 = currency1_;
-
         PoolKey memory key = PoolKey({
-            currency0: currency0_,
-            currency1: currency1_,
-            fee: FEE,
+            currency0: _currency0,
+            currency1: _currency1,
+            fee: uint24(_lpFeePercentage),
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(this))
         });
 
-        rate0 = StableSwapMath.getRate(currency0_);
-        rate1 = StableSwapMath.getRate(currency1_);
+        rate0 = StableSwapMath.getRate(_currency0);
+        rate1 = StableSwapMath.getRate(_currency1);
 
         poolId = key.toId();
 
-        if (_initialA >= MAX_A) {
-            revert InvalidA();
-        }
-
-        initialA = _initialA;
-        futureA = _initialA;
-        // Set to 0 to allow immediate first ramp
-        initialATime = 0;
-        futureATime = 0;
-
-        // Grant deployer the default admin role and AMP_ADMIN_ROLE
+        // Grant deployer the deployer
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(A_ADMIN_ROLE, msg.sender);
     }
 
     /// External
 
-    /// @notice Ramp A up or down over time
-    /// @param _futureA The target amplification coefficient
-    /// @param _futureTime The timestamp when ramping completes
-    function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(A_ADMIN_ROLE) {
-        // Validate future A value
-        if (_futureA == 0 || _futureA >= MAX_A) {
-            revert InvalidA();
+    /// @notice Set the hook fee collector address
+    /// @param _hookFeeCollector The new hook fee collector address
+    function setHookFeeCollector(address _hookFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_hookFeeCollector == address(0)) {
+            revert InvalidFeeCollector();
         }
-
-        // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
-        if (initialATime != 0 && block.timestamp < initialATime + MIN_RAMP_TIME) {
-            revert InsufficientTimeSinceLastAChange();
-        }
-
-        // Ensure sufficient ramp duration
-        if (_futureTime < block.timestamp + MIN_RAMP_TIME) {
-            revert InsufficientRampTime();
-        }
-
-        uint256 currentA = A();
-
-        // Validate A change is not too large
-        if (_futureA < currentA) {
-            // Ramping down: futureA * MAX_A_CHANGE >= currentA
-            if (_futureA * MAX_A_CHANGE < currentA) {
-                revert ExcessiveAmpChange();
-            }
-        } else {
-            // Ramping up: futureA <= currentA * MAX_A_CHANGE
-            if (_futureA > currentA * MAX_A_CHANGE) {
-                revert ExcessiveAmpChange();
-            }
-        }
-
-        initialA = currentA;
-        futureA = _futureA;
-        initialATime = block.timestamp;
-        futureATime = _futureTime;
-
-        emit RampedA(currentA, _futureA, block.timestamp, _futureTime);
+        address oldCollector = hookFeeCollector;
+        hookFeeCollector = _hookFeeCollector;
+        emit HookFeeCollectorChanged(oldCollector, _hookFeeCollector);
     }
 
-    /// @notice Stop ramping A and fix it at current value
-    function stopRampA() external onlyRole(A_ADMIN_ROLE) {
-        uint256 currentA = A();
+    /// @notice Claim accrued hook fees and send them to the hook fee collector
+    /// @dev This function is permissionless - anyone can call it to trigger the fee transfer
+    /// @dev This only claims fees accrued by this hook, NOT Uniswap v4's protocol fees
+    function claimHookFees() external {
+        address collector = hookFeeCollector;
+        if (collector == address(0)) {
+            revert NoHookFeeCollector();
+        }
 
-        initialA = currentA;
-        futureA = currentA;
-        initialATime = block.timestamp;
-        futureATime = block.timestamp;
+        uint256 amount0 = hookFeesAccrued0;
+        uint256 amount1 = hookFeesAccrued1;
 
-        emit StoppedRampA(currentA, block.timestamp);
+        if (amount0 == 0 && amount1 == 0) {
+            revert NoFeesToClaim();
+        }
+
+        // Reset accrued fees before transfer (reentrancy protection)
+        hookFeesAccrued0 = 0;
+        hookFeesAccrued1 = 0;
+
+        // Transfer accrued fees from this contract to the collector
+        // These tokens are held as ERC6909 claims in the PoolManager
+        if (amount0 > 0) {
+            poolManager.burn(address(this), currency0.toId(), amount0);
+            poolManager.take(currency0, collector, amount0);
+        }
+
+        if (amount1 > 0) {
+            poolManager.burn(address(this), currency1.toId(), amount1);
+            poolManager.take(currency1, collector, amount1);
+        }
+
+        emit HookFeesClaimed(collector, amount0, amount1);
     }
 
     /// @notice Add liquidity to the pool
@@ -212,33 +200,6 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         }
 
         return "";
-    }
-
-    /// @notice Get current amplification coefficient with ramping
-    /// @return The current A value, interpolated if ramping is in progress
-    function A() public view returns (uint256) {
-        uint256 t1 = futureATime;
-        uint256 A1 = futureA;
-
-        if (block.timestamp < t1) {
-            uint256 A0 = initialA;
-            uint256 t0 = initialATime;
-
-            uint256 timeDelta = block.timestamp - t0;
-            uint256 totalTime = t1 - t0;
-
-            // Linear interpolation between A0 and A1
-            if (A1 > A0) {
-                // Ramping up
-                return A0 + ((A1 - A0) * timeDelta) / totalTime;
-            } else {
-                // Ramping down
-                return A0 - ((A0 - A1) * timeDelta) / totalTime;
-            }
-        } else {
-            // When t1 == 0 or block.timestamp >= t1, ramping is complete
-            return A1;
-        }
     }
 
     /// Hooks
@@ -314,19 +275,31 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
             revert InvalidPoolId();
         }
 
-        int128 dy = _swap(params);
+        (int128 dy, uint256 protocolFee) = _swap(params);
         BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
 
         if (params.zeroForOne) {
+            // Swap: token0 -> token1
+            // User pays token0, receives token1
+            // Hook fee is in token1 (the output token)
             poolManager.burn(address(this), currency1.toId(), uint128(dy));
             poolManager.mint(address(this), currency0.toId(), uint256(-params.amountSpecified));
             reserves0 += uint256(-params.amountSpecified);
             reserves1 -= uint128(dy);
+
+            // Accrue hook fee (stays as ERC6909 claims in this contract)
+            hookFeesAccrued1 += protocolFee;
         } else {
+            // Swap: token1 -> token0
+            // User pays token1, receives token0
+            // Hook fee is in token0 (the output token)
             poolManager.mint(address(this), currency1.toId(), uint256(-params.amountSpecified));
             poolManager.burn(address(this), currency0.toId(), uint128(dy));
             reserves0 -= uint128(dy);
             reserves1 += uint256(-params.amountSpecified);
+
+            // Accrue hook fee (stays as ERC6909 claims in this contract)
+            hookFeesAccrued0 += protocolFee;
         }
 
         return (BaseHook.beforeSwap.selector, delta, 0);
@@ -353,9 +326,11 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 newReserves0 = oldReserves0 + amount0;
         uint256 newReserves1 = oldReserves1 + amount1;
 
+        uint256 currentAmp = _currentAmp();
+
         // Calculate new invariant
         uint256 newInvariant = StableSwapMath.getInvariant(
-            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), A()
+            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
         );
 
         // TODO: Handle min liquidity to prevent dust attacks
@@ -365,7 +340,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         } else {
             // Compute the old invariant
             uint256 oldInvariant = StableSwapMath.getInvariant(
-                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), A()
+                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
             );
 
             // Check that the new invariant is higher
@@ -451,15 +426,16 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         emit LiquidityRemoved(sender, amount0, amount1, shares);
     }
 
-    function _swap(SwapParams calldata params) private view returns (int128) {
+    function _swap(SwapParams calldata params) private view returns (int128, uint256) {
         uint256 xp0 = StableSwapMath.scaleTo(reserves0, rate0);
         uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
 
         int256 dx = params.amountSpecified;
-        uint256 memAmp = A();
+        uint256 memAmp = _currentAmp();
         uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
 
         int256 dy;
+        uint256 protocolFee;
 
         // Determine token direction and rates
         bool isToken0In = params.zeroForOne;
@@ -471,11 +447,11 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         if (dx < 0) {
             // Exact input swap: user specifies how much they want to put in
             // dx is negative, representing amount being taken from user
-            dy = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
+            (dy, protocolFee) = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
         } else {
             // Exact output swap: user specifies how much they want to receive
             // dx is positive, representing desired output amount
-            dy = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
+            (dy, protocolFee) = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
         }
 
         // TODO
@@ -483,7 +459,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // TODO
         // Check dy against amount * sqrtPrice => min to receive
-        return dy.toInt128();
+        return (dy.toInt128(), protocolFee);
     }
 
     /// @dev Performs an exact input swap calculation
@@ -494,7 +470,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param rateOut Rate multiplier for output token
     /// @param memAmp Amplification coefficient
     /// @param D Invariant D
-    /// @return Amount of output token to give to user (positive = user receives)
+    /// @return dy Amount of output token to give to user (positive = user receives)
+    /// @return protocolFee Amount of output token to accrue as hook fee
     function _swapExactInput(
         uint256 xpIn,
         uint256 xpOut,
@@ -503,7 +480,7 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 rateOut,
         uint256 memAmp,
         uint256 D
-    ) private pure returns (int256) {
+    ) private pure returns (int256 dy, uint256 protocolFee) {
         // Convert input amount to precision units and add to reserves
         uint256 xIn = xpIn + StableSwapMath.scaleTo(amountIn, rateIn);
 
@@ -512,18 +489,27 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         // Subtract 1 to round in favor of the pool
         uint256 dyGross = xpOut - xOut - 1;
 
-        // TODO
         // Fee handling: Apply fee to the output amount
-        // Fee is deducted from the amount user receives
-        // net_output = gross_output * (1 - fee_rate)
-        // net_output = gross_output * (FEE_DENOMINATOR - FEE) / FEE_DENOMINATOR
+        // Total fee is split between:
+        // 1. LP fees (stay in reserves, benefit liquidity providers)
+        // 2. Hook fees (tracked separately, claimable by hook fee collector)
+        //
+        // Fee calculation:
+        // - dyFee = total fee amount
+        // - hookPortion = fee amount for hook
+        // - lpPortion = fee amount for LPs (implicitly: dyFee - hookPortion)
+        // - dyNet = amount user receives after all fees
         uint256 dyFee = (dyGross * FEE) / FEE_DENOMINATOR;
         uint256 dyNet = dyGross - dyFee;
 
+        // Calculate hook fee portion (in precision units)
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
+
         // Convert from precision units to real token units
         uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
+        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
 
-        return int256(amountOut);
+        return (int256(amountOut), protocolFee);
     }
 
     /// @dev Performs an exact output swap calculation
@@ -534,7 +520,8 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
     /// @param rateOut Rate multiplier for output token
     /// @param memAmp Amplification coefficient
     /// @param D Invariant D
-    /// @return Amount of input token to take from user (negative = user pays)
+    /// @return dy Amount of input token to take from user (negative = user pays)
+    /// @return protocolFee Amount of output token to accrue as hook fee
     function _swapExactOutput(
         uint256 xpIn,
         uint256 xpOut,
@@ -543,16 +530,19 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
         uint256 rateOut,
         uint256 memAmp,
         uint256 D
-    ) private pure returns (int256) {
+    ) private pure returns (int256 dy, uint256 protocolFee) {
         // Convert desired output to precision units
         uint256 dyNet = StableSwapMath.scaleTo(amountOut, rateOut);
 
-        // TODO
         // Fee handling: Calculate gross output needed to deliver net output after fees
         // Since fee is applied to output: net_output = gross_output * (1 - fee_rate)
         // Solving for gross_output: gross_output = net_output / (1 - fee_rate)
         // Which equals: gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
         uint256 dyGross = (dyNet * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
+
+        // Calculate total fee and hook portion
+        uint256 dyFee = dyGross - dyNet;
+        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
 
         // Calculate new output reserve after removing gross output
         uint256 xOut = xpOut - dyGross;
@@ -565,8 +555,9 @@ contract StableSwapHooks is BaseHook, AccessControlEnumerable, IUnlockCallback, 
 
         // Convert from precision units to real token units
         uint256 amountIn = StableSwapMath.descale(dxRequired, rateIn);
+        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
 
         // Return as negative to indicate amount to take from user
-        return -int256(amountIn);
+        return (-int256(amountIn), protocolFee);
     }
 }

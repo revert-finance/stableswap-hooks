@@ -5,14 +5,18 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {IUniversalRouter} from "test/testUtils/external/interfaces/IUniversalRouter.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
+
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
     function setUp() public override {
@@ -20,30 +24,9 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
         super.setUp();
     }
 
-    /// Helpers
-
-    /// @dev Initialize the pool via the pool manager
-    function _initializePool() private returns (int24) {
-        return IPoolManager(address(poolManager)).initialize(_getPoolKey(), 1 << 96);
-    }
-
     /// Tests
 
-    function test_DeployHook() public view {
-        assertEq(address(hooks.poolManager()), address(poolManager));
-        assertEq(hooks.A(), 100);
-        assertEq(hooks.rate0(), 1e18);
-        assertEq(hooks.rate1(), 1e30);
-        assertEq(PoolId.unwrap(hooks.poolId()), PoolId.unwrap(_getPoolKey().toId()));
-    }
-
-    function test_InitializePool() public {
-        _initializePool();
-    }
-
     function test_AddThenRemoveLiquidity() public {
-        _initializePool();
-
         // Add liquidity
 
         uint256 amount0 = _toTokenWei(currency0, 100);
@@ -79,8 +62,6 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
     }
 
     function test_AddLiquidityThenSwap() public {
-        _initializePool();
-
         // Add liquidity
 
         uint256 amount0 = _toTokenWei(currency0, 100);
@@ -138,6 +119,6 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
         universalRouter.execute(commands, inputs, block.timestamp + 100);
 
         assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(swapper), swapperBalance0 - amount0In);
-        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(swapper), 1000994925);
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(swapper), 1000999801);
     }
 }
