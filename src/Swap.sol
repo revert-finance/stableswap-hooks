@@ -35,7 +35,7 @@ abstract contract Swap is Amp, Fees {
         uint256 amp = _currentAmp();
         uint256 invariant = StableSwapMath.getInvariant(scaledReserves0, scaledReserves1, amp);
 
-        uint256 unspecified;
+        uint256 unspecifiedAmount;
 
         if (_params.zeroForOne) {
             if (_params.amountSpecified < 0) {
@@ -51,7 +51,7 @@ abstract contract Swap is Amp, Fees {
                 reserves0 += amountSpecified;
                 reserves1 -= output - lpFees;
 
-                unspecified = outputMinusFees;
+                unspecifiedAmount = outputMinusFees;
             } else {
                 uint256 amountSpecified = uint256(_params.amountSpecified);
                 uint256 newScaledReserves1 = scaledReserves1 - StableSwapMath.scaleTo(amountSpecified, rate1);
@@ -65,7 +65,7 @@ abstract contract Swap is Amp, Fees {
                 reserves0 += input + lpFees;
                 reserves1 -= amountSpecified;
 
-                unspecified = inputPlusFees;
+                unspecifiedAmount = inputPlusFees;
             }
         } else {
             if (_params.amountSpecified < 0) {
@@ -81,7 +81,7 @@ abstract contract Swap is Amp, Fees {
                 reserves1 += amountSpecified;
                 reserves0 -= output - lpFees;
 
-                unspecified = outputMinusFees;
+                unspecifiedAmount = outputMinusFees;
             } else {
                 uint256 amountSpecified = uint256(_params.amountSpecified);
                 uint256 newScaledReserves0 = scaledReserves0 - StableSwapMath.scaleTo(amountSpecified, rate0);
@@ -95,14 +95,12 @@ abstract contract Swap is Amp, Fees {
                 reserves1 += input + lpFees;
                 reserves0 -= amountSpecified;
 
-                unspecified = inputPlusFees;
+                unspecifiedAmount = inputPlusFees;
             }
         }
 
-        if (_params.amountSpecified < 0) {
-            return -SafeCast.toInt128(SafeCast.toInt256(unspecified));
-        } else {
-            return SafeCast.toInt128(SafeCast.toInt256(unspecified));
-        }
+        int128 unspecifiedDelta = SafeCast.toInt128(SafeCast.toInt256(unspecifiedAmount));
+
+        return _params.amountSpecified < 0 ? -unspecifiedDelta : unspecifiedDelta;
     }
 }
