@@ -1,0 +1,16 @@
+name: PR Review Assignment
+permissions:
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hkusu/review-assign-action@v1
+        with:
+          assignees: ${{ github.actor }} # assign pull request author
+          reviewers: fzavalia, hpmaxi  # assigned when PR is opened or marked ready for review
