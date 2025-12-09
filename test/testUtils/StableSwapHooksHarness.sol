@@ -8,26 +8,34 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksHarness is StableSwapHooks {
     constructor(
-        uint256 _initialA,
         IPoolManager _poolManager,
         Currency _currency0,
         Currency _currency1,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
-        uint256 _lpFeePercentage
+        uint256 _lpFeePercentage,
+        uint256 _baseAmp
     )
         StableSwapHooks(
-            _initialA,
             _poolManager,
             _currency0,
             _currency1,
             _protocolFeeCollector,
             _protocolFeePercentage,
             _hookFeePercentage,
-            _lpFeePercentage
+            _lpFeePercentage,
+            _baseAmp
         )
     {}
+
+    // Amp.sol
+
+    function currentAmp() external view returns (uint256) {
+        return _currentAmp();
+    }
+
+    // Fees.sol
 
     function handleWithdrawProtocolFeesCallback() external {
         _handleWithdrawProtocolFeesCallback();

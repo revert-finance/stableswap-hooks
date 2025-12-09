@@ -24,20 +24,15 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 import {Actions} from "src/libraries/Actions.sol";
 import {Fees} from "src/Fees.sol";
 import {Base} from "src/Base.sol";
+import {Amp} from "src/Amp.sol";
 
-contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
+contract StableSwapHooks is Amp, Fees, IUnlockCallback, ERC20 {
     using SafeCast for int256;
     using SafeCast for uint256;
     using TickMath for int24;
     using SafeERC20 for IERC20;
 
     /// Constants
-
-    bytes32 public constant A_ADMIN_ROLE = keccak256("A_ADMIN_ROLE");
-
-    uint256 public constant MAX_A = 1e6;
-    uint256 public constant MAX_A_CHANGE = 10; // Maximum 10x change
-    uint256 public constant MIN_RAMP_TIME = 1 days; // Minimum time between ramps and minimum ramp duration
 
     // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
     uint24 public constant FEE = 1e2; // 0.01%
@@ -54,11 +49,6 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
     uint256 public immutable rate1;
 
     /// Variables
-
-    uint256 public initialA;
-    uint256 public futureA;
-    uint256 public initialATime;
-    uint256 public futureATime;
 
     uint256 public reserves0;
     uint256 public reserves1;
@@ -77,9 +67,7 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
     error InvalidPoolId();
     error InvalidInvariant();
     error InvalidRange();
-    error InsufficientRampTime();
     error InsufficientTimeSinceLastAChange();
-    error ExcessiveAmpChange();
     error InsufficientShares();
     error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
@@ -91,8 +79,6 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
 
     /// Events
 
-    event RampedA(uint256 oldA, uint256 newA, uint256 initialTime, uint256 futureTime);
-    event StoppedRampA(uint256 currentA, uint256 time);
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event HookFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
@@ -101,18 +87,18 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
     /// Deployment
 
     constructor(
-        uint256 _initialA,
         IPoolManager _poolManager,
         Currency _currency0,
         Currency _currency1,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
-        uint256 _lpFeePercentage
+        uint256 _lpFeePercentage,
+        uint256 _baseAmp
     )
-        BaseHook(_poolManager)
-        Base(_currency0, _currency1)
+        Base(_poolManager, _currency0, _currency1)
         Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
+        Amp(_baseAmp)
         ERC20("StableSwap LP", "ssLP")
     {
         PoolKey memory key = PoolKey({
@@ -128,76 +114,11 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
 
         poolId = key.toId();
 
-        if (_initialA >= MAX_A) {
-            revert InvalidA();
-        }
-
-        initialA = _initialA;
-        futureA = _initialA;
-        // Set to 0 to allow immediate first ramp
-        initialATime = 0;
-        futureATime = 0;
-
-        // Grant deployer the default admin role and AMP_ADMIN_ROLE
+        // Grant deployer the deployer
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(A_ADMIN_ROLE, msg.sender);
     }
 
     /// External
-
-    /// @notice Ramp A up or down over time
-    /// @param _futureA The target amplification coefficient
-    /// @param _futureTime The timestamp when ramping completes
-    function rampA(uint256 _futureA, uint256 _futureTime) external onlyRole(A_ADMIN_ROLE) {
-        // Validate future A value
-        if (_futureA == 0 || _futureA >= MAX_A) {
-            revert InvalidA();
-        }
-
-        // Ensure sufficient time has passed since last ramp (skip check if initialATime is 0, i.e., first ramp)
-        if (initialATime != 0 && block.timestamp < initialATime + MIN_RAMP_TIME) {
-            revert InsufficientTimeSinceLastAChange();
-        }
-
-        // Ensure sufficient ramp duration
-        if (_futureTime < block.timestamp + MIN_RAMP_TIME) {
-            revert InsufficientRampTime();
-        }
-
-        uint256 currentA = A();
-
-        // Validate A change is not too large
-        if (_futureA < currentA) {
-            // Ramping down: futureA * MAX_A_CHANGE >= currentA
-            if (_futureA * MAX_A_CHANGE < currentA) {
-                revert ExcessiveAmpChange();
-            }
-        } else {
-            // Ramping up: futureA <= currentA * MAX_A_CHANGE
-            if (_futureA > currentA * MAX_A_CHANGE) {
-                revert ExcessiveAmpChange();
-            }
-        }
-
-        initialA = currentA;
-        futureA = _futureA;
-        initialATime = block.timestamp;
-        futureATime = _futureTime;
-
-        emit RampedA(currentA, _futureA, block.timestamp, _futureTime);
-    }
-
-    /// @notice Stop ramping A and fix it at current value
-    function stopRampA() external onlyRole(A_ADMIN_ROLE) {
-        uint256 currentA = A();
-
-        initialA = currentA;
-        futureA = currentA;
-        initialATime = block.timestamp;
-        futureATime = block.timestamp;
-
-        emit StoppedRampA(currentA, block.timestamp);
-    }
 
     /// @notice Set the hook fee collector address
     /// @param _hookFeeCollector The new hook fee collector address
@@ -279,33 +200,6 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
         }
 
         return "";
-    }
-
-    /// @notice Get current amplification coefficient with ramping
-    /// @return The current A value, interpolated if ramping is in progress
-    function A() public view returns (uint256) {
-        uint256 t1 = futureATime;
-        uint256 A1 = futureA;
-
-        if (block.timestamp < t1) {
-            uint256 A0 = initialA;
-            uint256 t0 = initialATime;
-
-            uint256 timeDelta = block.timestamp - t0;
-            uint256 totalTime = t1 - t0;
-
-            // Linear interpolation between A0 and A1
-            if (A1 > A0) {
-                // Ramping up
-                return A0 + ((A1 - A0) * timeDelta) / totalTime;
-            } else {
-                // Ramping down
-                return A0 - ((A0 - A1) * timeDelta) / totalTime;
-            }
-        } else {
-            // When t1 == 0 or block.timestamp >= t1, ramping is complete
-            return A1;
-        }
     }
 
     /// Hooks
@@ -432,9 +326,11 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
         uint256 newReserves0 = oldReserves0 + amount0;
         uint256 newReserves1 = oldReserves1 + amount1;
 
+        uint256 currentAmp = _currentAmp();
+
         // Calculate new invariant
         uint256 newInvariant = StableSwapMath.getInvariant(
-            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), A()
+            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
         );
 
         // TODO: Handle min liquidity to prevent dust attacks
@@ -444,7 +340,7 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
         } else {
             // Compute the old invariant
             uint256 oldInvariant = StableSwapMath.getInvariant(
-                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), A()
+                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
             );
 
             // Check that the new invariant is higher
@@ -535,7 +431,7 @@ contract StableSwapHooks is Fees, IUnlockCallback, ERC20 {
         uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
 
         int256 dx = params.amountSpecified;
-        uint256 memAmp = A();
+        uint256 memAmp = _currentAmp();
         uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
 
         int256 dy;

@@ -1,273 +1,284 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
-/// @title StableSwapHooksAmpTest
-/// @notice Tests for amplification parameter management
+import {Amp} from "src/Amp.sol";
+
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
-    function test_rampA_ShouldRampUpSuccessfully() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldRampUpSuccessfully() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.RampedA(100, futureA, block.timestamp, futureTime);
-        hooks.rampA(futureA, futureTime);
+        vm.expectEmit(address(hooks));
+        emit Amp.AmpRampStarted(
+            defaultAdmin, 100 * hooks.AMP_PRECISION(), 200 * hooks.AMP_PRECISION(), block.timestamp, nextAmpTime
+        );
 
-        assertEq(hooks.initialA(), 100);
-        assertEq(hooks.futureA(), futureA);
-        assertEq(hooks.initialATime(), block.timestamp);
-        assertEq(hooks.futureATime(), futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
+
+        assertEq(hooks.baseAmp(), 100 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 200 * hooks.AMP_PRECISION());
+        assertEq(hooks.baseAmpTime(), block.timestamp);
+        assertEq(hooks.nextAmpTime(), nextAmpTime);
     }
 
-    function test_rampA_ShouldRampDownSuccessfully() public {
-        uint256 futureA = 50;
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldRampDownSuccessfully() public {
+        uint256 nextAmp = 50;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.RampedA(100, futureA, block.timestamp, futureTime);
-        hooks.rampA(futureA, futureTime);
+        vm.expectEmit(address(hooks));
+        emit Amp.AmpRampStarted(
+            defaultAdmin, 100 * hooks.AMP_PRECISION(), 50 * hooks.AMP_PRECISION(), block.timestamp, nextAmpTime
+        );
 
-        assertEq(hooks.initialA(), 100);
-        assertEq(hooks.futureA(), futureA);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
+
+        assertEq(hooks.baseAmp(), 100 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 50 * hooks.AMP_PRECISION());
     }
 
-    function test_amp_ShouldInterpolateWhileRamping() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 2 days;
+    function test_startAmpRamp_ShouldInterpolateWhileRamping() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 2 days;
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
         // Fast forward halfway through ramping
         vm.warp(block.timestamp + 1 days);
 
-        // Should be approximately halfway through the ramp from 100 up to 200
-        uint256 currentAmp = hooks.A();
-        assertApproxEqAbs(currentAmp, 150, 1);
+        // Should be approximately halfway through the ramp from 100 up to 200 (in scaled values: 10000 to 20000)
+        uint256 currentAmp = hooks.currentAmp();
+        assertApproxEqAbs(currentAmp, 150 * hooks.AMP_PRECISION(), hooks.AMP_PRECISION());
     }
 
-    function test_amp_ShouldReturnFutureAAfterRampingComplete() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldReturnFutureAAfterRampingComplete() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
         // Fast forward past ramping completion
-        vm.warp(futureTime + 1);
+        vm.warp(nextAmpTime + 1);
 
-        assertEq(hooks.A(), futureA);
+        assertEq(hooks.currentAmp(), 200 * hooks.AMP_PRECISION());
     }
 
-    function test_rampA_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
-        uint256 futureA = hooks.MAX_A();
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
+        uint256 nextAmp = hooks.MAX_AMP();
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.InvalidA.selector);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.InvalidAmp.selector);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_rampA_ShouldRevertWhenFutureTimeInPast() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp - 1;
+    function test_startAmpRamp_ShouldRevertWhenFutureTimeInPast() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp - 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.InsufficientRampTime.selector);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.InsufficientRampTime.selector);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_stopRampA_ShouldStopRampingAtCurrentValue() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 2 days;
+    function test_stopAmpRamp_ShouldStopRampingAtCurrentValue() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 2 days;
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
         // Fast forward halfway through ramping
         vm.warp(block.timestamp + 1 days);
-        uint256 currentAmpBeforeStop = hooks.A();
+        uint256 currentAmpBeforeStop = hooks.currentAmp();
 
         // Stop ramping
-        vm.prank(amplificationAdmin);
-        vm.expectEmit(true, true, true, true);
-        emit StableSwapHooks.StoppedRampA(currentAmpBeforeStop, block.timestamp);
-        hooks.stopRampA();
+        vm.prank(defaultAdmin);
+        vm.expectEmit(address(hooks));
+        emit Amp.AmpRampStopped(defaultAdmin, currentAmpBeforeStop, block.timestamp);
+        hooks.stopAmpRamp();
 
         // Verify amp is frozen at current value
-        assertEq(hooks.A(), currentAmpBeforeStop);
-        assertEq(hooks.initialA(), currentAmpBeforeStop);
-        assertEq(hooks.futureA(), currentAmpBeforeStop);
-        assertEq(hooks.initialATime(), block.timestamp);
-        assertEq(hooks.futureATime(), block.timestamp);
+        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
+        assertEq(hooks.baseAmp(), currentAmpBeforeStop);
+        assertEq(hooks.nextAmp(), currentAmpBeforeStop);
+        assertEq(hooks.baseAmpTime(), block.timestamp);
+        assertEq(hooks.nextAmpTime(), block.timestamp);
 
         // Warp further and verify amp doesn't change
         vm.warp(block.timestamp + 1 days);
-        assertEq(hooks.A(), currentAmpBeforeStop);
+        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
     }
 
-    function test_rampA_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
         // First ramp
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.InsufficientTimeSinceLastAChange.selector);
-        hooks.rampA(300, block.timestamp + 2 days);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.InsufficientTimeSinceLastAmpChange.selector);
+        hooks.startAmpRamp(300, block.timestamp + 2 days);
     }
 
-    function test_rampA_ShouldSucceedAfterMinRampTimePassed() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldSucceedAfterMinRampTimePassed() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
         // First ramp
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
         // Wait for MIN_RAMP_TIME
-        vm.warp(block.timestamp + hooks.MIN_RAMP_TIME());
+        vm.warp(block.timestamp + hooks.MIN_AMP_RAMP_TIME() + 1);
 
         // Should succeed now
-        vm.prank(amplificationAdmin);
-        hooks.rampA(300, block.timestamp + 2 days);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(300, block.timestamp + 2 days);
 
-        assertEq(hooks.futureA(), 300);
+        assertEq(hooks.nextAmp(), 300 * hooks.AMP_PRECISION());
     }
 
-    function test_rampA_ShouldRevertWhenRampDurationTooShort() public {
-        uint256 futureA = 200;
-        uint256 futureTime = block.timestamp + 1 hours; // Less than MIN_RAMP_TIME
+    function test_startAmpRamp_ShouldRevertWhenRampDurationTooShort() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 hours; // Less than MIN_RAMP_TIME
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.InsufficientRampTime.selector);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.InsufficientRampTime.selector);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_rampA_ShouldRevertWhenFutureAIsZero() public {
-        uint256 futureTime = block.timestamp + 1 days;
+    function test_startAmpRamp_ShouldRevertWhenFutureAIsZero() public {
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.InvalidA.selector);
-        hooks.rampA(0, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.InvalidAmp.selector);
+        hooks.startAmpRamp(0, nextAmpTime);
     }
 
-    function test_rampA_ShouldRevertWhenRampingUpTooMuch() public {
+    function test_startAmpRamp_ShouldRevertWhenRampingUpTooMuch() public {
         // Current A is 100, max allowed is 100 * 10 = 1000
-        uint256 futureA = 1100; // 11x increase (too much)
-        uint256 futureTime = block.timestamp + 1 days;
+        uint256 nextAmp = 1100; // 11x increase (too much)
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.ExcessiveAmpChange.selector);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.ExcessiveAmpChange.selector);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_rampA_ShouldSucceedWhenRampingUpExactlyMaxChange() public {
+    function test_startAmpRamp_ShouldSucceedWhenRampingUpExactlyMaxChange() public {
         // Current A is 100; 10x increase to the max allowed of 1000
-        uint256 futureA = 1000; // Exactly a 10x increase
-        uint256 futureTime = block.timestamp + 1 days;
+        uint256 nextAmp = 1000; // Exactly a 10x increase
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.futureA(), futureA);
+        assertEq(hooks.nextAmp(), 1000 * hooks.AMP_PRECISION());
     }
 
-    function test_rampA_ShouldRevertWhenRampingDownTooMuch() public {
+    function test_startAmpRamp_ShouldRevertWhenRampingDownTooMuch() public {
         // Current A is 100, min allowed is 10 (10x decrease limit)
-        uint256 futureA = 1; // More than a 10x decrease (too much)
-        uint256 futureTime = block.timestamp + 1 days;
+        uint256 nextAmp = 1; // More than a 10x decrease (too much)
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        vm.expectRevert(StableSwapHooks.ExcessiveAmpChange.selector);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        vm.expectRevert(Amp.ExcessiveAmpChange.selector);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_rampA_ShouldSucceedWhenRampingDownExactlyMaxChange() public {
+    function test_startAmpRamp_ShouldSucceedWhenRampingDownExactlyMaxChange() public {
         // Current A is 100, min allowed is 10 (10x decrease)
-        uint256 futureA = 10; // Exactly a 10x decrease
-        uint256 futureTime = block.timestamp + 1 days;
+        uint256 nextAmp = 10; // Exactly a 10x decrease
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.futureA(), futureA);
+        assertEq(hooks.nextAmp(), 10 * hooks.AMP_PRECISION());
     }
 
-    function test_rampA_ShouldRespectMaxChangeAfterPartialRA() public {
+    function test_startAmpRamp_ShouldRespectMaxChangeAfterPartialRamp() public {
         // Start ramp from 100 up to 200
-        vm.prank(amplificationAdmin);
-        hooks.rampA(200, block.timestamp + 2 days);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(200, block.timestamp + 2 days);
 
-        // Warp halfway (current A should be ~150)
+        // Warp halfway (current A should be ~150 scaled = 15000)
         vm.warp(block.timestamp + 1 days);
 
-        uint256 currentA = hooks.A();
-        assertApproxEqAbs(currentA, 150, 1);
+        uint256 currentA = hooks.currentAmp();
+        assertApproxEqAbs(currentA, 150 * hooks.AMP_PRECISION(), hooks.AMP_PRECISION());
 
         // Wait for MIN_RAMP_TIME
-        vm.warp(block.timestamp + hooks.MIN_RAMP_TIME());
+        vm.warp(block.timestamp + hooks.MIN_AMP_RAMP_TIME() + 1);
 
         // Now max allowed change from ~150 is 150 * 10 = 1500 (up) or 150 / 10 = 15 (down)
-        uint256 maxAllowedUp = currentA * hooks.MAX_A_CHANGE();
+        // currentA is scaled, so divide by AMP_PRECISION to get unscaled value for startAmpRamp
+        uint256 currentAUnscaled = currentA / hooks.AMP_PRECISION();
+        uint256 maxAllowedUp = currentAUnscaled * hooks.MAX_AMP_MULTIPLIER();
 
         // This should succeed
-        vm.prank(amplificationAdmin);
-        hooks.rampA(maxAllowedUp, block.timestamp + 2 days);
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(maxAllowedUp, block.timestamp + 2 days);
 
-        assertEq(hooks.futureA(), maxAllowedUp);
+        assertEq(hooks.nextAmp(), maxAllowedUp * hooks.AMP_PRECISION());
     }
 
-    function testFuzz_rampA_ShouldEnforceMaxChange(uint256 multiplier) public {
-        // Bound multiplier to reasonable range (1 to 20x)
-        multiplier = bound(multiplier, 1, 20);
+    // Access control tests
 
-        uint256 currentA = hooks.A();
-        uint256 futureA = currentA * multiplier;
+    function test_startAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        // Ensure futureA doesn't exceed MAX_A
-        if (futureA >= hooks.MAX_A()) {
-            return;
-        }
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
+            )
+        );
 
-        uint256 futureTime = block.timestamp + 1 days;
-
-        if (multiplier > hooks.MAX_A_CHANGE()) {
-            vm.prank(amplificationAdmin);
-            // Should revert if change is too large
-            vm.expectRevert(StableSwapHooks.ExcessiveAmpChange.selector);
-            hooks.rampA(futureA, futureTime);
-        } else {
-            vm.prank(amplificationAdmin);
-            // Should succeed if within limits
-            hooks.rampA(futureA, futureTime);
-            assertEq(hooks.futureA(), futureA);
-        }
+        vm.prank(unauthorizedUser);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function testFuzz_rampA_ShouldHandleValidAmpValues(uint256 futureA) public {
-        vm.assume(futureA > 0 && futureA < hooks.MAX_A());
+    function test_stopAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
+            )
+        );
 
-        uint256 currentA = hooks.A();
+        vm.prank(unauthorizedUser);
+        hooks.stopAmpRamp();
+    }
 
-        // Ensure futureA is within MAX_A_CHANGE bounds
-        if (futureA < currentA) {
-            vm.assume(futureA * hooks.MAX_A_CHANGE() >= currentA);
-        } else {
-            vm.assume(futureA <= currentA * hooks.MAX_A_CHANGE());
-        }
+    function test_startAmpRamp_ShouldSucceedWhenCalledByDefaultAdmin() public {
+        uint256 nextAmp = 200;
+        uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        uint256 futureTime = block.timestamp + 1 days;
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        vm.prank(amplificationAdmin);
-        hooks.rampA(futureA, futureTime);
+        assertEq(hooks.nextAmp(), 200 * hooks.AMP_PRECISION());
+    }
 
-        assertEq(hooks.futureA(), futureA);
+    function test_stopAmpRamp_ShouldSucceedWhenCalledByDefaultAdmin() public {
+        // First ramp
+        vm.prank(defaultAdmin);
+        hooks.startAmpRamp(200, block.timestamp + 1 days + 1);
+
+        // Then stop
+        vm.prank(defaultAdmin);
+        hooks.stopAmpRamp();
+
+        assertEq(hooks.baseAmp(), hooks.nextAmp());
     }
 }

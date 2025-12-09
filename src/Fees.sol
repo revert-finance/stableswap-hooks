@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
 import {Actions} from "src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 
-/// @title Fees
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
-abstract contract Fees is AccessControlEnumerable, Base {
+abstract contract Fees is Base {
     /// @notice Precision constant for fee calculations (1,000,000 = 100%)
     uint256 public constant FEE_PRECISION = 1e6;
 
