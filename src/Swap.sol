@@ -87,7 +87,7 @@ abstract contract Swap is Amp, Fees {
                 uint256 newScaledReserves0 = StableSwapMath.getOtherReserves(newScaledReserves1, amp, invariant);
                 uint256 output = StableSwapMath.descale(scaledReserves0 - newScaledReserves0, rate0);
                 (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(output);
-                _addFees(false, protocolFees, hookFees);
+                _addFees(true, protocolFees, hookFees);
                 uint256 outputMinusFees = output - lpFees - hookFees - protocolFees;
                 poolManager.burn(address(this), currency0.toId(), outputMinusFees);
                 poolManager.mint(address(this), currency1.toId(), amountSpecified);
@@ -101,7 +101,7 @@ abstract contract Swap is Amp, Fees {
                 uint256 newScaledReserves1 = StableSwapMath.getOtherReserves(newScaledReserves0, amp, invariant);
                 uint256 input = StableSwapMath.descale(newScaledReserves1 - scaledReserves1, rate1);
                 (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(input);
-                _addFees(true, protocolFees, hookFees);
+                _addFees(false, protocolFees, hookFees);
                 uint256 inputPlusFees = input + lpFees + hookFees + protocolFees;
                 poolManager.burn(address(this), currency0.toId(), amountSpecified);
                 poolManager.mint(address(this), currency1.toId(), inputPlusFees);
