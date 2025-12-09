@@ -7,7 +7,6 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 
 import {Amp} from "src/Amp.sol";
 
-
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
     function test_startAmpRamp_ShouldRampUpSuccessfully() public {
         uint256 nextAmp = 200;
@@ -15,11 +14,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.expectEmit(address(hooks));
         emit Amp.AmpRampStarted(
-            defaultAdmin,
-            100 * hooks.AMP_PRECISION(),
-            200 * hooks.AMP_PRECISION(),
-            block.timestamp,
-            nextAmpTime
+            defaultAdmin, 100 * hooks.AMP_PRECISION(), 200 * hooks.AMP_PRECISION(), block.timestamp, nextAmpTime
         );
 
         vm.prank(defaultAdmin);
