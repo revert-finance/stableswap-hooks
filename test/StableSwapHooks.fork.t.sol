@@ -2,30 +2,20 @@
 pragma solidity 0.8.30;
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IUniversalRouter} from "test/testUtils/external/interfaces/IUniversalRouter.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
-    function setUp() public override {
-        vm.selectFork(vm.createFork(vm.envString("MAINNET_RPC_URL")));
-        super.setUp();
-    }
-
     /// Tests
-
     function test_AddThenRemoveLiquidity() public {
         // Add liquidity
 
@@ -114,11 +104,12 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
         // Execute swap
 
         uint256 swapperBalance0 = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 swapperBalance1 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
         vm.prank(swapper);
         universalRouter.execute(commands, inputs, block.timestamp + 100);
 
         assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(swapper), swapperBalance0 - amount0In);
-        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(swapper), 1000999801);
+        assertApproxEqRel(IERC20(Currency.unwrap(currency1)).balanceOf(swapper), swapperBalance1 + _toTokenWei(currency1, 1), 2e14);
     }
 }
