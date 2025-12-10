@@ -2,10 +2,10 @@
 pragma solidity 0.8.30;
 
 import {Actions} from "src/libraries/Actions.sol";
-import {Base} from "src/Base.sol";
+import {Liquidity} from "src/Liquidity.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
-abstract contract Fees is Base {
+abstract contract Fees is Liquidity {
     /// @notice Precision constant for fee calculations (1,000,000 = 100%)
     uint256 public constant FEE_PRECISION = 1e6;
 
