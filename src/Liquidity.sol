@@ -48,6 +48,12 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Error thrown when both deposit amounts are zero
     error AddLiquidityAmountsCannotBeZero();
 
+    /// @notice Error thrown when initial liquidity is below minimum
+    error InsufficientInitialLiquidity();
+
+    /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
+    uint256 private constant MINIMUM_LIQUIDITY = 1000;
+
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
     /// @notice Add liquidity to the pool
@@ -121,7 +127,8 @@ abstract contract Liquidity is Amp, ERC20 {
             revert AddLiquidityAmountsCannotBeZero();
         }
 
-        // TODO: Handle min liquidity to prevent dust attacks
+        bool isFirstDeposit = totalSupply() == 0;
+
         uint256 newShares = _computeNewShares(amount0, amount1);
 
         // Check that the new shares are above the minimum
@@ -150,12 +157,17 @@ abstract contract Liquidity is Amp, ERC20 {
 
         _mint(sender, newShares);
 
+        // Lock minimum liquidity on first deposit to prevent dust attacks and price manipulation
+        if (isFirstDeposit) {
+            _mint(address(0), MINIMUM_LIQUIDITY);
+        }
+
         emit LiquidityAdded(sender, amount0, amount1, newShares);
     }
 
     /// @notice Computes the number of LP shares to mint for a given deposit
     /// @dev Uses the StableSwap invariant to calculate proportional shares
-    /// @dev For first deposit, shares equal the invariant; for subsequent deposits, shares are proportional to invariant increase
+    /// @dev For first deposit, shares equal the invariant minus MINIMUM_LIQUIDITY; for subsequent deposits, shares are proportional to invariant increase
     /// @param _amount0 Amount of currency0 being deposited
     /// @param _amount1 Amount of currency1 being deposited
     /// @return newShares Number of LP shares to mint
@@ -175,7 +187,11 @@ abstract contract Liquidity is Amp, ERC20 {
         );
 
         if (oldTotalShares == 0) {
-            newShares = newInvariant;
+            // First deposit - lock minimum liquidity to prevent dust attacks and price manipulation
+            if (newInvariant < MINIMUM_LIQUIDITY) {
+                revert InsufficientInitialLiquidity();
+            }
+            newShares = newInvariant - MINIMUM_LIQUIDITY;
         } else {
             uint256 oldInvariant = StableSwapMath.getInvariant(
                 StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
