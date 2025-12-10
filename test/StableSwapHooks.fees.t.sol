@@ -2,6 +2,9 @@
 pragma solidity 0.8.30;
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
@@ -9,6 +12,9 @@ import {Fees} from "src/Fees.sol";
 import {Actions} from "src/libraries/Actions.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
+    uint256 private constant LIQUIDITY_AMOUNT = 1e6;
+    uint256 private constant SWAP_AMOUNT = 1000;
+
     function test_constructor_ShouldAssignVariablesCorrectly() public view {
         assertEq(hooks.protocolFeeCollector(), protocolFeeCollector);
         assertEq(hooks.protocolFeePercentage(), BASE_PROTOCOL_FEE_PERCENTAGE);
@@ -162,43 +168,6 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setLpFeePercentage(invalidPercentage);
     }
 
-    function test_withdrawProtocolFees_ShouldCallPoolManagerUnlock() public {
-        // Prepare the expected data
-        bytes memory expectedData = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES); // Actions.WITHDRAW_PROTOCOL_FEES = 0
-
-        // Mock the poolManager.unlock call to return empty bytes
-        vm.mockCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.unlock.selector, expectedData),
-            abi.encode(bytes(""))
-        );
-
-        // Expect the unlock to be called with the correct data
-        vm.expectCall(address(poolManager), abi.encodeWithSelector(poolManager.unlock.selector, expectedData));
-
-        hooks.withdrawProtocolFees();
-    }
-
-    function test_withdrawHookFees_ShouldCallPoolManagerUnlock() public {
-        address beneficiary = makeAddr("beneficiary");
-
-        // Prepare the expected data
-        bytes memory expectedData = abi.encode(Actions.WITHDRAW_HOOK_FEES, beneficiary);
-
-        // Mock the poolManager.unlock call to return empty bytes
-        vm.mockCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.unlock.selector, expectedData),
-            abi.encode(bytes(""))
-        );
-
-        // Expect the unlock to be called with the correct data
-        vm.expectCall(address(poolManager), abi.encodeWithSelector(poolManager.unlock.selector, expectedData));
-
-        vm.prank(defaultAdmin);
-        hooks.withdrawHookFees(beneficiary);
-    }
-
     function test_withdrawHookFees_ShouldRevertWhenCalledByUnauthorized() public {
         address beneficiary = makeAddr("beneficiary");
 
@@ -211,237 +180,125 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.withdrawHookFees(beneficiary);
     }
 
-    function test_handleWithdrawProtocolFeesCallback_ShouldResetFeesAndEmitEvent() public {
-        // First, add some protocol fees
-        uint256 protocolFee0 = 100e18;
-        uint256 protocolFee1 = 200e18;
+    function test_withdrawProtocolFees_ShouldTransferFeesAndEmitEvent() public {
+        // Add liquidity and perform a swap to accumulate fees
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
 
-        hooks.addFees(true, protocolFee0, 0);
-        hooks.addFees(false, protocolFee1, 0);
+        uint256 protocolFees1 = hooks.protocolFees1();
+        assertGt(protocolFees1, 0);
 
-        // Mock the poolManager calls
-        vm.mockCall(address(poolManager), abi.encodeWithSelector(poolManager.burn.selector), abi.encode());
-        vm.mockCall(address(poolManager), abi.encodeWithSelector(poolManager.take.selector), abi.encode());
+        uint256 collectorBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(protocolFeeCollector);
 
-        // Expect burn to be called for currency0
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector, address(hooks), currency0.toId(), protocolFee0)
-        );
-
-        // Expect take to be called for currency0
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.take.selector, currency0, protocolFeeCollector, protocolFee0)
-        );
-
-        // Expect burn to be called for currency1
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector, address(hooks), currency1.toId(), protocolFee1)
-        );
-
-        // Expect take to be called for currency1
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.take.selector, currency1, protocolFeeCollector, protocolFee1)
-        );
-
-        // Expect the event to be emitted
+        // The sender in the event is the original caller of withdrawProtocolFees
         vm.expectEmit(address(hooks));
-        emit Fees.ProtocolFeesWithdrawn(address(this), protocolFeeCollector, protocolFee0, protocolFee1);
+        emit Fees.ProtocolFeesWithdrawn(address(this), protocolFeeCollector, 0, protocolFees1);
 
-        // Call the callback
-        hooks.handleWithdrawProtocolFeesCallback();
+        hooks.withdrawProtocolFees();
 
-        // Verify fees are reset to 0
+        uint256 collectorBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(protocolFeeCollector);
+
         assertEq(hooks.protocolFees0(), 0);
         assertEq(hooks.protocolFees1(), 0);
+        assertEq(collectorBalance1After - collectorBalance1Before, protocolFees1);
     }
 
-    function test_handleWithdrawProtocolFeesCallback_ShouldHandleZeroFees() public {
-        // Verify no fees accumulated
+    function test_withdrawProtocolFees_ShouldHandleZeroFees() public {
         assertEq(hooks.protocolFees0(), 0);
         assertEq(hooks.protocolFees1(), 0);
 
-        // Expect poolManager.burn and take to NOT be called (count = 0)
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector),
-            0 // count = 0 means we expect it NOT to be called
-        );
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.take.selector),
-            0 // count = 0 means we expect it NOT to be called
-        );
-
-        // Expect the event to be emitted with zero amounts
+        // The sender in the event is the original caller of withdrawProtocolFees
         vm.expectEmit(address(hooks));
         emit Fees.ProtocolFeesWithdrawn(address(this), protocolFeeCollector, 0, 0);
 
-        // Call the callback
-        hooks.handleWithdrawProtocolFeesCallback();
+        hooks.withdrawProtocolFees();
 
-        // Verify fees remain 0
         assertEq(hooks.protocolFees0(), 0);
         assertEq(hooks.protocolFees1(), 0);
     }
 
-    function test_handleWithdrawHookFeesCallback_ShouldResetFeesAndEmitEvent() public {
-        // First, add some hook fees
-        uint256 hookFee0 = 100e18;
-        uint256 hookFee1 = 200e18;
+    function test_withdrawHookFees_ShouldTransferFeesAndEmitEvent() public {
+        // Add liquidity and perform a swap to accumulate fees
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
 
-        hooks.addFees(true, 0, hookFee0);
-        hooks.addFees(false, 0, hookFee1);
+        uint256 hookFees1 = hooks.hookFees1();
+        assertGt(hookFees1, 0);
 
         address beneficiary = makeAddr("beneficiary");
+        uint256 beneficiaryBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(beneficiary);
 
-        // Mock the poolManager calls
-        vm.mockCall(address(poolManager), abi.encodeWithSelector(poolManager.burn.selector), abi.encode());
-        vm.mockCall(address(poolManager), abi.encodeWithSelector(poolManager.take.selector), abi.encode());
-
-        // Expect burn to be called for currency0
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector, address(hooks), currency0.toId(), hookFee0)
-        );
-
-        // Expect take to be called for currency0
-        vm.expectCall(
-            address(poolManager), abi.encodeWithSelector(poolManager.take.selector, currency0, beneficiary, hookFee0)
-        );
-
-        // Expect burn to be called for currency1
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector, address(hooks), currency1.toId(), hookFee1)
-        );
-
-        // Expect take to be called for currency1
-        vm.expectCall(
-            address(poolManager), abi.encodeWithSelector(poolManager.take.selector, currency1, beneficiary, hookFee1)
-        );
-
-        // Expect the event to be emitted
+        // The sender in the event is the original caller of withdrawHookFees
         vm.expectEmit(address(hooks));
-        emit Fees.HookFeesWithdrawn(address(this), beneficiary, hookFee0, hookFee1);
+        emit Fees.HookFeesWithdrawn(defaultAdmin, beneficiary, 0, hookFees1);
 
-        // Call the callback
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, beneficiary);
-        hooks.handleWithdrawHookFeesCallback(data);
+        vm.prank(defaultAdmin);
+        hooks.withdrawHookFees(beneficiary);
 
-        // Verify fees are reset to 0
+        uint256 beneficiaryBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(beneficiary);
+
         assertEq(hooks.hookFees0(), 0);
         assertEq(hooks.hookFees1(), 0);
+        assertEq(beneficiaryBalance1After - beneficiaryBalance1Before, hookFees1);
     }
 
-    function test_handleWithdrawHookFeesCallback_ShouldHandleZeroFees() public {
-        // Verify no fees accumulated
+    function test_withdrawHookFees_ShouldHandleZeroFees() public {
         assertEq(hooks.hookFees0(), 0);
         assertEq(hooks.hookFees1(), 0);
 
         address beneficiary = makeAddr("beneficiary");
 
-        // Expect poolManager.burn and take to NOT be called (count = 0)
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.burn.selector),
-            0 // count = 0 means we expect it NOT to be called
-        );
-        vm.expectCall(
-            address(poolManager),
-            abi.encodeWithSelector(poolManager.take.selector),
-            0 // count = 0 means we expect it NOT to be called
-        );
-
-        // Expect the event to be emitted with zero amounts
+        // The sender in the event is the original caller of withdrawHookFees
         vm.expectEmit(address(hooks));
-        emit Fees.HookFeesWithdrawn(address(this), beneficiary, 0, 0);
+        emit Fees.HookFeesWithdrawn(defaultAdmin, beneficiary, 0, 0);
 
-        // Call the callback
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, beneficiary);
-        hooks.handleWithdrawHookFeesCallback(data);
+        vm.prank(defaultAdmin);
+        hooks.withdrawHookFees(beneficiary);
 
-        // Verify fees remain 0
         assertEq(hooks.hookFees0(), 0);
         assertEq(hooks.hookFees1(), 0);
     }
 
-    function test_handleWithdrawHookFeesCallback_ShouldRevertWhenBeneficiaryIsZeroAddress() public {
-        // Add some hook fees
-        uint256 hookFee0 = 100e18;
-        uint256 hookFee1 = 200e18;
+    function test_withdrawHookFees_ShouldRevertWhenBeneficiaryIsZeroAddress() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
 
-        hooks.addFees(true, 0, hookFee0);
-        hooks.addFees(false, 0, hookFee1);
-
-        address beneficiary = address(0);
-
-        // Expect the InvalidAddress error
         vm.expectRevert(Fees.InvalidAddress.selector);
-
-        // Call the callback with zero address beneficiary
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, beneficiary);
-        hooks.handleWithdrawHookFeesCallback(data);
+        vm.prank(defaultAdmin);
+        hooks.withdrawHookFees(address(0));
     }
 
     function test_getFees_ShouldCalculateFeesCorrectly() public {
-        uint256 precision = hooks.FEE_PRECISION();
         uint256 amount = 1000e18;
 
-        // Set custom fee percentages
-        uint256 protocolFeePercentage = 1000; // 0.1%
-        uint256 hookFeePercentage = 2000; // 0.2%
-        uint256 lpFeePercentage = 3000; // 0.3%
-
+        // Set custom fee percentages: 0.1%, 0.2%, 0.3%
         vm.startPrank(defaultAdmin);
-        hooks.setProtocolFeePercentage(protocolFeePercentage);
-        hooks.setHookFeePercentage(hookFeePercentage);
-        hooks.setLpFeePercentage(lpFeePercentage);
+        hooks.setProtocolFeePercentage(1000);
+        hooks.setHookFeePercentage(2000);
+        hooks.setLpFeePercentage(3000);
         vm.stopPrank();
 
         (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = hooks.getFees(amount);
 
-        assertEq(lpFees, amount * lpFeePercentage / precision);
-        assertEq(hookFees, amount * hookFeePercentage / precision);
-        assertEq(protocolFees, amount * protocolFeePercentage / precision);
+        assertEq(lpFees, 3e18);
+        assertEq(hookFees, 2e18);
+        assertEq(protocolFees, 1e18);
     }
 
-    function test_addFees_IncrementsOnlyCurrency0() public {
-        uint256 p = 111e18;
-        uint256 h = 222e18;
+    function test_swaps_ShouldAccumulateFees() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
         assertEq(hooks.protocolFees0(), 0);
+        assertEq(hooks.protocolFees1(), 0);
         assertEq(hooks.hookFees0(), 0);
-        assertEq(hooks.protocolFees1(), 0);
         assertEq(hooks.hookFees1(), 0);
 
-        hooks.addFees(true, p, h);
-
-        assertEq(hooks.protocolFees0(), p);
-        assertEq(hooks.hookFees0(), h);
-
-        assertEq(hooks.protocolFees1(), 0);
-        assertEq(hooks.hookFees1(), 0);
-    }
-
-    function test_addFees_IncrementsOnlyCurrency1() public {
-        uint256 p = 333e18;
-        uint256 h = 444e18;
+        // Exact input swap zeroForOne accumulates fees on currency1
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
 
         assertEq(hooks.protocolFees0(), 0);
+        assertGt(hooks.protocolFees1(), 0);
         assertEq(hooks.hookFees0(), 0);
-        assertEq(hooks.protocolFees1(), 0);
-        assertEq(hooks.hookFees1(), 0);
-
-        hooks.addFees(false, p, h);
-
-        assertEq(hooks.protocolFees0(), 0);
-        assertEq(hooks.hookFees0(), 0);
-
-        assertEq(hooks.protocolFees1(), p);
-        assertEq(hooks.hookFees1(), h);
+        assertGt(hooks.hookFees1(), 0);
     }
 }
