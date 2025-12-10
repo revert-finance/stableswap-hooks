@@ -22,29 +22,29 @@ library StableSwapMath {
     /// @notice Compute the StableSwap invariant D for two reserves.
     /// @dev Iteratively solves A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i), starting with D = Σx_i.
     /// Reserves must be pre-scaled to 1e18 precision;
-    /// @param reserves0 Scaled reserve of currency 0.
-    /// @param reserves1 Scaled reserve of currency 1.
-    /// @param amplification Amplification coefficient A.
+    /// @param _reserves0 Scaled reserve of currency 0.
+    /// @param _reserves1 Scaled reserve of currency 1.
+    /// @param _amplification Amplification coefficient A.
     /// @return invariant The converged invariant D.
-    function getInvariant(uint256 reserves0, uint256 reserves1, uint256 amplification)
+    function getInvariant(uint256 _reserves0, uint256 _reserves1, uint256 _amplification)
         internal
         pure
         returns (uint256 invariant)
     {
-        uint256 totalReserves = reserves0 + reserves1;
+        uint256 totalReserves = _reserves0 + _reserves1;
 
         if (totalReserves == 0) {
             return 0;
         }
 
         invariant = totalReserves;
-        uint256 ampTimesCoins = amplification * CURRENCY_COUNT;
+        uint256 ampTimesCoins = _amplification * CURRENCY_COUNT;
 
         // Newton-Raphson over D. For two currencies the product term is D^(n+1) / (n^n * x0 * x1) with n = 2.
         for (uint256 i = 0; i < 255; ++i) {
             uint256 productTerm = invariant;
-            productTerm = (productTerm * invariant) / reserves0;
-            productTerm = (productTerm * invariant) / reserves1;
+            productTerm = (productTerm * invariant) / _reserves0;
+            productTerm = (productTerm * invariant) / _reserves1;
             productTerm = productTerm / (CURRENCY_COUNT * CURRENCY_COUNT);
 
             uint256 previousInvariant = invariant;
@@ -67,31 +67,31 @@ library StableSwapMath {
 
     /// @notice Compute the missing reserves given the other reserves and invariant.
     /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserves.
-    /// @param knownReserves The known reserves after a swap (scaled to 1e18 decimals).
-    /// @param amplification Amplification coefficient A.
-    /// @param invariant The invariant D that must be preserved.
+    /// @param _knownReserves The known reserves after a swap (scaled to 1e18 decimals).
+    /// @param _amplification Amplification coefficient A.
+    /// @param _invariant The invariant D that must be preserved.
     /// @return otherReserves The calculated missing reserves (scaled).
-    function getOtherReserves(uint256 knownReserves, uint256 amplification, uint256 invariant)
+    function getOtherReserves(uint256 _knownReserves, uint256 _amplification, uint256 _invariant)
         internal
         pure
         returns (uint256 otherReserves)
     {
-        uint256 ampTimesCoins = amplification * CURRENCY_COUNT;
+        uint256 ampTimesCoins = _amplification * CURRENCY_COUNT;
 
         // constantTerm = D^3 / (A*n^n*n*x)
-        uint256 constantTerm = (invariant * invariant) / (knownReserves * CURRENCY_COUNT);
-        constantTerm = (constantTerm * invariant * AMPLIFICATION_PRECISION) / (ampTimesCoins * CURRENCY_COUNT);
+        uint256 constantTerm = (_invariant * _invariant) / (_knownReserves * CURRENCY_COUNT);
+        constantTerm = (constantTerm * _invariant * AMPLIFICATION_PRECISION) / (ampTimesCoins * CURRENCY_COUNT);
 
         // linearCoefficient = x + D / (A * n^n)
-        uint256 linearCoefficient = knownReserves + (invariant * AMPLIFICATION_PRECISION) / ampTimesCoins;
+        uint256 linearCoefficient = _knownReserves + (_invariant * AMPLIFICATION_PRECISION) / ampTimesCoins;
 
-        otherReserves = invariant;
+        otherReserves = _invariant;
 
         for (uint256 i = 0; i < 255; ++i) {
             uint256 previousOtherReserves = otherReserves;
 
             otherReserves =
-                (otherReserves * otherReserves + constantTerm) / (2 * otherReserves + linearCoefficient - invariant);
+                (otherReserves * otherReserves + constantTerm) / (2 * otherReserves + linearCoefficient - _invariant);
 
             if (otherReserves > previousOtherReserves) {
                 if (otherReserves - previousOtherReserves <= 1) return otherReserves;
@@ -104,25 +104,25 @@ library StableSwapMath {
     }
 
     /// @dev Scales a token amount into 1e18 precision using the given rate.
-    /// @param amount Token-denominated amount.
-    /// @param rate Scaling factor for the token.
+    /// @param _amount Token-denominated amount.
+    /// @param _rate Scaling factor for the token.
     /// @return Scaled amount in 1e18 precision.
-    function scaleTo(uint256 amount, uint256 rate) internal pure returns (uint256) {
-        return rate * amount / RATE_PRECISION;
+    function scaleTo(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return _rate * _amount / RATE_PRECISION;
     }
 
     /// @dev Converts a 1e18-precision amount back to token units using the given rate.
-    /// @param amount 1e18-scaled amount.
-    /// @param rate Scaling factor for the token.
+    /// @param _amount 1e18-scaled amount.
+    /// @param _rate Scaling factor for the token.
     /// @return Token-denominated amount.
-    function descale(uint256 amount, uint256 rate) internal pure returns (uint256) {
-        return amount * RATE_PRECISION / rate;
+    function descale(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return _amount * RATE_PRECISION / _rate;
     }
 
     /// @dev Returns the rate for a given currency.
-    /// @param currency The currency to get the rate for.
+    /// @param _currency The currency to get the rate for.
     /// @return The rate for the currency.
-    function getRate(Currency currency) internal view returns (uint256) {
-        return 10 ** (36 - IERC20Metadata(Currency.unwrap(currency)).decimals());
+    function getRate(Currency _currency) internal view returns (uint256) {
+        return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
     }
 }

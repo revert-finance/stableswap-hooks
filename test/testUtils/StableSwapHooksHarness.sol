@@ -43,7 +43,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
 
     // Liquidity.sol
 
-    function computeNewShares(uint256 amount0, uint256 amount1) external view returns (uint256) {
-        return _computeNewShares(amount0, amount1);
+    function computeNewShares(uint256 _amount0, uint256 _amount1) external view returns (uint256) {
+        return _computeNewShares(_amount0, _amount1);
     }
 }

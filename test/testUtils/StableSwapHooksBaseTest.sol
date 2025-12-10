@@ -126,17 +126,17 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         return _amount * 10 ** IERC20Metadata(Currency.unwrap(_currency)).decimals();
     }
 
-    function _addLiquidity(uint256 amount0, uint256 amount1) internal {
+    function _addLiquidity(uint256 _amount0, uint256 _amount1) internal {
         vm.startPrank(liquidityProvider);
-        hooks.addLiquidity(_toTokenWei(currency0, amount0), _toTokenWei(currency1, amount1), 0);
+        hooks.addLiquidity(_toTokenWei(currency0, _amount0), _toTokenWei(currency1, _amount1), 0);
         vm.stopPrank();
     }
 
-    function _executeExactInputSwap(bool zeroForOne, uint256 amountIn) internal {
+    function _executeExactInputSwap(bool _zeroForOne, uint256 _amountIn) internal {
         PoolKey memory poolKey = _getPoolKey();
 
-        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
-        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
+        Currency inputCurrency = _zeroForOne ? poolKey.currency0 : poolKey.currency1;
+        Currency outputCurrency = _zeroForOne ? poolKey.currency1 : poolKey.currency0;
 
         bytes memory actions =
             abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
@@ -145,13 +145,13 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         params[0] = abi.encode(
             IV4Router.ExactInputSingleParams({
                 poolKey: poolKey,
-                zeroForOne: zeroForOne,
-                amountIn: uint128(amountIn),
+                zeroForOne: _zeroForOne,
+                amountIn: uint128(_amountIn),
                 amountOutMinimum: 0,
                 hookData: bytes("")
             })
         );
-        params[1] = abi.encode(inputCurrency, amountIn);
+        params[1] = abi.encode(inputCurrency, _amountIn);
         params[2] = abi.encode(outputCurrency, 0);
 
         bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
@@ -162,11 +162,11 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         universalRouter.execute(commands, inputs, block.timestamp + 100);
     }
 
-    function _executeExactOutputSwap(bool zeroForOne, uint256 amountOut) internal {
+    function _executeExactOutputSwap(bool _zeroForOne, uint256 _amountOut) internal {
         PoolKey memory poolKey = _getPoolKey();
 
-        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
-        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
+        Currency inputCurrency = _zeroForOne ? poolKey.currency0 : poolKey.currency1;
+        Currency outputCurrency = _zeroForOne ? poolKey.currency1 : poolKey.currency0;
 
         bytes memory actions =
             abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
@@ -175,14 +175,14 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         params[0] = abi.encode(
             IV4Router.ExactOutputSingleParams({
                 poolKey: poolKey,
-                zeroForOne: zeroForOne,
-                amountOut: uint128(amountOut),
+                zeroForOne: _zeroForOne,
+                amountOut: uint128(_amountOut),
                 amountInMaximum: type(uint128).max,
                 hookData: bytes("")
             })
         );
         params[1] = abi.encode(inputCurrency, type(uint128).max);
-        params[2] = abi.encode(outputCurrency, amountOut);
+        params[2] = abi.encode(outputCurrency, _amountOut);
 
         bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
         bytes[] memory inputs = new bytes[](1);

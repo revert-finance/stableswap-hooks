@@ -19,18 +19,18 @@ abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
     /// @notice Emitted when liquidity is added to the pool
-    /// @param sender Address that added liquidity
-    /// @param amount0 Amount of currency0 added
-    /// @param amount1 Amount of currency1 added
-    /// @param shares Number of LP shares minted
-    event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    /// @param _sender Address that added liquidity
+    /// @param _amount0 Amount of currency0 added
+    /// @param _amount1 Amount of currency1 added
+    /// @param _shares Number of LP shares minted
+    event LiquidityAdded(address indexed _sender, uint256 _amount0, uint256 _amount1, uint256 _shares);
 
     /// @notice Emitted when liquidity is removed from the pool
-    /// @param sender Address that removed liquidity
-    /// @param amount0 Amount of currency0 withdrawn
-    /// @param amount1 Amount of currency1 withdrawn
-    /// @param shares Number of LP shares burned
-    event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
+    /// @param _sender Address that removed liquidity
+    /// @param _amount0 Amount of currency0 withdrawn
+    /// @param _amount1 Amount of currency1 withdrawn
+    /// @param _shares Number of LP shares burned
+    event LiquidityRemoved(address indexed _sender, uint256 _amount0, uint256 _amount1, uint256 _shares);
 
     /// @notice Error thrown when adding liquidity would decrease the invariant
     error InvalidInvariant();
@@ -53,11 +53,11 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Add liquidity to the pool
     /// @dev Supports single-sided deposits; at least one amount must be non-zero
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
-    /// @param amount0 The amount of currency0 to add
-    /// @param amount1 The amount of currency1 to add
-    /// @param minShares The minimum number of shares to receive (slippage protection)
-    function addLiquidity(uint256 amount0, uint256 amount1, uint256 minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, amount0, amount1, minShares, _msgSender());
+    /// @param _amount0 The amount of currency0 to add
+    /// @param _amount1 The amount of currency1 to add
+    /// @param _minShares The minimum number of shares to receive (slippage protection)
+    function addLiquidity(uint256 _amount0, uint256 _amount1, uint256 _minShares) external {
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amount0, _amount1, _minShares, _msgSender());
 
         poolManager.unlock(data);
     }
@@ -65,11 +65,11 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Remove liquidity from the pool
     /// @dev Burns LP shares and returns proportional amounts of both tokens
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
-    /// @param shares The number of LP shares to burn
-    /// @param minAmount0 The minimum amount of currency0 to receive (slippage protection)
-    /// @param minAmount1 The minimum amount of currency1 to receive (slippage protection)
-    function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
-        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, shares, minAmount0, minAmount1, _msgSender());
+    /// @param _shares The number of LP shares to burn
+    /// @param _minAmount0 The minimum amount of currency0 to receive (slippage protection)
+    /// @param _minAmount1 The minimum amount of currency1 to receive (slippage protection)
+    function removeLiquidity(uint256 _shares, uint256 _minAmount0, uint256 _minAmount1) external {
+        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmount0, _minAmount1, _msgSender());
 
         poolManager.unlock(data);
     }
@@ -156,17 +156,17 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Computes the number of LP shares to mint for a given deposit
     /// @dev Uses the StableSwap invariant to calculate proportional shares
     /// @dev For first deposit, shares equal the invariant; for subsequent deposits, shares are proportional to invariant increase
-    /// @param amount0 Amount of currency0 being deposited
-    /// @param amount1 Amount of currency1 being deposited
+    /// @param _amount0 Amount of currency0 being deposited
+    /// @param _amount1 Amount of currency1 being deposited
     /// @return newShares Number of LP shares to mint
-    function _computeNewShares(uint256 amount0, uint256 amount1) internal view returns (uint256 newShares) {
+    function _computeNewShares(uint256 _amount0, uint256 _amount1) internal view returns (uint256 newShares) {
         uint256 oldTotalShares = totalSupply();
 
         uint256 oldReserves0 = reserves0;
         uint256 oldReserves1 = reserves1;
 
-        uint256 newReserves0 = oldReserves0 + amount0;
-        uint256 newReserves1 = oldReserves1 + amount1;
+        uint256 newReserves0 = oldReserves0 + _amount0;
+        uint256 newReserves1 = oldReserves1 + _amount1;
 
         uint256 currentAmp = _currentAmp();
 
