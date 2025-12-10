@@ -2,10 +2,10 @@
 pragma solidity 0.8.30;
 
 import {Actions} from "src/libraries/Actions.sol";
-import {Base} from "src/Base.sol";
+import {Liquidity} from "src/Liquidity.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
-abstract contract Fees is Base {
+abstract contract Fees is Liquidity {
     /// @notice Precision constant for fee calculations (1,000,000 = 100%)
     uint256 public constant FEE_PRECISION = 1e6;
 
@@ -129,7 +129,7 @@ abstract contract Fees is Base {
     /// @notice Withdraws accumulated protocol fees to the protocol fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     function withdrawProtocolFees() external {
-        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES);
+        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES, _msgSender());
 
         poolManager.unlock(data);
     }
@@ -139,7 +139,7 @@ abstract contract Fees is Base {
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     /// @param _beneficiary Address that will receive the hook fees
     function withdrawHookFees(address _beneficiary) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, _beneficiary);
+        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, _msgSender(), _beneficiary);
 
         poolManager.unlock(data);
     }
@@ -147,7 +147,10 @@ abstract contract Fees is Base {
     /// @notice Internal callback handler for protocol fee withdrawals
     /// @dev Called during unlock callback to process protocol fee withdrawal
     /// @dev Resets protocol fee counters to zero after withdrawal
-    function _handleWithdrawProtocolFeesCallback() internal {
+    /// @param data Encoded data containing the original sender address
+    function _handleWithdrawProtocolFeesCallback(bytes memory data) internal {
+        (, address sender) = abi.decode(data, (uint256, address));
+
         address _protocolFeeCollector = protocolFeeCollector;
         uint256 _protocolFees0 = protocolFees0;
         uint256 _protocolFees1 = protocolFees1;
@@ -157,15 +160,15 @@ abstract contract Fees is Base {
         protocolFees0 = 0;
         protocolFees1 = 0;
 
-        emit ProtocolFeesWithdrawn(_msgSender(), _protocolFeeCollector, _protocolFees0, _protocolFees1);
+        emit ProtocolFeesWithdrawn(sender, _protocolFeeCollector, _protocolFees0, _protocolFees1);
     }
 
     /// @notice Internal callback handler for hook fee withdrawals
     /// @dev Called during unlock callback to process hook fee withdrawal
     /// @dev Resets hook fee counters to zero after withdrawal
-    /// @param data Encoded data containing the beneficiary address
+    /// @param data Encoded data containing the original sender and beneficiary addresses
     function _handleWithdrawHookFeesCallback(bytes memory data) internal {
-        (, address _beneficiary) = abi.decode(data, (uint256, address));
+        (, address sender, address _beneficiary) = abi.decode(data, (uint256, address, address));
 
         uint256 _hookFees0 = hookFees0;
         uint256 _hookFees1 = hookFees1;
@@ -175,7 +178,7 @@ abstract contract Fees is Base {
         hookFees0 = 0;
         hookFees1 = 0;
 
-        emit HookFeesWithdrawn(_msgSender(), _beneficiary, _hookFees0, _hookFees1);
+        emit HookFeesWithdrawn(sender, _beneficiary, _hookFees0, _hookFees1);
     }
 
     /// @notice Calculates LP, hook, and protocol fees from a given amount

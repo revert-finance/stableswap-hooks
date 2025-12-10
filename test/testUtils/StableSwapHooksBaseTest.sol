@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {Test} from "forge-std/Test.sol";
-
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -14,11 +12,12 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
-
-import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
+import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
+import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
@@ -101,10 +100,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     }
 
     function _dealTokens() private {
-        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 1000));
-        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 1000));
-        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 1000));
-        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 1000));
+        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 1e6));
+        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 1e6));
+        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 1e6));
+        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 1e6));
 
         vm.startPrank(liquidityProvider);
         IERC20(Currency.unwrap(currency0)).forceApprove(address(hooks), type(uint256).max);
@@ -125,5 +124,71 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
 
     function _toTokenWei(Currency _currency, uint256 _amount) internal view returns (uint256) {
         return _amount * 10 ** IERC20Metadata(Currency.unwrap(_currency)).decimals();
+    }
+
+    function _addLiquidity(uint256 amount0, uint256 amount1) internal {
+        vm.startPrank(liquidityProvider);
+        hooks.addLiquidity(_toTokenWei(currency0, amount0), _toTokenWei(currency1, amount1), 0);
+        vm.stopPrank();
+    }
+
+    function _executeExactInputSwap(bool zeroForOne, uint256 amountIn) internal {
+        PoolKey memory poolKey = _getPoolKey();
+
+        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
+        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
+
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(
+            IV4Router.ExactInputSingleParams({
+                poolKey: poolKey,
+                zeroForOne: zeroForOne,
+                amountIn: uint128(amountIn),
+                amountOutMinimum: 0,
+                hookData: bytes("")
+            })
+        );
+        params[1] = abi.encode(inputCurrency, amountIn);
+        params[2] = abi.encode(outputCurrency, 0);
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(actions, params);
+
+        vm.prank(swapper);
+        universalRouter.execute(commands, inputs, block.timestamp + 100);
+    }
+
+    function _executeExactOutputSwap(bool zeroForOne, uint256 amountOut) internal {
+        PoolKey memory poolKey = _getPoolKey();
+
+        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
+        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
+
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(
+            IV4Router.ExactOutputSingleParams({
+                poolKey: poolKey,
+                zeroForOne: zeroForOne,
+                amountOut: uint128(amountOut),
+                amountInMaximum: type(uint128).max,
+                hookData: bytes("")
+            })
+        );
+        params[1] = abi.encode(inputCurrency, type(uint128).max);
+        params[2] = abi.encode(outputCurrency, amountOut);
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(actions, params);
+
+        vm.prank(swapper);
+        universalRouter.execute(commands, inputs, block.timestamp + 100);
     }
 }

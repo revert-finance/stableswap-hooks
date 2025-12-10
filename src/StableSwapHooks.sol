@@ -1,91 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
-import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
-
-import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
-
-import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 import {Actions} from "src/libraries/Actions.sol";
-import {Fees} from "src/Fees.sol";
 import {Base} from "src/Base.sol";
 import {Amp} from "src/Amp.sol";
+import {Fees} from "src/Fees.sol";
+import {Swap} from "src/Swap.sol";
 
-contract StableSwapHooks is Amp, Fees, IUnlockCallback, ERC20 {
-    using SafeCast for int256;
-    using SafeCast for uint256;
-    using TickMath for int24;
-    using SafeERC20 for IERC20;
-
-    /// Constants
-
-    // TODO: Make fee and tick spacing configurable. Current value is recommended for stable pairs
-    uint24 public constant FEE = 1e2; // 0.01%
-    uint256 public constant FEE_DENOMINATOR = 1e6; // 100%
-    int24 public constant TICK_SPACING = 1;
-
-    // Hook fee percentage (of the total FEE).
-    uint256 public constant HOOK_FEE_PERCENTAGE = 2e5; // 20% of swap fees
-
-    /// Immutables
-
-    PoolId public immutable poolId;
-    uint256 public immutable rate0;
-    uint256 public immutable rate1;
-
-    /// Variables
-
-    uint256 public reserves0;
-    uint256 public reserves1;
-    uint256 public totalShares;
-
-    mapping(address => uint256) public sharesByUser;
-
-    address public hookFeeCollector;
-
-    uint256 public hookFeesAccrued0;
-    uint256 public hookFeesAccrued1;
-
-    /// Errors
-
-    error InvalidA();
-    error InvalidPoolId();
-    error InvalidInvariant();
-    error InvalidRange();
-    error InsufficientTimeSinceLastAChange();
-    error InsufficientShares();
-    error InsufficientAmounts();
-    error UseHookLiquidityModifiers(address hookAddress);
-    error AddLiquidityAmountsCannotBeZero();
+/// @notice Main entry point contract implementing Uniswap v4 hooks for a StableSwap AMM
+contract StableSwapHooks is IUnlockCallback, Swap {
+    /// @notice Error thrown when an unrecognized action is passed to the unlock callback
     error InvalidAction();
-    error NoHookFeeCollector();
-    error NoFeesToClaim();
-    error InvalidFeeCollector();
 
-    /// Events
-
-    event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
-    event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
-    event HookFeeCollectorChanged(address indexed oldCollector, address indexed newCollector);
-    event HookFeesClaimed(address indexed collector, uint256 amount0, uint256 amount1);
-
-    /// Deployment
-
+    /// @notice Initializes the StableSwap hook with pool configuration and fee parameters
+    /// @param _poolManager The Uniswap v4 PoolManager contract
+    /// @param _currency0 The first currency in the pair
+    /// @param _currency1 The second currency in the pair
+    /// @param _protocolFeeCollector Address that receives protocol fees
+    /// @param _protocolFeePercentage Protocol fee percentage (scaled by FEE_PRECISION)
+    /// @param _hookFeePercentage Hook fee percentage (scaled by FEE_PRECISION)
+    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
+    /// @param _baseAmp Initial amplification coefficient
     constructor(
         IPoolManager _poolManager,
         Currency _currency0,
@@ -96,98 +35,15 @@ contract StableSwapHooks is Amp, Fees, IUnlockCallback, ERC20 {
         uint256 _lpFeePercentage,
         uint256 _baseAmp
     )
-        Base(_poolManager, _currency0, _currency1)
-        Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
+        Base(_poolManager, _currency0, _currency1, _lpFeePercentage)
         Amp(_baseAmp)
-        ERC20("StableSwap LP", "ssLP")
-    {
-        PoolKey memory key = PoolKey({
-            currency0: _currency0,
-            currency1: _currency1,
-            fee: uint24(_lpFeePercentage),
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(this))
-        });
+        Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
+    {}
 
-        rate0 = StableSwapMath.getRate(_currency0);
-        rate1 = StableSwapMath.getRate(_currency1);
-
-        poolId = key.toId();
-
-        // Grant deployer the deployer
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
-
-    /// External
-
-    /// @notice Set the hook fee collector address
-    /// @param _hookFeeCollector The new hook fee collector address
-    function setHookFeeCollector(address _hookFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_hookFeeCollector == address(0)) {
-            revert InvalidFeeCollector();
-        }
-        address oldCollector = hookFeeCollector;
-        hookFeeCollector = _hookFeeCollector;
-        emit HookFeeCollectorChanged(oldCollector, _hookFeeCollector);
-    }
-
-    /// @notice Claim accrued hook fees and send them to the hook fee collector
-    /// @dev This function is permissionless - anyone can call it to trigger the fee transfer
-    /// @dev This only claims fees accrued by this hook, NOT Uniswap v4's protocol fees
-    function claimHookFees() external {
-        address collector = hookFeeCollector;
-        if (collector == address(0)) {
-            revert NoHookFeeCollector();
-        }
-
-        uint256 amount0 = hookFeesAccrued0;
-        uint256 amount1 = hookFeesAccrued1;
-
-        if (amount0 == 0 && amount1 == 0) {
-            revert NoFeesToClaim();
-        }
-
-        // Reset accrued fees before transfer (reentrancy protection)
-        hookFeesAccrued0 = 0;
-        hookFeesAccrued1 = 0;
-
-        // Transfer accrued fees from this contract to the collector
-        // These tokens are held as ERC6909 claims in the PoolManager
-        if (amount0 > 0) {
-            poolManager.burn(address(this), currency0.toId(), amount0);
-            poolManager.take(currency0, collector, amount0);
-        }
-
-        if (amount1 > 0) {
-            poolManager.burn(address(this), currency1.toId(), amount1);
-            poolManager.take(currency1, collector, amount1);
-        }
-
-        emit HookFeesClaimed(collector, amount0, amount1);
-    }
-
-    /// @notice Add liquidity to the pool
-    /// @param amount0 The amount of currency0 to add
-    /// @param amount1 The amount of currency1 to add
-    /// @param minShares The minimum number of shares to receive
-    function addLiquidity(uint256 amount0, uint256 amount1, uint256 minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, amount0, amount1, minShares, msg.sender);
-
-        poolManager.unlock(data);
-    }
-
-    /// @notice Remove liquidity from the pool
-    /// @param shares The number of shares to burn
-    /// @param minAmount0 The minimum amount of currency0 to receive
-    /// @param minAmount1 The minimum amount of currency1 to receive
-    function removeLiquidity(uint256 shares, uint256 minAmount0, uint256 minAmount1) external {
-        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, shares, minAmount0, minAmount1, msg.sender);
-
-        poolManager.unlock(data);
-    }
-
-    /// @notice Callback function for the pool manager
-    /// @param data The data passed to the unlock function
+    /// @notice Callback function invoked by the pool manager during unlock
+    /// @dev Routes to appropriate handler based on the action type encoded in data
+    /// @param data Encoded data containing action type and action-specific parameters
+    /// @return Empty bytes on success
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         uint256 action = abi.decode(data, (uint256));
 
@@ -195,369 +51,14 @@ contract StableSwapHooks is Amp, Fees, IUnlockCallback, ERC20 {
             _handleAddLiquidityCallback(data);
         } else if (action == Actions.REMOVE_LIQUIDITY) {
             _handleRemoveLiquidityCallback(data);
+        } else if (action == Actions.WITHDRAW_PROTOCOL_FEES) {
+            _handleWithdrawProtocolFeesCallback(data);
+        } else if (action == Actions.WITHDRAW_HOOK_FEES) {
+            _handleWithdrawHookFeesCallback(data);
         } else {
             revert InvalidAction();
         }
 
         return "";
-    }
-
-    /// Hooks
-
-    function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
-        permissions = Hooks.Permissions({
-            beforeInitialize: true,
-            afterInitialize: false,
-            beforeAddLiquidity: true,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: false,
-            beforeDonate: true,
-            afterDonate: false,
-            beforeSwapReturnDelta: true,
-            afterSwapReturnDelta: false,
-            afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
-        });
-    }
-
-    /// @notice Validates pool initialization parameters.
-    /// @dev Reverts if the pool ID doesn't match.
-    function _beforeInitialize(address, PoolKey calldata key, uint160) internal view override returns (bytes4) {
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
-
-        return BaseHook.beforeInitialize.selector;
-    }
-
-    /// @dev Reverts if liquidity is modified via PoolManager.modifyLiquidity function.
-    /// Liquidity should be provided via the addLiquidity function of this contract.
-    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
-        internal
-        view
-        override
-        returns (bytes4)
-    {
-        revert UseHookLiquidityModifiers(address(this));
-    }
-
-    /// @dev Reverts if liquidity is modified via PoolManager.modifyLiquidity function.
-    /// Liquidity should be removed via the removeLiquidity function of this contract.
-    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
-        internal
-        view
-        override
-        returns (bytes4)
-    {
-        revert UseHookLiquidityModifiers(address(this));
-    }
-
-    /// @dev Reverts if someone tries to donate tokens to the pool.
-    /// All liquidity must be handled via the liquidity modifier functions of this contract.
-    function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
-        internal
-        view
-        override
-        returns (bytes4)
-    {
-        revert UseHookLiquidityModifiers(address(this));
-    }
-
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
-        internal
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(key.toId())) {
-            revert InvalidPoolId();
-        }
-
-        (int128 dy, uint256 protocolFee) = _swap(params);
-        BeforeSwapDelta delta = toBeforeSwapDelta(-params.amountSpecified.toInt128(), -dy);
-
-        if (params.zeroForOne) {
-            // Swap: token0 -> token1
-            // User pays token0, receives token1
-            // Hook fee is in token1 (the output token)
-            poolManager.burn(address(this), currency1.toId(), uint128(dy));
-            poolManager.mint(address(this), currency0.toId(), uint256(-params.amountSpecified));
-            reserves0 += uint256(-params.amountSpecified);
-            reserves1 -= uint128(dy);
-
-            // Accrue hook fee (stays as ERC6909 claims in this contract)
-            hookFeesAccrued1 += protocolFee;
-        } else {
-            // Swap: token1 -> token0
-            // User pays token1, receives token0
-            // Hook fee is in token0 (the output token)
-            poolManager.mint(address(this), currency1.toId(), uint256(-params.amountSpecified));
-            poolManager.burn(address(this), currency0.toId(), uint128(dy));
-            reserves0 -= uint128(dy);
-            reserves1 += uint256(-params.amountSpecified);
-
-            // Accrue hook fee (stays as ERC6909 claims in this contract)
-            hookFeesAccrued0 += protocolFee;
-        }
-
-        return (BaseHook.beforeSwap.selector, delta, 0);
-    }
-
-    /// Internal
-
-    function _handleAddLiquidityCallback(bytes calldata data) private {
-        (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
-            abi.decode(data, (uint256, uint256, uint256, uint256, address));
-
-        // Check that amount0 and amount1 are not both zero.
-        // The invariant takes into consideration single sided deposits
-        if (amount0 == 0 && amount1 == 0) {
-            revert AddLiquidityAmountsCannotBeZero();
-        }
-
-        uint256 oldTotalShares = totalShares;
-        uint256 newShares;
-
-        uint256 oldReserves0 = reserves0;
-        uint256 oldReserves1 = reserves1;
-
-        uint256 newReserves0 = oldReserves0 + amount0;
-        uint256 newReserves1 = oldReserves1 + amount1;
-
-        uint256 currentAmp = _currentAmp();
-
-        // Calculate new invariant
-        uint256 newInvariant = StableSwapMath.getInvariant(
-            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
-        );
-
-        // TODO: Handle min liquidity to prevent dust attacks
-        if (oldTotalShares == 0) {
-            // Shares equal the invariant on the first deposit
-            newShares = newInvariant;
-        } else {
-            // Compute the old invariant
-            uint256 oldInvariant = StableSwapMath.getInvariant(
-                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
-            );
-
-            // Check that the new invariant is higher
-            if (newInvariant <= oldInvariant) {
-                revert InvalidInvariant();
-            }
-
-            // Compute the new shares
-            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
-        }
-
-        // Check that the new shares are above the minimum
-        if (newShares < minShares) {
-            revert InsufficientShares();
-        }
-
-        // Transfer tokens from sender to PoolManager
-        if (amount0 > 0) {
-            poolManager.sync(currency0);
-            IERC20(Currency.unwrap(currency0)).safeTransferFrom(sender, address(poolManager), amount0);
-            poolManager.settle();
-            poolManager.mint(address(this), currency0.toId(), amount0);
-        }
-
-        if (amount1 > 0) {
-            poolManager.sync(currency1);
-            IERC20(Currency.unwrap(currency1)).safeTransferFrom(sender, address(poolManager), amount1);
-            poolManager.settle();
-            poolManager.mint(address(this), currency1.toId(), amount1);
-        }
-
-        // Update storage
-        totalShares += newShares;
-        sharesByUser[sender] += newShares;
-        reserves0 += amount0;
-        reserves1 += amount1;
-
-        _mint(sender, newShares);
-
-        emit LiquidityAdded(sender, amount0, amount1, newShares);
-    }
-
-    function _handleRemoveLiquidityCallback(bytes calldata data) private {
-        (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
-            abi.decode(data, (uint256, uint256, uint256, uint256, address));
-
-        uint256 userShares = sharesByUser[sender];
-
-        // Check that user has enough shares
-        if (shares > userShares) {
-            revert InsufficientShares();
-        }
-
-        // Calculate proportional amounts to withdraw
-        uint256 currentTotalShares = totalShares;
-        uint256 amount0 = (shares * reserves0) / currentTotalShares;
-        uint256 amount1 = (shares * reserves1) / currentTotalShares;
-
-        // Check slippage
-        if (amount0 < minAmount0 || amount1 < minAmount1) {
-            revert InsufficientAmounts();
-        }
-
-        // Burn claims and transfer tokens from PoolManager to sender
-        if (amount0 > 0) {
-            poolManager.burn(address(this), currency0.toId(), amount0);
-            poolManager.take(currency0, sender, amount0);
-        }
-
-        if (amount1 > 0) {
-            poolManager.burn(address(this), currency1.toId(), amount1);
-            poolManager.take(currency1, sender, amount1);
-        }
-
-        // Update storage
-        totalShares = currentTotalShares - shares;
-        sharesByUser[sender] = userShares - shares;
-        reserves0 -= amount0;
-        reserves1 -= amount1;
-
-        _burn(sender, shares);
-
-        emit LiquidityRemoved(sender, amount0, amount1, shares);
-    }
-
-    function _swap(SwapParams calldata params) private view returns (int128, uint256) {
-        uint256 xp0 = StableSwapMath.scaleTo(reserves0, rate0);
-        uint256 xp1 = StableSwapMath.scaleTo(reserves1, rate1);
-
-        int256 dx = params.amountSpecified;
-        uint256 memAmp = _currentAmp();
-        uint256 D = StableSwapMath.getInvariant(xp0, xp1, memAmp);
-
-        int256 dy;
-        uint256 protocolFee;
-
-        // Determine token direction and rates
-        bool isToken0In = params.zeroForOne;
-        uint256 xpIn = isToken0In ? xp0 : xp1;
-        uint256 xpOut = isToken0In ? xp1 : xp0;
-        uint256 rateIn = isToken0In ? rate0 : rate1;
-        uint256 rateOut = isToken0In ? rate1 : rate0;
-
-        if (dx < 0) {
-            // Exact input swap: user specifies how much they want to put in
-            // dx is negative, representing amount being taken from user
-            (dy, protocolFee) = _swapExactInput(xpIn, xpOut, uint256(-dx), rateIn, rateOut, memAmp, D);
-        } else {
-            // Exact output swap: user specifies how much they want to receive
-            // dx is positive, representing desired output amount
-            (dy, protocolFee) = _swapExactOutput(xpIn, xpOut, uint256(dx), rateIn, rateOut, memAmp, D);
-        }
-
-        // TODO
-        // self.upkeep_oracles(xp, amp, D)
-
-        // TODO
-        // Check dy against amount * sqrtPrice => min to receive
-        return (dy.toInt128(), protocolFee);
-    }
-
-    /// @dev Performs an exact input swap calculation
-    /// @param xpIn Precision-adjusted reserve of input token
-    /// @param xpOut Precision-adjusted reserve of output token
-    /// @param amountIn Amount of input token (in real units)
-    /// @param rateIn Rate multiplier for input token
-    /// @param rateOut Rate multiplier for output token
-    /// @param memAmp Amplification coefficient
-    /// @param D Invariant D
-    /// @return dy Amount of output token to give to user (positive = user receives)
-    /// @return protocolFee Amount of output token to accrue as hook fee
-    function _swapExactInput(
-        uint256 xpIn,
-        uint256 xpOut,
-        uint256 amountIn,
-        uint256 rateIn,
-        uint256 rateOut,
-        uint256 memAmp,
-        uint256 D
-    ) private pure returns (int256 dy, uint256 protocolFee) {
-        // Convert input amount to precision units and add to reserves
-        uint256 xIn = xpIn + StableSwapMath.scaleTo(amountIn, rateIn);
-
-        uint256 xOut = StableSwapMath.getOtherReserves(xIn, memAmp, D);
-
-        // Subtract 1 to round in favor of the pool
-        uint256 dyGross = xpOut - xOut - 1;
-
-        // Fee handling: Apply fee to the output amount
-        // Total fee is split between:
-        // 1. LP fees (stay in reserves, benefit liquidity providers)
-        // 2. Hook fees (tracked separately, claimable by hook fee collector)
-        //
-        // Fee calculation:
-        // - dyFee = total fee amount
-        // - hookPortion = fee amount for hook
-        // - lpPortion = fee amount for LPs (implicitly: dyFee - hookPortion)
-        // - dyNet = amount user receives after all fees
-        uint256 dyFee = (dyGross * FEE) / FEE_DENOMINATOR;
-        uint256 dyNet = dyGross - dyFee;
-
-        // Calculate hook fee portion (in precision units)
-        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
-
-        // Convert from precision units to real token units
-        uint256 amountOut = StableSwapMath.descale(dyNet, rateOut);
-        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
-
-        return (int256(amountOut), protocolFee);
-    }
-
-    /// @dev Performs an exact output swap calculation
-    /// @param xpIn Precision-adjusted reserve of input token
-    /// @param xpOut Precision-adjusted reserve of output token
-    /// @param amountOut Desired amount of output token (in real units)
-    /// @param rateIn Rate multiplier for input token
-    /// @param rateOut Rate multiplier for output token
-    /// @param memAmp Amplification coefficient
-    /// @param D Invariant D
-    /// @return dy Amount of input token to take from user (negative = user pays)
-    /// @return protocolFee Amount of output token to accrue as hook fee
-    function _swapExactOutput(
-        uint256 xpIn,
-        uint256 xpOut,
-        uint256 amountOut,
-        uint256 rateIn,
-        uint256 rateOut,
-        uint256 memAmp,
-        uint256 D
-    ) private pure returns (int256 dy, uint256 protocolFee) {
-        // Convert desired output to precision units
-        uint256 dyNet = StableSwapMath.scaleTo(amountOut, rateOut);
-
-        // Fee handling: Calculate gross output needed to deliver net output after fees
-        // Since fee is applied to output: net_output = gross_output * (1 - fee_rate)
-        // Solving for gross_output: gross_output = net_output / (1 - fee_rate)
-        // Which equals: gross_output = net_output * FEE_DENOMINATOR / (FEE_DENOMINATOR - FEE)
-        uint256 dyGross = (dyNet * FEE_DENOMINATOR) / (FEE_DENOMINATOR - FEE);
-
-        // Calculate total fee and hook portion
-        uint256 dyFee = dyGross - dyNet;
-        uint256 hookFeePortion = (dyFee * HOOK_FEE_PERCENTAGE) / FEE_DENOMINATOR;
-
-        // Calculate new output reserve after removing gross output
-        uint256 xOut = xpOut - dyGross;
-
-        // Calculate required input reserve using constant product invariant
-        uint256 xIn = StableSwapMath.getOtherReserves(xOut, memAmp, D);
-
-        // Calculate required input amount (in precision units)
-        uint256 dxRequired = xIn - xpIn;
-
-        // Convert from precision units to real token units
-        uint256 amountIn = StableSwapMath.descale(dxRequired, rateIn);
-        protocolFee = StableSwapMath.descale(hookFeePortion, rateOut);
-
-        // Return as negative to indicate amount to take from user
-        return (-int256(amountIn), protocolFee);
     }
 }
