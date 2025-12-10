@@ -11,9 +11,20 @@ import {Amp} from "src/Amp.sol";
 import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";
 
+/// @notice Main entry point contract implementing Uniswap v4 hooks for a StableSwap AMM
 contract StableSwapHooks is IUnlockCallback, Swap {
+    /// @notice Error thrown when an unrecognized action is passed to the unlock callback
     error InvalidAction();
 
+    /// @notice Initializes the StableSwap hook with pool configuration and fee parameters
+    /// @param _poolManager The Uniswap v4 PoolManager contract
+    /// @param _currency0 The first currency in the pair
+    /// @param _currency1 The second currency in the pair
+    /// @param _protocolFeeCollector Address that receives protocol fees
+    /// @param _protocolFeePercentage Protocol fee percentage (scaled by FEE_PRECISION)
+    /// @param _hookFeePercentage Hook fee percentage (scaled by FEE_PRECISION)
+    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
+    /// @param _baseAmp Initial amplification coefficient
     constructor(
         IPoolManager _poolManager,
         Currency _currency0,
@@ -29,8 +40,10 @@ contract StableSwapHooks is IUnlockCallback, Swap {
         Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
     {}
 
-    /// @notice Callback function for the pool manager
-    /// @param data The data passed to the unlock function
+    /// @notice Callback function invoked by the pool manager during unlock
+    /// @dev Routes to appropriate handler based on the action type encoded in data
+    /// @param data Encoded data containing action type and action-specific parameters
+    /// @return Empty bytes on success
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         uint256 action = abi.decode(data, (uint256));
 

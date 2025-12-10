@@ -5,6 +5,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
+/// @notice Library containing StableSwap mathematical functions for invariant and reserve calculations
 library StableSwapMath {
     /// @dev Precision divisor for amplification coefficient calculations.
     uint256 internal constant AMPLIFICATION_PRECISION = 100;
@@ -15,6 +16,7 @@ library StableSwapMath {
     /// @dev Fixed-point precision (1e18) used when scaling token rates and amounts.
     uint256 internal constant RATE_PRECISION = 1e18;
 
+    /// @notice Error thrown when Newton-Raphson iteration fails to converge within 255 iterations
     error ConvergenceNotReached();
 
     /// @notice Compute the StableSwap invariant D for two reserves.
