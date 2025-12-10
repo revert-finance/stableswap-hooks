@@ -79,7 +79,7 @@ abstract contract Liquidity is Amp, ERC20 {
             revert AddLiquidityAmountsCannotBeZero();
         }
 
-        uint256 oldTotalShares = totalShares;
+        uint256 oldTotalShares = totalSupply();
         uint256 newShares;
 
         uint256 oldReserves0 = reserves0;
@@ -135,7 +135,6 @@ abstract contract Liquidity is Amp, ERC20 {
         }
 
         // Update storage
-        totalShares += newShares;
         sharesByUser[sender] += newShares;
         reserves0 += amount0;
         reserves1 += amount1;
@@ -157,9 +156,9 @@ abstract contract Liquidity is Amp, ERC20 {
         }
 
         // Calculate proportional amounts to withdraw
-        uint256 currentTotalShares = totalShares;
-        uint256 amount0 = (shares * reserves0) / currentTotalShares;
-        uint256 amount1 = (shares * reserves1) / currentTotalShares;
+        uint256 currentTotalSupply = totalSupply();
+        uint256 amount0 = (shares * reserves0) / currentTotalSupply;
+        uint256 amount1 = (shares * reserves1) / currentTotalSupply;
 
         // Check slippage
         if (amount0 < minAmount0 || amount1 < minAmount1) {
@@ -178,7 +177,6 @@ abstract contract Liquidity is Amp, ERC20 {
         }
 
         // Update storage
-        totalShares = currentTotalShares - shares;
         sharesByUser[sender] = userShares - shares;
         reserves0 -= amount0;
         reserves1 -= amount1;
