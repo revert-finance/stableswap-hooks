@@ -5,18 +5,12 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
-import {Amp} from "src/Amp.sol";
 import {Fees} from "src/Fees.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract contract implementing StableSwap (Curve-style) swap logic as a Uniswap v4 hook
-abstract contract Swap is Amp, Fees {
-    /// @notice Thrown when the swap is attempted on a pool that doesn't match this hook's poolId
-    error InvalidPoolId();
-
+abstract contract Swap is Fees {
     /// @notice Hook called before a swap is executed
     /// @dev Validates the pool and calculates the swap using the StableSwap invariant
     /// @param _poolKey The pool key identifying the pool
@@ -29,9 +23,7 @@ abstract contract Swap is Amp, Fees {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(_poolKey.toId())) {
-            revert InvalidPoolId();
-        }
+        _validatePoolId(_poolKey);
 
         BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_params));
 
