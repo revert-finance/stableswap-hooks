@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {Amp} from "src/Amp.sol";
+import {Actions} from "src/libraries/Actions.sol";
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 abstract contract Liquidity is Amp, ERC20 {
+    using SafeERC20 for IERC20;
+
     event LiquidityAdded(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
     event LiquidityRemoved(address indexed sender, uint256 amount0, uint256 amount1, uint256 shares);
 
@@ -15,6 +25,8 @@ abstract contract Liquidity is Amp, ERC20 {
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
     error InvalidAction();
+
+    constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
     /// @notice Add liquidity to the pool
     /// @param amount0 The amount of currency0 to add
@@ -69,7 +81,7 @@ abstract contract Liquidity is Amp, ERC20 {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    function _handleAddLiquidityCallback(bytes calldata data) private {
+    function _handleAddLiquidityCallback(bytes calldata data) internal {
         (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256, uint256, uint256, address));
 
@@ -143,7 +155,7 @@ abstract contract Liquidity is Amp, ERC20 {
         emit LiquidityAdded(sender, amount0, amount1, newShares);
     }
 
-    function _handleRemoveLiquidityCallback(bytes calldata data) private {
+    function _handleRemoveLiquidityCallback(bytes calldata data) internal {
         (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
             abi.decode(data, (uint256, uint256, uint256, uint256, address));
 
