@@ -97,10 +97,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     }
 
     function _dealTokens() private {
-        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 1000));
-        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 1000));
-        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 1000));
-        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 1000));
+        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 1e6));
+        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 1e6));
+        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 1e6));
+        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 1e6));
 
         vm.startPrank(liquidityProvider);
         IERC20(Currency.unwrap(currency0)).forceApprove(address(hooks), type(uint256).max);
