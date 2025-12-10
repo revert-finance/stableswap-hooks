@@ -39,7 +39,7 @@ contract StableSwapHooks is IUnlockCallback, Swap {
         } else if (action == Actions.REMOVE_LIQUIDITY) {
             _handleRemoveLiquidityCallback(data);
         } else if (action == Actions.WITHDRAW_PROTOCOL_FEES) {
-            _handleWithdrawProtocolFeesCallback();
+            _handleWithdrawProtocolFeesCallback(data);
         } else if (action == Actions.WITHDRAW_HOOK_FEES) {
             _handleWithdrawHookFeesCallback(data);
         } else {

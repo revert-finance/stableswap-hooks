@@ -4,15 +4,8 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-
-import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
-import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
-import {Commands} from "test/testUtils/external/libraries/Commands.sol";
-
-import {Swap} from "src/Swap.sol";
 
 contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     uint256 private constant SWAP_AMOUNT = 100;
@@ -48,78 +41,12 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         return hooks.FEE_PRECISION();
     }
 
-    function _addFees(uint256 amount) private view returns (uint256) {
+    function _addFeesToAmount(uint256 amount) private view returns (uint256) {
         return amount + (amount * _totalFeePercentage() / _feePrecision());
     }
 
-    function _subtractFees(uint256 amount) private view returns (uint256) {
+    function _subtractFeesFromAmount(uint256 amount) private view returns (uint256) {
         return amount - (amount * _totalFeePercentage() / _feePrecision());
-    }
-
-    function _addLiquidity(uint256 amount0, uint256 amount1) private {
-        vm.startPrank(liquidityProvider);
-        hooks.addLiquidity(_toTokenWei(currency0, amount0), _toTokenWei(currency1, amount1), 0);
-        vm.stopPrank();
-    }
-
-    function _executeExactInputSwap(bool zeroForOne, uint256 amountIn) private {
-        PoolKey memory poolKey = _getPoolKey();
-
-        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
-        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
-
-        bytes memory actions =
-            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
-
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactInputSingleParams({
-                poolKey: poolKey,
-                zeroForOne: zeroForOne,
-                amountIn: uint128(amountIn),
-                amountOutMinimum: 0,
-                hookData: bytes("")
-            })
-        );
-        params[1] = abi.encode(inputCurrency, amountIn);
-        params[2] = abi.encode(outputCurrency, 0);
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-
-        vm.prank(swapper);
-        universalRouter.execute(commands, inputs, block.timestamp + 100);
-    }
-
-    function _executeExactOutputSwap(bool zeroForOne, uint256 amountOut) private {
-        PoolKey memory poolKey = _getPoolKey();
-
-        Currency inputCurrency = zeroForOne ? poolKey.currency0 : poolKey.currency1;
-        Currency outputCurrency = zeroForOne ? poolKey.currency1 : poolKey.currency0;
-
-        bytes memory actions =
-            abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
-
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactOutputSingleParams({
-                poolKey: poolKey,
-                zeroForOne: zeroForOne,
-                amountOut: uint128(amountOut),
-                amountInMaximum: type(uint128).max,
-                hookData: bytes("")
-            })
-        );
-        params[1] = abi.encode(inputCurrency, type(uint128).max);
-        params[2] = abi.encode(outputCurrency, amountOut);
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-
-        vm.prank(swapper);
-        universalRouter.execute(commands, inputs, block.timestamp + 100);
     }
 
     function test_swap_ExactInput_ZeroForOne_ShouldSwapCorrectly() public {
@@ -133,7 +60,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
-        uint256 expectedOutput = _subtractFees(_toTokenWei(currency1, SWAP_AMOUNT));
+        uint256 expectedOutput = _subtractFeesFromAmount(_toTokenWei(currency1, SWAP_AMOUNT));
 
         assertEq(swapperBalance0After, swapperBalance0Before - amountIn);
         assertGt(swapperBalance1After, swapperBalance1Before);
@@ -151,7 +78,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
-        uint256 expectedOutput = _subtractFees(_toTokenWei(currency0, SWAP_AMOUNT));
+        uint256 expectedOutput = _subtractFeesFromAmount(_toTokenWei(currency0, SWAP_AMOUNT));
 
         assertEq(swapperBalance1After, swapperBalance1Before - amountIn);
         assertGt(swapperBalance0After, swapperBalance0Before);
@@ -169,7 +96,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
-        uint256 expectedInput = _addFees(_toTokenWei(currency0, SWAP_AMOUNT));
+        uint256 expectedInput = _addFeesToAmount(_toTokenWei(currency0, SWAP_AMOUNT));
 
         assertEq(swapperBalance1After, swapperBalance1Before + amountOut);
         assertLt(swapperBalance0After, swapperBalance0Before);
@@ -187,7 +114,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
-        uint256 expectedInput = _addFees(_toTokenWei(currency1, SWAP_AMOUNT));
+        uint256 expectedInput = _addFeesToAmount(_toTokenWei(currency1, SWAP_AMOUNT));
 
         assertEq(swapperBalance0After, swapperBalance0Before + amountOut);
         assertLt(swapperBalance1After, swapperBalance1Before);
@@ -330,7 +257,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
         uint256 amountOut = swapperBalance1After - swapperBalance1Before;
 
-        uint256 expectedOutput = _subtractFees(_toTokenWei(currency1, SWAP_AMOUNT));
+        uint256 expectedOutput = _subtractFeesFromAmount(_toTokenWei(currency1, SWAP_AMOUNT));
 
         assertApproxEqRel(amountOut, expectedOutput, STABLESWAP_SLIPPAGE_TOLERANCE);
     }
@@ -374,7 +301,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
 
-        uint256 expectedOutput = _subtractFees(_toTokenWei(currency1, largeSwapAmount));
+        uint256 expectedOutput = _subtractFeesFromAmount(_toTokenWei(currency1, largeSwapAmount));
 
         assertEq(swapperBalance0After, swapperBalance0Before - amountIn);
         assertGt(swapperBalance1After, swapperBalance1Before);
