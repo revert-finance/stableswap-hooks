@@ -135,7 +135,6 @@ abstract contract Liquidity is Amp, ERC20 {
         }
 
         // Update storage
-        sharesByUser[sender] += newShares;
         reserves0 += amount0;
         reserves1 += amount1;
 
@@ -148,7 +147,7 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
             abi.decode(data, (uint256, uint256, uint256, uint256, address));
 
-        uint256 userShares = sharesByUser[sender];
+        uint256 userShares = balanceOf(sender);
 
         // Check that user has enough shares
         if (shares > userShares) {
@@ -177,7 +176,6 @@ abstract contract Liquidity is Amp, ERC20 {
         }
 
         // Update storage
-        sharesByUser[sender] = userShares - shares;
         reserves0 -= amount0;
         reserves1 -= amount1;
 
