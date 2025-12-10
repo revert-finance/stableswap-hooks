@@ -24,7 +24,6 @@ abstract contract Liquidity is Amp, ERC20 {
     error InsufficientAmounts();
     error UseHookLiquidityModifiers(address hookAddress);
     error AddLiquidityAmountsCannotBeZero();
-    error InvalidAction();
 
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
