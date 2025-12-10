@@ -90,40 +90,8 @@ abstract contract Liquidity is Amp, ERC20 {
             revert AddLiquidityAmountsCannotBeZero();
         }
 
-        uint256 oldTotalShares = totalSupply();
-        uint256 newShares;
-
-        uint256 oldReserves0 = reserves0;
-        uint256 oldReserves1 = reserves1;
-
-        uint256 newReserves0 = oldReserves0 + amount0;
-        uint256 newReserves1 = oldReserves1 + amount1;
-
-        uint256 currentAmp = _currentAmp();
-
-        // Calculate new invariant
-        uint256 newInvariant = StableSwapMath.getInvariant(
-            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
-        );
-
         // TODO: Handle min liquidity to prevent dust attacks
-        if (oldTotalShares == 0) {
-            // Shares equal the invariant on the first deposit
-            newShares = newInvariant;
-        } else {
-            // Compute the old invariant
-            uint256 oldInvariant = StableSwapMath.getInvariant(
-                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
-            );
-
-            // Check that the new invariant is higher
-            if (newInvariant <= oldInvariant) {
-                revert InvalidInvariant();
-            }
-
-            // Compute the new shares
-            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
-        }
+        uint256 newShares = _computeNewShares(amount0, amount1);
 
         // Check that the new shares are above the minimum
         if (newShares < minShares) {
@@ -152,6 +120,36 @@ abstract contract Liquidity is Amp, ERC20 {
         _mint(sender, newShares);
 
         emit LiquidityAdded(sender, amount0, amount1, newShares);
+    }
+
+    function _computeNewShares(uint256 amount0, uint256 amount1) internal view returns (uint256 newShares) {
+        uint256 oldTotalShares = totalSupply();
+
+        uint256 oldReserves0 = reserves0;
+        uint256 oldReserves1 = reserves1;
+
+        uint256 newReserves0 = oldReserves0 + amount0;
+        uint256 newReserves1 = oldReserves1 + amount1;
+
+        uint256 currentAmp = _currentAmp();
+
+        uint256 newInvariant = StableSwapMath.getInvariant(
+            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
+        );
+
+        if (oldTotalShares == 0) {
+            newShares = newInvariant;
+        } else {
+            uint256 oldInvariant = StableSwapMath.getInvariant(
+                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
+            );
+
+            if (newInvariant <= oldInvariant) {
+                revert InvalidInvariant();
+            }
+
+            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
+        }
     }
 
     function _handleRemoveLiquidityCallback(bytes calldata data) internal {

@@ -52,4 +52,10 @@ contract StableSwapHooksHarness is StableSwapHooks {
     function addFees(bool _isCurrency0, uint256 _protocolFees, uint256 _hookFees) external {
         _addFees(_isCurrency0, _protocolFees, _hookFees);
     }
+
+    // Liquidity.sol
+
+    function computeNewShares(uint256 amount0, uint256 amount1) external view returns (uint256) {
+        return _computeNewShares(amount0, amount1);
+    }
 }
