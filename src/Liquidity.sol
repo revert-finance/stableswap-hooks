@@ -42,8 +42,8 @@ abstract contract Liquidity is Amp, ERC20 {
     error InsufficientAmounts();
 
     /// @notice Error thrown when attempting to modify liquidity via PoolManager directly
-    /// @param hookAddress The address of this hook contract that should be used instead
-    error UseHookLiquidityModifiers(address hookAddress);
+    /// @param _hookAddress The address of this hook contract that should be used instead
+    error UseHookLiquidityModifiers(address _hookAddress);
 
     /// @notice Error thrown when both deposit amounts are zero
     error AddLiquidityAmountsCannotBeZero();
