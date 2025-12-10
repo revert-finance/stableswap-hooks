@@ -110,6 +110,8 @@ contract StableSwapHooksForkTest is StableSwapHooksBaseTest {
         universalRouter.execute(commands, inputs, block.timestamp + 100);
 
         assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(swapper), swapperBalance0 - amount0In);
-        assertApproxEqRel(IERC20(Currency.unwrap(currency1)).balanceOf(swapper), swapperBalance1 + _toTokenWei(currency1, 1), 2e14);
+        assertApproxEqRel(
+            IERC20(Currency.unwrap(currency1)).balanceOf(swapper), swapperBalance1 + _toTokenWei(currency1, 1), 2e14
+        );
     }
 }
