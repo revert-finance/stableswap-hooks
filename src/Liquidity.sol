@@ -18,6 +18,9 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
+    /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
+    uint256 private constant MINIMUM_LIQUIDITY = 1000;
+
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
     /// @param _amount0 Amount of currency0 added
@@ -50,9 +53,6 @@ abstract contract Liquidity is Amp, ERC20 {
 
     /// @notice Error thrown when initial liquidity is below minimum
     error InsufficientInitialLiquidity();
-
-    /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
-    uint256 private constant MINIMUM_LIQUIDITY = 1000;
 
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
@@ -159,7 +159,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
         // Lock minimum liquidity on first deposit to prevent dust attacks and price manipulation
         if (isFirstDeposit) {
-            _mint(address(0), MINIMUM_LIQUIDITY);
+            _mint(address(0x000000000000000000000000000000000000dEaD), MINIMUM_LIQUIDITY);
         }
 
         emit LiquidityAdded(sender, amount0, amount1, newShares);
