@@ -191,8 +191,16 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertGt(hooks.balanceOf(liquidityProvider), 0);
     }
 
-    function test_addLiquidity_ShouldRevertWhenBothAmountsZero() public {
-        vm.expectRevert(Liquidity.AddLiquidityAmountsCannotBeZero.selector);
+    function test_addLiquidity_ShouldRevertWhenBothAmountsZero_InitialDeposit() public {
+        vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(0, 0, 0);
+    }
+
+    function test_addLiquidity_ShouldRevertWhenBothAmountsZero_SubsequentDeposit() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        vm.expectRevert(Liquidity.InvalidInvariant.selector);
         vm.prank(liquidityProvider);
         hooks.addLiquidity(0, 0, 0);
     }

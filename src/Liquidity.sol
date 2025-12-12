@@ -48,9 +48,6 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @param _hookAddress The address of this hook contract that should be used instead
     error UseHookLiquidityModifiers(address _hookAddress);
 
-    /// @notice Error thrown when both deposit amounts are zero
-    error AddLiquidityAmountsCannotBeZero();
-
     /// @notice Error thrown when initial liquidity is below minimum
     error InsufficientInitialLiquidity();
 
@@ -120,12 +117,6 @@ abstract contract Liquidity is Amp, ERC20 {
     function _handleAddLiquidityCallback(bytes calldata data) internal {
         (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256, uint256, uint256, address));
-
-        // Check that amount0 and amount1 are not both zero.
-        // The invariant takes into consideration single sided deposits
-        if (amount0 == 0 && amount1 == 0) {
-            revert AddLiquidityAmountsCannotBeZero();
-        }
 
         bool isFirstDeposit = totalSupply() == 0;
 
