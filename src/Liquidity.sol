@@ -19,7 +19,7 @@ abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
     /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
-    uint256 private constant MINIMUM_LIQUIDITY = 1000;
+    uint256 private constant MINIMUM_LIQUIDITY = 1e15;
 
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
