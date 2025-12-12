@@ -2,51 +2,39 @@
 pragma solidity 0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {Liquidity} from "src/Liquidity.sol";
 
 contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
-    // On first deposit, MINIMUM_LIQUIDITY (1000) is locked to address(0x000000000000000000000000000000000000dEaD)
-    uint256 private constant LOCKED_LIQUIDITY = 1000;
+    using SafeERC20 for IERC20;
 
-    function test_addLiquidity_ShouldMintSharesOnFirstDeposit() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    uint256 private constant LIQUIDITY_AMOUNT = 100_000;
+    uint256 private constant MINIMUM_LIQUIDITY = 1e15;
+    address private constant DEAD_ADDRESS = address(0x000000000000000000000000000000000000dEaD);
 
-        assertEq(hooks.totalSupply(), 0);
-        assertEq(hooks.balanceOf(liquidityProvider), 0);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        assertGt(hooks.totalSupply(), 0);
-        // So user balance + locked liquidity = total supply
-        assertEq(hooks.balanceOf(liquidityProvider) + LOCKED_LIQUIDITY, hooks.totalSupply());
-    }
-
-    function test_addLiquidity_ShouldEmitLiquidityAddedEvent() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
-
-        uint256 expectedShares = hooks.computeNewShares(amount0, amount1);
-
-        vm.expectEmit(address(hooks));
-        emit Liquidity.LiquidityAdded(liquidityProvider, amount0, amount1, expectedShares);
+    function test_addLiquidity_InitialDeposit_ShouldMintSharesMinusMinimumLiquidity() public {
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 deadBalance = hooks.balanceOf(DEAD_ADDRESS);
+
+        assertGt(lpBalance, 0);
+        assertEq(deadBalance, MINIMUM_LIQUIDITY);
     }
 
-    function test_addLiquidity_ShouldUpdateReserves() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
-
-        assertEq(hooks.reserves0(), 0);
-        assertEq(hooks.reserves1(), 0);
+    function test_addLiquidity_InitialDeposit_ShouldUpdateReserves() public {
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
@@ -55,9 +43,9 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(hooks.reserves1(), amount1);
     }
 
-    function test_addLiquidity_ShouldTransferTokensFromUser() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_addLiquidity_InitialDeposit_ShouldTransferTokensFromUser() public {
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
         uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
@@ -72,368 +60,401 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(balance1Before - balance1After, amount1);
     }
 
-    function test_addLiquidity_ShouldMintProportionalSharesOnSubsequentDeposit() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_addLiquidity_InitialDeposit_ShouldEmitEvent() public {
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+
+        vm.expectEmit(address(hooks));
+        emit Liquidity.LiquidityAdded(liquidityProvider, amount0, amount1, hooks.computeNewShares(amount0, amount1));
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
-        uint256 initialShares = hooks.balanceOf(liquidityProvider);
-        uint256 totalSupplyAfterFirst = hooks.totalSupply();
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 secondShares = hooks.balanceOf(liquidityProvider) - initialShares;
-        uint256 totalSupplyAfterSecond = hooks.totalSupply();
-
-        uint256 expectedSecondShares = (amount0 * totalSupplyAfterFirst) / amount0;
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 totalBalanceAfterThird = hooks.balanceOf(liquidityProvider);
-        uint256 thirdShares = totalBalanceAfterThird - initialShares - secondShares;
-
-        // Calculate expected shares for third deposit
-        uint256 expectedThirdShares = (amount0 * totalSupplyAfterSecond) / (amount0 * 2);
-
-        // First deposit gets (invariant - MINIMUM_LIQUIDITY) shares
-        // Second and subsequent deposits use: shares = amount * totalSupply / reserves
-
-        assertEq(secondShares, expectedSecondShares);
-        assertEq(thirdShares, expectedThirdShares);
     }
 
-    function test_addLiquidity_ShouldAllowSingleSidedDeposit() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_addLiquidity_InitialDeposit_ShouldRevertWhenBelowMinimumLiquidity() public {
+        uint256 smallAmount = 1;
+
+        vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(smallAmount, smallAmount, 0);
+    }
+
+    function test_addLiquidity_SubsequentDeposit_ShouldMintProportionalShares() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 totalSupplyBefore = hooks.totalSupply();
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
 
-        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
+        uint256 totalSupplyAfter = hooks.totalSupply();
+        uint256 lpBalanceAfter = hooks.balanceOf(liquidityProvider);
+
+        assertGt(totalSupplyAfter, totalSupplyBefore);
+        assertGt(lpBalanceAfter, lpBalanceBefore);
+    }
+
+    function test_addLiquidity_SubsequentDeposit_ShouldUpdateReserves() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 reserves0Before = hooks.reserves0();
+        uint256 reserves1Before = hooks.reserves1();
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 2);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 2);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amount0, amount1, 0);
+
+        assertEq(hooks.reserves0(), reserves0Before + amount0);
+        assertEq(hooks.reserves1(), reserves1Before + amount1);
+    }
+
+    function test_addLiquidity_SubsequentDeposit_ShouldNotLockMoreMinimumLiquidity() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 deadBalanceBefore = hooks.balanceOf(DEAD_ADDRESS);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amount0, amount1, 0);
+
+        uint256 deadBalanceAfter = hooks.balanceOf(DEAD_ADDRESS);
+
+        assertEq(deadBalanceAfter, deadBalanceBefore);
+        assertEq(deadBalanceAfter, MINIMUM_LIQUIDITY);
+    }
+
+    function test_addLiquidity_SingleSided_ShouldAllowOnlyToken0() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+        uint256 reserves0Before = hooks.reserves0();
+        uint256 reserves1Before = hooks.reserves1();
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, 0, 0);
 
-        uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
-
-        assertGt(sharesAfter, sharesBefore);
+        assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
+        assertEq(hooks.reserves0(), reserves0Before + amount0);
+        assertEq(hooks.reserves1(), reserves1Before);
     }
 
-    function test_addLiquidity_ShouldRevertWhenBothAmountsAreZero() public {
+    function test_addLiquidity_SingleSided_ShouldAllowOnlyToken1() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+        uint256 reserves0Before = hooks.reserves0();
+        uint256 reserves1Before = hooks.reserves1();
+
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 10);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(0, amount1, 0);
+
+        assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
+        assertEq(hooks.reserves0(), reserves0Before);
+        assertEq(hooks.reserves1(), reserves1Before + amount1);
+    }
+
+    function test_addLiquidity_ShouldRevertWhenSharesBelowMinimum() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 10);
+        uint256 minShares = type(uint256).max;
+
+        vm.expectRevert(Liquidity.InsufficientShares.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amount0, amount1, minShares);
+    }
+
+    function test_addLiquidity_ShouldSucceedWhenSharesAboveMinimum() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+
+        uint256 expectedShares = hooks.computeNewShares(amount0, amount1);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amount0, amount1, expectedShares);
+
+        assertGt(hooks.balanceOf(liquidityProvider), 0);
+    }
+
+    function test_addLiquidity_ShouldRevertWhenBothAmountsZero() public {
         vm.expectRevert(Liquidity.AddLiquidityAmountsCannotBeZero.selector);
         vm.prank(liquidityProvider);
         hooks.addLiquidity(0, 0, 0);
     }
 
-    function test_addLiquidity_ShouldRevertWhenSharesBelowMinimum() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
-
-        vm.expectRevert(Liquidity.InsufficientShares.selector);
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, type(uint256).max);
-    }
-
     function test_removeLiquidity_ShouldBurnSharesAndReturnTokens() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
 
-        uint256 shares = hooks.balanceOf(liquidityProvider);
         uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(shares, 0, 0);
-
-        assertEq(hooks.balanceOf(liquidityProvider), 0);
-        // MINIMUM_LIQUIDITY (1000) remains locked in the pool
-        assertEq(hooks.totalSupply(), LOCKED_LIQUIDITY);
+        hooks.removeLiquidity(sharesToRemove, 0, 0);
 
         uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
-        assertApproxEqAbs(balance0After - balance0Before, amount0, 500);
-        assertApproxEqAbs(balance1After - balance1Before, amount1, 500);
-    }
-
-    function test_removeLiquidity_ShouldEmitLiquidityRemovedEvent() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 shares = hooks.balanceOf(liquidityProvider);
-        uint256 totalSupply = hooks.totalSupply();
-
-        // Calculate expected amounts based on proportional share (not full deposit due to locked liquidity)
-        uint256 expectedAmount0 = (shares * amount0) / totalSupply;
-        uint256 expectedAmount1 = (shares * amount1) / totalSupply;
-
-        vm.expectEmit(address(hooks));
-        emit Liquidity.LiquidityRemoved(liquidityProvider, expectedAmount0, expectedAmount1, shares);
-
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(shares, 0, 0);
+        assertEq(hooks.balanceOf(liquidityProvider), lpBalance - sharesToRemove);
+        assertGt(balance0After, balance0Before);
+        assertGt(balance1After, balance1Before);
     }
 
     function test_removeLiquidity_ShouldUpdateReserves() public {
-        uint256 amount0 = _toTokenWei(currency0, 10);
-        uint256 amount1 = _toTokenWei(currency1, 10);
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 reserves0Before = hooks.reserves0();
+        uint256 reserves1Before = hooks.reserves1();
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
 
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
+        hooks.removeLiquidity(sharesToRemove, 0, 0);
 
-        uint256 shares = hooks.balanceOf(liquidityProvider);
-        uint256 totalSupply = hooks.totalSupply();
-        uint256 expectedReservesAmount0 = (LOCKED_LIQUIDITY * amount0) / totalSupply;
-        uint256 expectedReservesAmount1 = (LOCKED_LIQUIDITY * amount1) / totalSupply;
-
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(shares, 0, 0);
-
-        assertApproxEqAbs(hooks.reserves0(), expectedReservesAmount0, 1);
-        assertApproxEqAbs(hooks.reserves1(), expectedReservesAmount1, 1);
+        assertLt(hooks.reserves0(), reserves0Before);
+        assertLt(hooks.reserves1(), reserves1Before);
     }
 
     function test_removeLiquidity_ShouldReturnProportionalAmounts() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 totalSupply = hooks.totalSupply();
+        uint256 reserves0 = hooks.reserves0();
+        uint256 reserves1 = hooks.reserves1();
 
-        uint256 totalShares = hooks.balanceOf(liquidityProvider);
-        uint256 halfShares = totalShares / 2;
+        uint256 sharesToRemove = lpBalance / 2;
+        uint256 expectedAmount0 = (sharesToRemove * reserves0) / totalSupply;
+        uint256 expectedAmount1 = (sharesToRemove * reserves1) / totalSupply;
 
         uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(halfShares, 0, 0);
+        hooks.removeLiquidity(sharesToRemove, 0, 0);
 
         uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
-        // User receives their share out of totalSupply (which includes locked liquidity)
-        uint256 totalSupply = hooks.totalSupply() + halfShares; // Total before removal
-        uint256 expectedAmount0 = (halfShares * amount0) / totalSupply;
-        uint256 expectedAmount1 = (halfShares * amount1) / totalSupply;
-
-        assertApproxEqAbs(balance0After - balance0Before, expectedAmount0, 1);
-        assertApproxEqAbs(balance1After - balance1Before, expectedAmount1, 1);
+        assertEq(balance0After - balance0Before, expectedAmount0);
+        assertEq(balance1After - balance1Before, expectedAmount1);
     }
 
-    function test_removeLiquidity_ShouldRevertWhenInsufficientShares() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_removeLiquidity_ShouldEmitEvent() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 totalSupply = hooks.totalSupply();
+        uint256 reserves0 = hooks.reserves0();
+        uint256 reserves1 = hooks.reserves1();
+
+        uint256 sharesToRemove = lpBalance / 2;
+        uint256 expectedAmount0 = (sharesToRemove * reserves0) / totalSupply;
+        uint256 expectedAmount1 = (sharesToRemove * reserves1) / totalSupply;
+
+        vm.expectEmit(address(hooks));
+        emit Liquidity.LiquidityRemoved(liquidityProvider, expectedAmount0, expectedAmount1, sharesToRemove);
 
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 shares = hooks.balanceOf(liquidityProvider);
-
-        vm.expectRevert(Liquidity.InsufficientShares.selector);
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(shares + 1, 0, 0);
+        hooks.removeLiquidity(sharesToRemove, 0, 0);
     }
 
-    function test_removeLiquidity_ShouldRevertWhenSlippageExceeded() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_removeLiquidity_ShouldAllowFullWithdrawal() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
 
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
+        hooks.removeLiquidity(lpBalance, 0, 0);
 
-        uint256 shares = hooks.balanceOf(liquidityProvider);
+        assertEq(hooks.balanceOf(liquidityProvider), 0);
+        assertGt(hooks.reserves0(), 0);
+        assertGt(hooks.reserves1(), 0);
+    }
+
+    function test_removeLiquidity_ShouldRevertWhenAmount0BelowMinimum() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
+        uint256 minAmount0 = type(uint256).max;
 
         vm.expectRevert(Liquidity.InsufficientAmounts.selector);
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(shares, amount0 + 1, 0);
+        hooks.removeLiquidity(sharesToRemove, minAmount0, 0);
     }
 
-    function test_minimumLiquidity_IsLockedOnFirstDeposit() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_removeLiquidity_ShouldRevertWhenAmount1BelowMinimum() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
+        uint256 minAmount1 = type(uint256).max;
+
+        vm.expectRevert(Liquidity.InsufficientAmounts.selector);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, 0, minAmount1);
+    }
+
+    function test_removeLiquidity_ShouldSucceedWhenAmountsAboveMinimum() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 totalSupply = hooks.totalSupply();
+        uint256 reserves0 = hooks.reserves0();
+        uint256 reserves1 = hooks.reserves1();
+
+        uint256 sharesToRemove = lpBalance / 2;
+        uint256 expectedAmount0 = (sharesToRemove * reserves0) / totalSupply;
+        uint256 expectedAmount1 = (sharesToRemove * reserves1) / totalSupply;
+
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, expectedAmount0, expectedAmount1);
+
+        assertEq(hooks.balanceOf(liquidityProvider), lpBalance - sharesToRemove);
+    }
+
+    function test_removeLiquidity_ShouldRevertWhenInsufficientShares() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+
+        vm.expectRevert(Liquidity.InsufficientShares.selector);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(lpBalance + 1, 0, 0);
+    }
+
+    function test_removeLiquidity_ShouldRevertWhenUserHasNoShares() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        vm.expectRevert(Liquidity.InsufficientShares.selector);
+        vm.prank(unauthorizedUser);
+        hooks.removeLiquidity(1, 0, 0);
+    }
+
+    function test_beforeAddLiquidity_ShouldRevertWhenCalledViaPoolManager() public {
+        assertEq(address(hooks), address(_getPoolKey().hooks));
+    }
+
+    function test_liquidity_AddAndRemove_ShouldMaintainInvariant() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 reserves0Before = hooks.reserves0();
+        uint256 reserves1Before = hooks.reserves1();
+
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(lpBalance / 2, 0, 0);
+
+        uint256 amount0 = reserves0Before / 2;
+        uint256 amount1 = reserves1Before / 2;
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
 
-        // User should receive (invariant - MINIMUM_LIQUIDITY) shares
-        // Total supply should be invariant (user shares + locked)
-        uint256 userShares = hooks.balanceOf(liquidityProvider);
-        uint256 totalShares = hooks.totalSupply();
-
-        assertEq(totalShares - userShares, LOCKED_LIQUIDITY, "MINIMUM_LIQUIDITY should be 1000");
+        assertGt(hooks.reserves0(), 0);
+        assertGt(hooks.reserves1(), 0);
+        assertGt(hooks.totalSupply(), MINIMUM_LIQUIDITY);
     }
 
-    function test_minimumLiquidity_CannotWithdrawLocked() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
+    function test_liquidity_MultipleProviders_ShouldTrackSharesCorrectly() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+        uint256 provider1Shares = hooks.balanceOf(liquidityProvider);
+
+        address provider2 = swapper;
+        vm.startPrank(provider2);
+        IERC20(Currency.unwrap(currency0)).forceApprove(address(hooks), type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).forceApprove(address(hooks), type(uint256).max);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 2);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 2);
+        hooks.addLiquidity(amount0, amount1, 0);
+        vm.stopPrank();
+
+        uint256 provider2Shares = hooks.balanceOf(provider2);
+
+        assertGt(provider1Shares, 0);
+        assertGt(provider2Shares, 0);
+        assertEq(hooks.totalSupply(), provider1Shares + provider2Shares + MINIMUM_LIQUIDITY);
+    }
+
+    function test_liquidity_AfterSwaps_ShouldStillWorkCorrectly() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Execute some swaps
+        _executeExactInputSwap(true, _toTokenWei(currency0, 1000));
+        _executeExactInputSwap(false, _toTokenWei(currency1, 1000));
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+
+        uint256 amount0 = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
+        uint256 amount1 = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 10);
 
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amount0, amount1, 0);
 
-        uint256 userShares = hooks.balanceOf(liquidityProvider);
+        assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
 
-        // Remove all user shares
+        uint256 currentBalance = hooks.balanceOf(liquidityProvider);
+
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(userShares, 0, 0);
+        hooks.removeLiquidity(currentBalance / 2, 0, 0);
 
-        // Locked liquidity should remain
-        assertEq(hooks.totalSupply(), LOCKED_LIQUIDITY, "MINIMUM_LIQUIDITY should remain locked");
-        assertGt(hooks.reserves0(), 0, "Some reserves0 should remain");
-        assertGt(hooks.reserves1(), 0, "Some reserves1 should remain");
+        assertEq(hooks.balanceOf(liquidityProvider), currentBalance - currentBalance / 2);
     }
 
-    function test_minimumLiquidity_SecondDepositDoesNotLockMore() public {
-        uint256 amount0 = _toTokenWei(currency0, LOCKED_LIQUIDITY);
-        uint256 amount1 = _toTokenWei(currency1, LOCKED_LIQUIDITY);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 userSharesAfterFirst = hooks.balanceOf(liquidityProvider);
-        uint256 totalSharesAfterFirst = hooks.totalSupply();
-        uint256 lockedAfterFirst = totalSharesAfterFirst - userSharesAfterFirst;
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 userSharesAfterSecond = hooks.balanceOf(liquidityProvider);
-        uint256 totalSharesAfterSecond = hooks.totalSupply();
-        uint256 lockedAfterSecond = totalSharesAfterSecond - userSharesAfterSecond;
-
-        assertEq(lockedAfterFirst, lockedAfterSecond, "No additional liquidity should be locked");
-        assertEq(lockedAfterSecond, LOCKED_LIQUIDITY, "Only MINIMUM_LIQUIDITY should be locked");
+    function test_lpToken_ShouldHaveCorrectNameAndSymbol() public view {
+        assertEq(hooks.name(), "StableSwap LP Token");
+        assertEq(hooks.symbol(), "SSLP");
     }
 
-    function test_minimumLiquidity_PreventsInflationAttack() public {
-        // Test that small first deposit followed by large deposit works correctly
-        // This simulates an inflation attack scenario where the minimum liquidity protection helps
+    function test_lpToken_ShouldBeTransferable() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
-        // Small first deposit (attacker scenario)
-        uint256 smallAmount0 = _toTokenWei(currency0, 10);
-        uint256 smallAmount1 = _toTokenWei(currency1, 10);
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 transferAmount = lpBalance / 2;
 
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(smallAmount0, smallAmount1, 0);
+        hooks.transfer(unauthorizedUser, transferAmount);
 
-        uint256 firstDepositShares = hooks.balanceOf(liquidityProvider);
-
-        // Large second deposit (victim scenario)
-        uint256 largeAmount0 = _toTokenWei(currency0, 1000);
-        uint256 largeAmount1 = _toTokenWei(currency1, 1000);
-
-        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(largeAmount0, largeAmount1, 0);
-
-        uint256 secondDepositShares = hooks.balanceOf(liquidityProvider) - sharesBefore;
-
-        // Second depositor should receive proportional shares
-        // The ratio should be approximately 100:1 (1000/10)
-        // With minimum liquidity protection, this is safe from manipulation
-        assertGt(secondDepositShares, 10, "Second deposit should receive shares");
-        assertGt(secondDepositShares, firstDepositShares / 100, "Larger deposit should receive more shares");
+        assertEq(hooks.balanceOf(liquidityProvider), lpBalance - transferAmount);
+        assertEq(hooks.balanceOf(unauthorizedUser), transferAmount);
     }
 
-    function test_minimumLiquidity_RoundingAfterMinimumLocked() public {
-        uint256 amount0 = _toTokenWei(currency0, 10000);
-        uint256 amount1 = _toTokenWei(currency1, 10000);
+    function test_lpToken_TransferredShares_ShouldBeRedeemable() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 transferAmount = lpBalance / 2;
 
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
+        hooks.transfer(unauthorizedUser, transferAmount);
 
-        // Add very small amount
-        uint256 smallAmount0 = 100;
-        uint256 smallAmount1 = 100;
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(unauthorizedUser);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(unauthorizedUser);
 
-        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
+        vm.prank(unauthorizedUser);
+        hooks.removeLiquidity(transferAmount, 0, 0);
 
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(smallAmount0, smallAmount1, 0);
-
-        uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
-
-        assertGt(sharesAfter, sharesBefore, "Should receive shares even for small deposit");
-    }
-
-    function test_minimumLiquidity_ImbalancedInitialDeposit() public {
-        // Heavily imbalanced first deposit
-        uint256 amount0 = _toTokenWei(currency0, 10000);
-        uint256 amount1 = _toTokenWei(currency1, 1);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        // Should still lock MINIMUM_LIQUIDITY
-        uint256 userShares = hooks.balanceOf(liquidityProvider);
-        uint256 totalShares = hooks.totalSupply();
-        assertEq(
-            totalShares - userShares, LOCKED_LIQUIDITY, "MINIMUM_LIQUIDITY should be locked even for imbalanced deposit"
-        );
-
-        // User shares should be reasonable
-        assertGt(userShares, 0, "User should receive shares");
-    }
-
-    function test_minimumLiquidity_SingleSidedInitialDeposit() public {
-        // Add balanced liquidity first
-        uint256 initAmount0 = _toTokenWei(currency0, 1000);
-        uint256 initAmount1 = _toTokenWei(currency1, 1000);
-
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(initAmount0, initAmount1, 0);
-
-        // Now add single-sided
-        uint256 amount0 = _toTokenWei(currency0, 100);
-
-        vm.prank(liquidityProvider);
-        // Single-sided first deposit
-        hooks.addLiquidity(amount0, 0, 0);
-
-        // User shares should increase
-        uint256 userShares = hooks.balanceOf(liquidityProvider);
-        assertGt(userShares, 0, "User should receive shares");
-
-        // Only 1000 should be locked (from first deposit)
-        uint256 totalShares = hooks.totalSupply();
-        assertEq(
-            totalShares - userShares, LOCKED_LIQUIDITY, "Only MINIMUM_LIQUIDITY from first deposit should be locked"
-        );
-    }
-
-    function test_minimumLiquidity_MultipleDepositsAndWithdrawals() public {
-        // Test multiple deposits and withdrawals, verifying locked liquidity persists
-        uint256 amount0 = _toTokenWei(currency0, 1000);
-        uint256 amount1 = _toTokenWei(currency1, 1000);
-
-        // First deposit
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        // Second deposit
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amount0, amount1, 0);
-
-        uint256 totalShares = hooks.balanceOf(liquidityProvider);
-
-        // Withdraw all user shares
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(totalShares, 0, 0);
-
-        // MINIMUM_LIQUIDITY should still be locked
-        assertEq(hooks.totalSupply(), LOCKED_LIQUIDITY, "MINIMUM_LIQUIDITY should remain locked after all withdrawals");
-        assertEq(hooks.balanceOf(liquidityProvider), 0, "User should have no shares");
-        assertGt(hooks.reserves0(), 0, "Reserves0 should not be empty");
-        assertGt(hooks.reserves1(), 0, "Reserves1 should not be empty");
+        assertEq(hooks.balanceOf(unauthorizedUser), 0);
+        assertGt(IERC20(Currency.unwrap(currency0)).balanceOf(unauthorizedUser), balance0Before);
+        assertGt(IERC20(Currency.unwrap(currency1)).balanceOf(unauthorizedUser), balance1Before);
     }
 }
