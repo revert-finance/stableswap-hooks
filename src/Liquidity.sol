@@ -21,6 +21,9 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
     uint256 private constant MINIMUM_LIQUIDITY = 1e15;
 
+    /// @notice Address where minimum liquidity is permanently locked
+    address private constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
     /// @param _amount0 Amount of currency0 added
@@ -150,7 +153,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
         // Lock minimum liquidity on first deposit to prevent dust attacks and price manipulation
         if (isFirstDeposit) {
-            _mint(address(0x000000000000000000000000000000000000dEaD), MINIMUM_LIQUIDITY);
+            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         }
 
         emit LiquidityAdded(sender, amount0, amount1, newShares);
