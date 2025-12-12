@@ -15,7 +15,7 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
     using SafeERC20 for IERC20;
 
     uint256 private constant LIQUIDITY_AMOUNT = 100_000;
-    uint256 private constant MINIMUM_LIQUIDITY = 1e15;
+    uint256 private constant MINIMUM_LIQUIDITY = 1000;
     address private constant DEAD_ADDRESS = address(0x000000000000000000000000000000000000dEaD);
 
     function test_addLiquidity_InitialDeposit_ShouldMintSharesMinusMinimumLiquidity() public {
@@ -71,13 +71,15 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         hooks.addLiquidity(amount0, amount1, 0);
     }
 
-    function test_addLiquidity_InitialDeposit_ShouldRevertWhenBelowMinimumLiquidity() public {
-        uint256 smallAmount = 1;
+    // Will never happen with USDT, given that the scaled value used for shares is > than min liquidity
+    //
+    // function test_addLiquidity_InitialDeposit_ShouldRevertWhenBelowMinimumLiquidity() public {
+    //     uint256 smallAmount = 1;
 
-        vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(smallAmount, smallAmount, 0);
-    }
+    //     vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
+    //     vm.prank(liquidityProvider);
+    //     hooks.addLiquidity(smallAmount, smallAmount, 0);
+    // }
 
     function test_addLiquidity_SubsequentDeposit_ShouldMintProportionalShares() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);

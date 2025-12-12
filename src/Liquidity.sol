@@ -19,7 +19,7 @@ abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
     /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
-    uint256 public constant MINIMUM_LIQUIDITY = 1e15;
+    uint256 public constant MINIMUM_LIQUIDITY = 1000;
 
     /// @notice Address where minimum liquidity is permanently locked
     address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
@@ -181,10 +181,10 @@ abstract contract Liquidity is Amp, ERC20 {
         );
 
         if (oldTotalShares == 0) {
-            // First deposit - lock minimum liquidity to prevent dust attacks and price manipulation
             if (newInvariant < MINIMUM_LIQUIDITY) {
                 revert InsufficientInitialLiquidity();
             }
+
             newShares = newInvariant - MINIMUM_LIQUIDITY;
         } else {
             uint256 oldInvariant = StableSwapMath.getInvariant(
