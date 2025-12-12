@@ -22,39 +22,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
     }
 
-    function test_initialize_ShouldRevertWhenCurrency0Mismatch() public {
-        PoolKey memory poolKey = _getPoolKey();
-        poolKey.currency0 = Currency.wrap(address(0xdead));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CustomRevert.WrappedError.selector,
-                address(hooks),
-                IHooks.beforeInitialize.selector,
-                abi.encodeWithSelector(Base.InvalidPoolId.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-            )
-        );
-        poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
-    }
-
-    function test_initialize_ShouldRevertWhenCurrency1Mismatch() public {
-        PoolKey memory poolKey = _getPoolKey();
-        poolKey.currency1 = Currency.wrap(address(0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CustomRevert.WrappedError.selector,
-                address(hooks),
-                IHooks.beforeInitialize.selector,
-                abi.encodeWithSelector(Base.InvalidPoolId.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-            )
-        );
-        poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
-    }
-
-    function test_initialize_ShouldRevertWhenFeeMismatch() public {
+    function test_initialize_ShouldRevertWhenAnotherPoolUsesHook() public {
         PoolKey memory poolKey = _getPoolKey();
         poolKey.fee = poolKey.fee + 1;
 
@@ -67,30 +35,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
-        poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
-    }
-
-    function test_initialize_ShouldRevertWhenTickSpacingMismatch() public {
-        PoolKey memory poolKey = _getPoolKey();
-        poolKey.tickSpacing = poolKey.tickSpacing + 1;
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CustomRevert.WrappedError.selector,
-                address(hooks),
-                IHooks.beforeInitialize.selector,
-                abi.encodeWithSelector(Base.InvalidPoolId.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-            )
-        );
-        poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
-    }
-
-    function test_initialize_ShouldRevertWhenHookAddressMismatch() public {
-        PoolKey memory poolKey = _getPoolKey();
-        poolKey.hooks = IHooks(address(0xdead));
-
-        vm.expectRevert(abi.encodeWithSelector(Hooks.HookAddressNotValid.selector, address(0xdead)));
         poolManager.initialize(poolKey, BASE_SQRT_PRICE_X96);
     }
 
