@@ -18,6 +18,12 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
+    /// @notice Minimum liquidity permanently locked on first deposit to prevent dust attacks and price manipulation
+    uint256 public constant MINIMUM_LIQUIDITY = 1000;
+
+    /// @notice Address where minimum liquidity is permanently locked
+    address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
     /// @param _amount0 Amount of currency0 added
@@ -45,8 +51,8 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @param _hookAddress The address of this hook contract that should be used instead
     error UseHookLiquidityModifiers(address _hookAddress);
 
-    /// @notice Error thrown when both deposit amounts are zero
-    error AddLiquidityAmountsCannotBeZero();
+    /// @notice Error thrown when initial liquidity is below minimum
+    error InsufficientInitialLiquidity();
 
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
@@ -115,13 +121,8 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256, uint256, uint256, address));
 
-        // Check that amount0 and amount1 are not both zero.
-        // The invariant takes into consideration single sided deposits
-        if (amount0 == 0 && amount1 == 0) {
-            revert AddLiquidityAmountsCannotBeZero();
-        }
+        bool isFirstDeposit = totalSupply() == 0;
 
-        // TODO: Handle min liquidity to prevent dust attacks
         uint256 newShares = _computeNewShares(amount0, amount1);
 
         // Check that the new shares are above the minimum
@@ -150,12 +151,17 @@ abstract contract Liquidity is Amp, ERC20 {
 
         _mint(sender, newShares);
 
+        // Lock minimum liquidity on first deposit to prevent dust attacks and price manipulation
+        if (isFirstDeposit) {
+            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
+        }
+
         emit LiquidityAdded(sender, amount0, amount1, newShares);
     }
 
     /// @notice Computes the number of LP shares to mint for a given deposit
     /// @dev Uses the StableSwap invariant to calculate proportional shares
-    /// @dev For first deposit, shares equal the invariant; for subsequent deposits, shares are proportional to invariant increase
+    /// @dev For first deposit, shares equal the invariant minus MINIMUM_LIQUIDITY; for subsequent deposits, shares are proportional to invariant increase
     /// @param _amount0 Amount of currency0 being deposited
     /// @param _amount1 Amount of currency1 being deposited
     /// @return newShares Number of LP shares to mint
@@ -175,7 +181,11 @@ abstract contract Liquidity is Amp, ERC20 {
         );
 
         if (oldTotalShares == 0) {
-            newShares = newInvariant;
+            if (newInvariant < MINIMUM_LIQUIDITY) {
+                revert InsufficientInitialLiquidity();
+            }
+
+            newShares = newInvariant - MINIMUM_LIQUIDITY;
         } else {
             uint256 oldInvariant = StableSwapMath.getInvariant(
                 StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
