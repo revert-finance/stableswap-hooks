@@ -4,7 +4,8 @@ pragma solidity 0.8.30;
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {Fees} from "src/Fees.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
@@ -25,131 +26,100 @@ abstract contract Swap is Fees {
     {
         _validatePoolId(_poolKey);
 
-        BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_params));
+        BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_poolKey, _params));
 
         return (this.beforeSwap.selector, delta, 0);
     }
 
     /// @notice Executes a swap using the StableSwap invariant
+    /// @dev Handles both exact input (amountSpecified < 0) and exact output (amountSpecified > 0) swaps.
+    ///      Fees are deducted from output for exact input, or added to input for exact output.
+    /// @param _poolKey The pool key identifying the currencies being swapped
     /// @param _params The swap parameters from Uniswap v4
-    /// @return The unspecified delta amount
-    function _swap(SwapParams calldata _params) private returns (int128) {
-        // Scale reserves to 1e18 precision for consistent math across different token decimals
-        uint256 scaledReserves0 = StableSwapMath.scaleTo(reserves0, rate0);
-        uint256 scaledReserves1 = StableSwapMath.scaleTo(reserves1, rate1);
+    /// @return The unspecified delta amount (negative for exact input, positive for exact output)
+    function _swap(PoolKey calldata _poolKey, SwapParams calldata _params) private returns (int128) {
+        uint256 index0 = getCurrencyIndex(_poolKey.currency0);
+        uint256 index1 = getCurrencyIndex(_poolKey.currency1);
 
-        // Get current amplification coefficient and compute the StableSwap invariant D
+        uint256[] memory scaledReserves = new uint256[](currenciesLength);
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], rates[i]);
+        }
+
         uint256 amp = _currentAmp();
-        uint256 invariant = StableSwapMath.getInvariant(scaledReserves0, scaledReserves1, amp);
 
-        // Determine swap type: exact input (negative) vs exact output (positive)
-        bool isExactInput = _params.amountSpecified < 0;
+        uint256 invariant = StableSwapMath.getInvariant(scaledReserves, amp);
+
+        uint256 increasedIndex;
+        uint256 decreasedIndex;
+
+        if (_params.zeroForOne) {
+            increasedIndex = index0;
+            decreasedIndex = index1;
+        } else {
+            increasedIndex = index1;
+            decreasedIndex = index0;
+        }
 
         uint256 unspecifiedAmount;
 
-        // zeroForOne: swapping currency0 -> currency1
-        if (_params.zeroForOne) {
-            if (isExactInput) {
-                // Exact input: user specifies input amount, we calculate output
-                uint256 amountSpecified = uint256(-_params.amountSpecified);
+        if (_params.amountSpecified < 0) {
+            uint256 amountSpecified = uint256(-_params.amountSpecified);
 
-                // Calculate new reserves after adding input, then derive output from invariant
-                uint256 newScaledReserves0 = scaledReserves0 + StableSwapMath.scaleTo(amountSpecified, rate0);
-                uint256 newScaledReserves1 = StableSwapMath.getOtherReserves(newScaledReserves0, amp, invariant);
-                uint256 output = StableSwapMath.descale(scaledReserves1 - newScaledReserves1, rate1);
+            uint256 increasedReserves =
+                scaledReserves[increasedIndex] + StableSwapMath.scaleTo(amountSpecified, rates[increasedIndex]);
 
-                // Calculate and track fees (fees taken from output in currency1)
-                (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(output);
-                _addFees(false, protocolFees, hookFees);
-                uint256 outputMinusFees = output - lpFees - hookFees - protocolFees;
+            uint256 decreasedReserves = StableSwapMath.getTargetReserves(
+                increasedIndex, decreasedIndex, increasedReserves, scaledReserves, amp, invariant
+            );
 
-                // Update pool manager accounting: burn output claims, mint input claims
-                poolManager.burn(address(this), currency1.toId(), outputMinusFees);
-                poolManager.mint(address(this), currency0.toId(), amountSpecified);
+            uint256 decreased =
+                StableSwapMath.descale(scaledReserves[decreasedIndex] - decreasedReserves, rates[decreasedIndex]);
 
-                // Update local reserves (LP fees stay in reserves)
-                reserves0 += amountSpecified;
-                reserves1 -= output - lpFees;
+            (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(decreased);
 
-                unspecifiedAmount = outputMinusFees;
-            } else {
-                // Exact output: user specifies output amount, we calculate required input
-                uint256 amountSpecified = uint256(_params.amountSpecified);
+            _addFees(decreasedIndex, protocolFees, hookFees);
 
-                // Calculate new reserves after removing output, then derive input from invariant
-                uint256 newScaledReserves1 = scaledReserves1 - StableSwapMath.scaleTo(amountSpecified, rate1);
-                uint256 newScaledReserves0 = StableSwapMath.getOtherReserves(newScaledReserves1, amp, invariant);
-                uint256 input = StableSwapMath.descale(newScaledReserves0 - scaledReserves0, rate0);
+            uint256 decreasedMinusFees = decreased - lpFees - hookFees - protocolFees;
 
-                // Calculate and track fees (fees added to input in currency0)
-                (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(input);
-                _addFees(true, protocolFees, hookFees);
-                uint256 inputPlusFees = input + lpFees + hookFees + protocolFees;
+            poolManager.burn(address(this), currencies[decreasedIndex].toId(), decreasedMinusFees);
+            poolManager.mint(address(this), currencies[increasedIndex].toId(), amountSpecified);
 
-                // Update pool manager accounting: burn output claims, mint input claims
-                poolManager.burn(address(this), currency1.toId(), amountSpecified);
-                poolManager.mint(address(this), currency0.toId(), inputPlusFees);
+            reserves[increasedIndex] += amountSpecified;
+            reserves[decreasedIndex] -= decreased - lpFees;
 
-                // Update local reserves (LP fees stay in reserves)
-                reserves0 += input + lpFees;
-                reserves1 -= amountSpecified;
-
-                unspecifiedAmount = inputPlusFees;
-            }
+            unspecifiedAmount = decreasedMinusFees;
         } else {
-            // oneForZero: swapping currency1 -> currency0
-            if (isExactInput) {
-                // Exact input: user specifies input amount, we calculate output
-                uint256 amountSpecified = uint256(-_params.amountSpecified);
+            uint256 amountSpecified = uint256(_params.amountSpecified);
 
-                // Calculate new reserves after adding input, then derive output from invariant
-                uint256 newScaledReserves1 = scaledReserves1 + StableSwapMath.scaleTo(amountSpecified, rate1);
-                uint256 newScaledReserves0 = StableSwapMath.getOtherReserves(newScaledReserves1, amp, invariant);
-                uint256 output = StableSwapMath.descale(scaledReserves0 - newScaledReserves0, rate0);
+            uint256 decreasedReserves =
+                scaledReserves[decreasedIndex] - StableSwapMath.scaleTo(amountSpecified, rates[decreasedIndex]);
 
-                // Calculate and track fees (fees taken from output in currency0)
-                (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(output);
-                _addFees(true, protocolFees, hookFees);
-                uint256 outputMinusFees = output - lpFees - hookFees - protocolFees;
+            uint256 increasedReserves = StableSwapMath.getTargetReserves(
+                decreasedIndex, increasedIndex, decreasedReserves, scaledReserves, amp, invariant
+            );
 
-                // Update pool manager accounting: burn output claims, mint input claims
-                poolManager.burn(address(this), currency0.toId(), outputMinusFees);
-                poolManager.mint(address(this), currency1.toId(), amountSpecified);
+            uint256 increased =
+                StableSwapMath.descale(increasedReserves - scaledReserves[increasedIndex], rates[increasedIndex]);
 
-                // Update local reserves (LP fees stay in reserves)
-                reserves1 += amountSpecified;
-                reserves0 -= output - lpFees;
+            (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(increased);
 
-                unspecifiedAmount = outputMinusFees;
-            } else {
-                // Exact output: user specifies output amount, we calculate required input
-                uint256 amountSpecified = uint256(_params.amountSpecified);
+            _addFees(increasedIndex, protocolFees, hookFees);
 
-                // Calculate new reserves after removing output, then derive input from invariant
-                uint256 newScaledReserves0 = scaledReserves0 - StableSwapMath.scaleTo(amountSpecified, rate0);
-                uint256 newScaledReserves1 = StableSwapMath.getOtherReserves(newScaledReserves0, amp, invariant);
-                uint256 input = StableSwapMath.descale(newScaledReserves1 - scaledReserves1, rate1);
+            uint256 increasedPlusFees = increased + lpFees + hookFees + protocolFees;
 
-                // Calculate and track fees (fees added to input in currency1)
-                (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(input);
-                _addFees(false, protocolFees, hookFees);
-                uint256 inputPlusFees = input + lpFees + hookFees + protocolFees;
+            poolManager.burn(address(this), currencies[decreasedIndex].toId(), amountSpecified);
+            poolManager.mint(address(this), currencies[increasedIndex].toId(), increasedPlusFees);
 
-                // Update pool manager accounting: burn output claims, mint input claims
-                poolManager.burn(address(this), currency0.toId(), amountSpecified);
-                poolManager.mint(address(this), currency1.toId(), inputPlusFees);
+            reserves[increasedIndex] += increased + lpFees;
+            reserves[decreasedIndex] -= amountSpecified;
 
-                // Update local reserves (LP fees stay in reserves)
-                reserves1 += input + lpFees;
-                reserves0 -= amountSpecified;
-
-                unspecifiedAmount = inputPlusFees;
-            }
+            unspecifiedAmount = increasedPlusFees;
         }
 
         int128 unspecifiedDelta = SafeCast.toInt128(SafeCast.toInt256(unspecifiedAmount));
 
-        // Return delta with correct sign: negative for exact input (hook pays), positive for exact output (hook receives)
-        return isExactInput ? -unspecifiedDelta : unspecifiedDelta;
+        return _params.amountSpecified < 0 ? -unspecifiedDelta : unspecifiedDelta;
     }
 }
