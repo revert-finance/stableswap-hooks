@@ -19,42 +19,54 @@ library StableSwapMath {
     /// @notice Error thrown when Newton-Raphson iteration fails to converge within 255 iterations
     error ConvergenceNotReached();
 
-    /// @notice Compute the StableSwap invariant D for two reserves.
+    /// @notice Compute the StableSwap invariant D for N reserves.
     /// @dev Iteratively solves A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i), starting with D = Σx_i.
-    /// Reserves must be pre-scaled to 1e18 precision;
-    /// @param _reserves0 Scaled reserve of currency 0.
-    /// @param _reserves1 Scaled reserve of currency 1.
+    /// Reserves must be pre-scaled to 1e18 precision.
+    /// @param _reserves Array of scaled reserves for all currencies.
     /// @param _amplification Amplification coefficient A.
     /// @return invariant The converged invariant D.
-    function getInvariant(uint256 _reserves0, uint256 _reserves1, uint256 _amplification)
+    function getInvariant(uint256[] memory _reserves, uint256 _amplification)
         internal
         pure
         returns (uint256 invariant)
     {
-        uint256 totalReserves = _reserves0 + _reserves1;
+        uint256 nCoins = _reserves.length;
+
+        // Sum of all reserves
+        uint256 totalReserves = 0;
+        for (uint256 i = 0; i < nCoins; ++i) {
+            totalReserves += _reserves[i];
+        }
 
         if (totalReserves == 0) {
             return 0;
         }
 
         invariant = totalReserves;
-        uint256 ampTimesCoins = _amplification * CURRENCY_COUNT;
+        uint256 ampTimesCoins = _amplification * nCoins;
 
-        // Newton-Raphson over D. For two currencies the product term is D^(n+1) / (n^n * x0 * x1) with n = 2.
+        // Newton-Raphson iteration over D
         for (uint256 i = 0; i < 255; ++i) {
+            // D_P = D^(n+1) / (n^n * prod(x_i))
             uint256 productTerm = invariant;
-            productTerm = (productTerm * invariant) / _reserves0;
-            productTerm = (productTerm * invariant) / _reserves1;
-            productTerm = productTerm / (CURRENCY_COUNT * CURRENCY_COUNT);
+            for (uint256 j = 0; j < nCoins; ++j) {
+                // D_P = D_P * D / x
+                productTerm = (productTerm * invariant) / _reserves[j];
+            }
+            // Divide by n^n
+            productTerm = productTerm / (nCoins ** nCoins);
 
             uint256 previousInvariant = invariant;
 
+            // D = (Ann * S / A_PRECISION + D_P * N_COINS) * D
+            //     / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
             uint256 numerator =
-                ((ampTimesCoins * totalReserves) / AMPLIFICATION_PRECISION + productTerm * CURRENCY_COUNT) * invariant;
+                ((ampTimesCoins * totalReserves) / AMPLIFICATION_PRECISION + productTerm * nCoins) * invariant;
             uint256 denominator = ((ampTimesCoins - AMPLIFICATION_PRECISION) * invariant) / AMPLIFICATION_PRECISION
-                + (CURRENCY_COUNT + 1) * productTerm;
+                + (nCoins + 1) * productTerm;
             invariant = numerator / denominator;
 
+            // Check convergence with precision of 1
             if (invariant > previousInvariant) {
                 if (invariant - previousInvariant <= 1) return invariant;
             } else {
@@ -64,6 +76,54 @@ library StableSwapMath {
 
         revert ConvergenceNotReached();
     }
+
+    // def get_D(_xp: DynArray[uint256, MAX_COINS], _amp: uint256) -> uint256:
+    //     """
+    //     D invariant calculation in non-overflowing integer operations
+    //     iteratively
+
+    //     A * sum(x_i) * n**n + D = A * D * n**n + D**(n+1) / (n**n * prod(x_i))
+
+    //     Converging solution:
+    //     D[j+1] = (A * n**n * sum(x_i) - D[j]**(n+1) / (n**n prod(x_i))) / (A * n**n - 1)
+    //     """
+    //     S: uint256 = 0
+    //     for x in _xp:
+    //         S += x
+    //     if S == 0:
+    //         return 0
+
+    //     D: uint256 = S
+    //     Ann: uint256 = _amp * N_COINS
+
+    //     for i in range(255):
+
+    //         D_P: uint256 = D
+    //         for x in _xp:
+    //             D_P = D_P * D / x
+    //         D_P /= pow_mod256(N_COINS, N_COINS)
+    //         Dprev: uint256 = D
+
+    //         # (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
+    //         D = (
+    //             (unsafe_div(Ann * S, A_PRECISION) + D_P * N_COINS) * D
+    //             /
+    //             (
+    //                 unsafe_div((Ann - A_PRECISION) * D, A_PRECISION) +
+    //                 unsafe_add(N_COINS, 1) * D_P
+    //             )
+    //         )
+
+    //         # Equality with the precision of 1
+    //         if D > Dprev:
+    //             if D - Dprev <= 1:
+    //                 return D
+    //         else:
+    //             if Dprev - D <= 1:
+    //                 return D
+    //     # convergence typically occurs in 4 rounds or less, this should be unreachable!
+    //     # if it does happen the pool is borked and LPs can withdraw via `remove_liquidity`
+    //     raise
 
     /// @notice Compute the missing reserves given the other reserves and invariant.
     /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserves.
