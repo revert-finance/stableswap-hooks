@@ -9,6 +9,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
@@ -19,61 +20,59 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Thrown when the operation is attempted on a pool that doesn't match this hook's poolId
     error InvalidPoolId();
 
-    /// @notice Fixed tick spacing used for the pool
-    /// @dev We are not using concentrated liquidity so this value is just to form the pool key
+    /// @notice Fixed tick spacing used for all pools
+    /// @dev Set to 1 since concentrated liquidity is not used; only needed to form the pool key
     int24 public constant TICK_SPACING = 1;
 
-    /// @notice Unique identifier for the pool using the hook
-    PoolId public immutable poolId;
+    /// @notice Number of currencies supported by this hook
+    uint256 public immutable currenciesLength;
 
-    /// @notice The first currency in the pool pair
-    Currency public immutable currency0;
+    /// @notice Scaling rates for each currency to normalize to 1e18 precision
+    /// @dev Each rate is calculated as 10^(36 - decimals) to handle tokens with different decimal places
+    uint256[] public rates;
 
-    /// @notice The second currency in the pool pair
-    Currency public immutable currency1;
+    /// @notice Array of currencies supported by this hook
+    Currency[] public currencies;
 
-    /// @notice Scaling rate for currency0 to normalize to 1e18 precision
-    /// @dev Calculated as 10^(36 - decimals) to handle tokens with different decimal places
-    uint256 public immutable rate0;
-
-    /// @notice Scaling rate for currency1 to normalize to 1e18 precision
-    /// @dev Calculated as 10^(36 - decimals) to handle tokens with different decimal places
-    uint256 public immutable rate1;
-
-    /// @notice Current reserves of currency0 held by the pool
-    uint256 public reserves0;
-
-    /// @notice Current reserves of currency1 held by the pool
-    uint256 public reserves1;
+    /// @notice Mapping of valid pool IDs managed by this hook
+    /// @dev Used to validate that operations are performed on authorized pools
+    mapping(PoolId => bool) poolIds;
 
     /// @notice Initializes the base StableSwap hook configuration
-    /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer
+    /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
-    /// @param _currency0 The first currency in the pair (must be < currency1)
-    /// @param _currency1 The second currency in the pair
     /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
-    constructor(IPoolManager _poolManager, Currency _currency0, Currency _currency1, uint256 _lpFeePercentage)
+    /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
+    constructor(IPoolManager _poolManager, uint256 _lpFeePercentage, Currency[] memory _currencies)
         BaseHook(_poolManager)
     {
-        currency0 = _currency0;
-        currency1 = _currency1;
-
-        PoolKey memory poolKey = PoolKey({
-            currency0: _currency0,
-            currency1: _currency1,
-            fee: uint24(_lpFeePercentage),
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(this))
-        });
-
-        poolId = poolKey.toId();
-
-        rate0 = StableSwapMath.getRate(_currency0);
-        rate1 = StableSwapMath.getRate(_currency1);
-
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+
+        currencies = _currencies;
+        currenciesLength = _currencies.length;
+
+        for (uint256 i = 0; i < _currencies.length; ++i) {
+            rates.push(StableSwapMath.getRate(_currencies[i]));
+
+            for (uint256 j = i + 1; j < _currencies.length; ++j) {
+                PoolKey memory poolKey = PoolKey({
+                    currency0: _currencies[i],
+                    currency1: _currencies[j],
+                    fee: SafeCast.toUint24(_lpFeePercentage),
+                    tickSpacing: TICK_SPACING,
+                    hooks: IHooks(address(this))
+                });
+
+                _poolManager.initialize(poolKey, 1 << 96);
+
+                poolIds[poolKey.toId()] = true;
+            }
+        }
     }
 
+    /// @notice Returns the hook permissions required by this contract
+    /// @dev Enables beforeInitialize, beforeAddLiquidity, beforeRemoveLiquidity, beforeSwap, beforeDonate, and beforeSwapReturnDelta
+    /// @return permissions The hook permissions struct with enabled flags
     function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
         permissions = Hooks.Permissions({
             beforeInitialize: true,
@@ -97,13 +96,15 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @dev Reverts with InvalidPoolId if the pool ID doesn't match
     /// @param _poolKey The pool key to validate
     function _validatePoolId(PoolKey calldata _poolKey) internal view {
-        if (PoolId.unwrap(poolId) != PoolId.unwrap(_poolKey.toId())) {
+        if (!poolIds[_poolKey.toId()]) {
             revert InvalidPoolId();
         }
     }
 
-    /// @notice Validates pool initialization parameters.
-    /// @dev Reverts if the pool ID doesn't match.
+    /// @notice Hook called before pool initialization
+    /// @dev Validates that the pool being initialized is managed by this hook
+    /// @param _poolKey The pool key of the pool being initialized
+    /// @return The function selector to indicate successful validation
     function _beforeInitialize(address, PoolKey calldata _poolKey, uint160) internal view override returns (bytes4) {
         _validatePoolId(_poolKey);
 
