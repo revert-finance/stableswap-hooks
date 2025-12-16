@@ -77,31 +77,55 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
-    /// @notice Compute the missing reserves given the other reserves and invariant.
-    /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson on the unknown reserves.
-    /// @param _knownReserves The known reserves after a swap (scaled to 1e18 decimals).
+    /// @notice Compute reserves[j] given reserves[i] = x and all other reserves.
+    /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson.
+    /// Solves: y^2 + y * (sum' - (A*n^n - 1) * D / (A * n^n)) = D^(n+1) / (n^(2n) * prod' * A)
+    /// Which simplifies to: y^2 + linearCoefficient * y = constantTerm
+    /// Solution: y = (y^2 + constantTerm) / (2*y + linearCoefficient)
+    /// @param _inputIndex Index of the input coin (the one being swapped in).
+    /// @param _outputIndex Index of the output coin (the one being calculated).
+    /// @param _inputReserves New value of reserves[inputIndex] after swap.
+    /// @param _reserves Current reserves array (scaled to 1e18 decimals).
     /// @param _amplification Amplification coefficient A.
     /// @param _invariant The invariant D that must be preserved.
-    /// @return otherReserves The calculated missing reserves (scaled).
-    function getOtherReserves(uint256 _knownReserves, uint256 _amplification, uint256 _invariant)
-        internal
-        pure
-        returns (uint256 otherReserves)
-    {
-        uint256 ampTimesCoins = _amplification * CURRENCY_COUNT;
+    /// @return otherReserves The calculated reserves[outputIndex].
+    function getOtherReserves(
+        uint256 _inputIndex,
+        uint256 _outputIndex,
+        uint256 _inputReserves,
+        uint256[] memory _reserves,
+        uint256 _amplification,
+        uint256 _invariant
+    ) internal pure returns (uint256 otherReserves) {
+        uint256 nCoins = _reserves.length;
+        uint256 ampTimesCoins = _amplification * nCoins;
 
-        // constantTerm = D^3 / (A*n^n*n*x)
-        uint256 constantTerm = (_invariant * _invariant) / (_knownReserves * CURRENCY_COUNT);
-        constantTerm = (constantTerm * _invariant * AMPLIFICATION_PRECISION) / (ampTimesCoins * CURRENCY_COUNT);
+        // knownReservesSum = sum of all reserves except output
+        // constantTerm = D^(n+1) / (n^n * prod(reserves except output) * A * n)
+        uint256 knownReservesSum = 0;
+        uint256 constantTerm = _invariant;
 
-        // linearCoefficient = x + D / (A * n^n)
-        uint256 linearCoefficient = _knownReserves + (_invariant * AMPLIFICATION_PRECISION) / ampTimesCoins;
+        for (uint256 k = 0; k < nCoins; ++k) {
+            uint256 currentReserves;
+            if (k == _inputIndex) {
+                currentReserves = _inputReserves;
+            } else if (k != _outputIndex) {
+                currentReserves = _reserves[k];
+            } else {
+                continue;
+            }
+            knownReservesSum += currentReserves;
+            constantTerm = constantTerm * _invariant / (currentReserves * nCoins);
+        }
+
+        constantTerm = constantTerm * _invariant * AMPLIFICATION_PRECISION / (ampTimesCoins * nCoins);
+        // linearCoefficient = knownReservesSum + D / (A * n^n) - D
+        uint256 linearCoefficient = knownReservesSum + _invariant * AMPLIFICATION_PRECISION / ampTimesCoins;
 
         otherReserves = _invariant;
 
-        for (uint256 i = 0; i < 255; ++i) {
+        for (uint256 k = 0; k < 255; ++k) {
             uint256 previousOtherReserves = otherReserves;
-
             otherReserves =
                 (otherReserves * otherReserves + constantTerm) / (2 * otherReserves + linearCoefficient - _invariant);
 
