@@ -17,12 +17,13 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
 abstract contract Base is BaseHook, AccessControlEnumerable {
-    /// @notice Thrown when the operation is attempted on a pool that doesn't match this hook's poolId
-    error InvalidPoolId();
 
     /// @notice Fixed tick spacing used for all pools
     /// @dev Set to 1 since concentrated liquidity is not used; only needed to form the pool key
     int24 public constant TICK_SPACING = 1;
+
+    /// @notice Maximum number of currencies allowed in the pool
+    uint256 public constant MAX_CURRENCIES = 8;
 
     /// @notice Number of currencies supported by this hook
     uint256 public immutable currenciesLength;
@@ -38,6 +39,15 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @dev Used to validate that operations are performed on authorized pools
     mapping(PoolId => bool) poolIds;
 
+    /// @notice Current reserves for each currency in the pool
+    uint256[] public reserves;
+
+    /// @notice Thrown when the operation is attempted on a pool that doesn't match this hook's poolId
+    error InvalidPoolId();
+
+    /// @notice Thrown when attempting to create a pool with more currencies than MAX_CURRENCIES
+    error TooManyCurrencies();
+
     /// @notice Initializes the base StableSwap hook configuration
     /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
@@ -50,6 +60,12 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
         currencies = _currencies;
         currenciesLength = _currencies.length;
+
+        if (currenciesLength > MAX_CURRENCIES) {
+            revert TooManyCurrencies();
+        }
+
+        reserves = new uint256[](currenciesLength);
 
         for (uint256 i = 0; i < _currencies.length; ++i) {
             rates.push(StableSwapMath.getRate(_currencies[i]));
