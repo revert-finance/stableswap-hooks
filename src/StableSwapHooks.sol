@@ -18,8 +18,7 @@ contract StableSwapHooks is IUnlockCallback, Swap {
 
     /// @notice Initializes the StableSwap hook with pool configuration and fee parameters
     /// @param _poolManager The Uniswap v4 PoolManager contract
-    /// @param _currency0 The first currency in the pair
-    /// @param _currency1 The second currency in the pair
+    /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
     /// @param _protocolFeeCollector Address that receives protocol fees
     /// @param _protocolFeePercentage Protocol fee percentage (scaled by FEE_PRECISION)
     /// @param _hookFeePercentage Hook fee percentage (scaled by FEE_PRECISION)
@@ -27,15 +26,14 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     /// @param _baseAmp Initial amplification coefficient
     constructor(
         IPoolManager _poolManager,
-        Currency _currency0,
-        Currency _currency1,
+        Currency[] memory _currencies,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
         uint256 _lpFeePercentage,
         uint256 _baseAmp
     )
-        Base(_poolManager, _currency0, _currency1, _lpFeePercentage)
+        Base(_poolManager, _lpFeePercentage, _currencies)
         Amp(_baseAmp)
         Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
     {}
