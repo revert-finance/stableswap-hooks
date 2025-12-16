@@ -14,7 +14,6 @@ import {Actions} from "src/libraries/Actions.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract contract that manages liquidity provision and withdrawal for the StableSwap pool
-/// @dev Inherits from Amp for amplification factor management and ERC20 for LP token functionality
 abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
@@ -26,15 +25,13 @@ abstract contract Liquidity is Amp, ERC20 {
 
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
-    /// @param _amount0 Amount of currency0 added
-    /// @param _amount1 Amount of currency1 added
+    /// @param _amounts Amounts of each currency added
     /// @param _shares Number of LP shares minted
     event LiquidityAdded(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
     /// @notice Emitted when liquidity is removed from the pool
     /// @param _sender Address that removed liquidity
-    /// @param _amount0 Amount of currency0 withdrawn
-    /// @param _amount1 Amount of currency1 withdrawn
+    /// @param _amounts Amounts of each currency withdrawn
     /// @param _shares Number of LP shares burned
     event LiquidityRemoved(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
@@ -59,8 +56,7 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Add liquidity to the pool
     /// @dev Supports single-sided deposits; at least one amount must be non-zero
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
-    /// @param _amount0 The amount of currency0 to add
-    /// @param _amount1 The amount of currency1 to add
+    /// @param _amounts Array of amounts for each currency to add
     /// @param _minShares The minimum number of shares to receive (slippage protection)
     function addLiquidity(uint256[] calldata _amounts, uint256 _minShares) external {
         bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, _msgSender());
@@ -69,11 +65,10 @@ abstract contract Liquidity is Amp, ERC20 {
     }
 
     /// @notice Remove liquidity from the pool
-    /// @dev Burns LP shares and returns proportional amounts of both tokens
+    /// @dev Burns LP shares and returns proportional amounts of all currencies
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     /// @param _shares The number of LP shares to burn
-    /// @param _minAmount0 The minimum amount of currency0 to receive (slippage protection)
-    /// @param _minAmount1 The minimum amount of currency1 to receive (slippage protection)
+    /// @param _minAmounts Array of minimum amounts for each currency to receive (slippage protection)
     function removeLiquidity(uint256 _shares, uint256[] calldata _minAmounts) external {
         bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmounts, _msgSender());
 
@@ -160,8 +155,7 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Computes the number of LP shares to mint for a given deposit
     /// @dev Uses the StableSwap invariant to calculate proportional shares
     /// @dev For first deposit, shares equal the invariant minus MINIMUM_LIQUIDITY; for subsequent deposits, shares are proportional to invariant increase
-    /// @param _amount0 Amount of currency0 being deposited
-    /// @param _amount1 Amount of currency1 being deposited
+    /// @param _amounts Array of amounts for each currency being deposited
     /// @return newShares Number of LP shares to mint
     function _computeNewShares(uint256[] memory _amounts) internal view returns (uint256 newShares) {
         uint256 oldTotalShares = totalSupply();
