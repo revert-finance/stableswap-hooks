@@ -8,7 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.
 /// @notice Library containing StableSwap mathematical functions for invariant and reserve calculations
 library StableSwapMath {
     /// @dev Precision divisor for amplification coefficient calculations.
-    uint256 internal constant AMPLIFICATION_PRECISION = 100;
+    uint256 internal constant AMP_PRECISION = 100;
 
     /// @dev Fixed-point precision (1e18) used when scaling token rates and amounts.
     uint256 internal constant RATE_PRECISION = 1e18;
@@ -17,22 +17,20 @@ library StableSwapMath {
     error ConvergenceNotReached();
 
     /// @notice Compute the StableSwap invariant D for N reserves.
-    /// @dev Iteratively solves A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i), starting with D = Σx_i.
-    /// Reserves must be pre-scaled to 1e18 precision.
-    /// @param _reserves Array of scaled reserves for all currencies.
+    /// @param _scaledReserves Array of scaled reserves for all currencies.
     /// @param _amplification Amplification coefficient A.
-    /// @return invariant The converged invariant D.
-    function getInvariant(uint256[] memory _reserves, uint256 _amplification)
+    function getInvariant(uint256[] memory _scaledReserves, uint256 _amplification)
         internal
         pure
         returns (uint256 invariant)
     {
-        uint256 nCoins = _reserves.length;
+        // TODO: Keep in immutable value?
+        uint256 nCurrencies = _scaledReserves.length;
 
-        // Sum of all reserves
         uint256 totalReserves = 0;
-        for (uint256 i = 0; i < nCoins; ++i) {
-            totalReserves += _reserves[i];
+
+        for (uint256 i = 0; i < nCurrencies; ++i) {
+            totalReserves += _scaledReserves[i];
         }
 
         if (totalReserves == 0) {
@@ -40,34 +38,35 @@ library StableSwapMath {
         }
 
         invariant = totalReserves;
-        uint256 ampTimesCoins = _amplification * nCoins;
 
-        // Newton-Raphson iteration over D
+        uint256 ampTimesCoins = _amplification * nCurrencies;
+
         for (uint256 i = 0; i < 255; ++i) {
-            // D_P = D^(n+1) / (n^n * prod(x_i))
-            uint256 productTerm = invariant;
-            for (uint256 j = 0; j < nCoins; ++j) {
-                // D_P = D_P * D / x
-                productTerm = (productTerm * invariant) / _reserves[j];
+            uint256 invariantProduct = invariant;
+
+            for (uint256 j = 0; j < nCurrencies; ++j) {
+                invariantProduct = (invariantProduct * invariant) / _scaledReserves[j];
             }
-            // Divide by n^n
-            productTerm = productTerm / (nCoins ** nCoins);
+
+            invariantProduct = invariantProduct / (nCurrencies ** nCurrencies);
 
             uint256 previousInvariant = invariant;
 
-            // D = (Ann * S / A_PRECISION + D_P * N_COINS) * D
-            //     / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
-            uint256 numerator =
-                ((ampTimesCoins * totalReserves) / AMPLIFICATION_PRECISION + productTerm * nCoins) * invariant;
-            uint256 denominator = ((ampTimesCoins - AMPLIFICATION_PRECISION) * invariant) / AMPLIFICATION_PRECISION
-                + (nCoins + 1) * productTerm;
-            invariant = numerator / denominator;
+            // forgefmt: disable-next-item
+            invariant = (
+                (ampTimesCoins * totalReserves / AMP_PRECISION + invariantProduct * nCurrencies) * invariant
+            ) / (
+                (ampTimesCoins - AMP_PRECISION) * invariant / AMP_PRECISION + (nCurrencies + 1) * invariantProduct
+            );
 
-            // Check convergence with precision of 1
             if (invariant > previousInvariant) {
-                if (invariant - previousInvariant <= 1) return invariant;
+                if (invariant - previousInvariant <= 1) {
+                    return invariant;
+                }
             } else {
-                if (previousInvariant - invariant <= 1) return invariant;
+                if (previousInvariant - invariant <= 1) {
+                    return invariant;
+                }
             }
         }
 
@@ -94,15 +93,15 @@ library StableSwapMath {
         uint256 _amplification,
         uint256 _invariant
     ) internal pure returns (uint256 otherReserves) {
-        uint256 nCoins = _reserves.length;
-        uint256 ampTimesCoins = _amplification * nCoins;
+        uint256 nCurrencies = _reserves.length;
+        uint256 ampTimesCoins = _amplification * nCurrencies;
 
         // knownReservesSum = sum of all reserves except output
         // constantTerm = D^(n+1) / (n^n * prod(reserves except output) * A * n)
         uint256 knownReservesSum = 0;
         uint256 constantTerm = _invariant;
 
-        for (uint256 k = 0; k < nCoins; ++k) {
+        for (uint256 k = 0; k < nCurrencies; ++k) {
             uint256 currentReserves;
             if (k == _inputIndex) {
                 currentReserves = _inputReserves;
@@ -112,12 +111,12 @@ library StableSwapMath {
                 continue;
             }
             knownReservesSum += currentReserves;
-            constantTerm = constantTerm * _invariant / (currentReserves * nCoins);
+            constantTerm = constantTerm * _invariant / (currentReserves * nCurrencies);
         }
 
-        constantTerm = constantTerm * _invariant * AMPLIFICATION_PRECISION / (ampTimesCoins * nCoins);
+        constantTerm = constantTerm * _invariant * AMP_PRECISION / (ampTimesCoins * nCurrencies);
         // linearCoefficient = knownReservesSum + D / (A * n^n) - D
-        uint256 linearCoefficient = knownReservesSum + _invariant * AMPLIFICATION_PRECISION / ampTimesCoins;
+        uint256 linearCoefficient = knownReservesSum + _invariant * AMP_PRECISION / ampTimesCoins;
 
         otherReserves = _invariant;
 
