@@ -17,9 +17,13 @@ library StableSwapMath {
     error ConvergenceNotReached();
 
     /// @notice Compute the stable swap invariant for the provided currency reserves.
+    /// @dev Solves the StableSwap invariant equation using Newton-Raphson iteration:
+    ///      A·n^n·Σx_i + D = A·D·n^n + D^(n+1) / (n^n·Πx_i)
+    ///      where A is the amplification, n is the number of currencies, x_i are the reserves, and D is the invariant.
+    ///      Converges when the difference between iterations is <= 1.
     /// @param _scaledReserves The array of scaled reserves.
     /// @param _amplification The amplification coefficient.
-    /// @return The converged Invariant.
+    /// @return invariant The converged invariant.
     function getInvariant(uint256[] memory _scaledReserves, uint256 _amplification)
         internal
         pure
@@ -74,62 +78,75 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
-    /// @notice Compute reserves[j] given reserves[i] = x and all other reserves.
-    /// @dev Rearranges the invariant into a quadratic and applies Newton-Raphson.
-    /// Solves: y^2 + y * (sum' - (A*n^n - 1) * D / (A * n^n)) = D^(n+1) / (n^(2n) * prod' * A)
-    /// Which simplifies to: y^2 + linearCoefficient * y = constantTerm
-    /// Solution: y = (y^2 + constantTerm) / (2*y + linearCoefficient)
-    /// @param _inputIndex Index of the input coin (the one being swapped in).
-    /// @param _outputIndex Index of the output coin (the one being calculated).
-    /// @param _inputReserves New value of reserves[inputIndex] after swap.
-    /// @param _reserves Current reserves array (scaled to 1e18 decimals).
-    /// @param _amplification Amplification coefficient A.
-    /// @param _invariant The invariant D that must be preserved.
-    /// @return otherReserves The calculated reserves[outputIndex].
-    function getOtherReserves(
-        uint256 _inputIndex,
-        uint256 _outputIndex,
-        uint256 _inputReserves,
-        uint256[] memory _reserves,
+    /// @notice Compute the target reserves for a swap given the new source reserves.
+    /// @dev Solves for y in the quadratic derived from the StableSwap invariant using Newton-Raphson:
+    ///      y^2 + y·(Σx' + D/(A·n^n) - D) = D^(n+1) / (n^n·Πx'·A·n)
+    ///      where x' are the known reserves (excluding target), simplified to: y = (y^2 + c) / (2y + b - D)
+    ///      Converges when the difference between iterations is <= 1.
+    /// @param _source Index of the source currency (the one being swapped in).
+    /// @param _target Index of the target currency (the one being swapped out).
+    /// @param _sourceReserves New reserves for the source currency after the swap.
+    /// @param _scaledReserves Current scaled reserves for all currencies.
+    /// @param _amplification The amplification coefficient.
+    /// @param _invariant The invariant that must be preserved.
+    /// @return targetReserves The scaled reserves for the target currency.
+    function getTargetReserves(
+        uint256 _source,
+        uint256 _target,
+        uint256 _sourceReserves,
+        uint256[] memory _scaledReserves,
         uint256 _amplification,
         uint256 _invariant
-    ) internal pure returns (uint256 otherReserves) {
-        uint256 nCurrencies = _reserves.length;
+    ) internal pure returns (uint256 targetReserves) {
+        // TODO: Keep in immutable value?
+        uint256 nCurrencies = _scaledReserves.length;
+
         uint256 ampTimesCoins = _amplification * nCurrencies;
 
-        // knownReservesSum = sum of all reserves except output
-        // constantTerm = D^(n+1) / (n^n * prod(reserves except output) * A * n)
         uint256 knownReservesSum = 0;
-        uint256 constantTerm = _invariant;
 
-        for (uint256 k = 0; k < nCurrencies; ++k) {
-            uint256 currentReserves;
-            if (k == _inputIndex) {
-                currentReserves = _inputReserves;
-            } else if (k != _outputIndex) {
-                currentReserves = _reserves[k];
+        uint256 invariantProduct = _invariant;
+
+        for (uint256 i = 0; i < nCurrencies; ++i) {
+            uint256 reserves;
+
+            if (i == _source) {
+                reserves = _sourceReserves;
+            } else if (i != _target) {
+                reserves = _scaledReserves[i];
             } else {
                 continue;
             }
-            knownReservesSum += currentReserves;
-            constantTerm = constantTerm * _invariant / (currentReserves * nCurrencies);
+
+            knownReservesSum += reserves;
+
+            invariantProduct = invariantProduct * _invariant / (reserves * nCurrencies);
         }
 
-        constantTerm = constantTerm * _invariant * AMP_PRECISION / (ampTimesCoins * nCurrencies);
-        // linearCoefficient = knownReservesSum + D / (A * n^n) - D
-        uint256 linearCoefficient = knownReservesSum + _invariant * AMP_PRECISION / ampTimesCoins;
+        invariantProduct = invariantProduct * _invariant * AMP_PRECISION / (ampTimesCoins * nCurrencies);
 
-        otherReserves = _invariant;
+        uint256 sumPlusInvariantRatio = knownReservesSum + _invariant * AMP_PRECISION / ampTimesCoins;
 
-        for (uint256 k = 0; k < 255; ++k) {
-            uint256 previousOtherReserves = otherReserves;
-            otherReserves =
-                (otherReserves * otherReserves + constantTerm) / (2 * otherReserves + linearCoefficient - _invariant);
+        targetReserves = _invariant;
 
-            if (otherReserves > previousOtherReserves) {
-                if (otherReserves - previousOtherReserves <= 1) return otherReserves;
+        for (uint256 i = 0; i < 255; ++i) {
+            uint256 previousTargetReserves = targetReserves;
+
+            // forgefmt: disable-next-item
+            targetReserves = (
+                targetReserves * targetReserves + invariantProduct
+            ) / (
+                2 * targetReserves + sumPlusInvariantRatio - _invariant
+            );
+
+            if (targetReserves > previousTargetReserves) {
+                if (targetReserves - previousTargetReserves <= 1) {
+                    return targetReserves;
+                }
             } else {
-                if (previousOtherReserves - otherReserves <= 1) return otherReserves;
+                if (previousTargetReserves - targetReserves <= 1) {
+                    return targetReserves;
+                }
             }
         }
 
