@@ -10,9 +10,6 @@ library StableSwapMath {
     /// @dev Precision divisor for amplification coefficient calculations.
     uint256 internal constant AMPLIFICATION_PRECISION = 100;
 
-    /// @dev Number of currencies in the pool (n in the invariant formula).
-    uint256 internal constant CURRENCY_COUNT = 2;
-
     /// @dev Fixed-point precision (1e18) used when scaling token rates and amounts.
     uint256 internal constant RATE_PRECISION = 1e18;
 
