@@ -36,9 +36,11 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
     /// @notice Mapping of valid pool IDs managed by this hook
     /// @dev Used to validate that operations are performed on authorized pools
-    mapping(PoolId => bool) poolIds;
+    mapping(PoolId => bool) public isValidPoolId;
 
-    mapping(Currency => uint256) public currenciesIndexes;
+    /// @notice Internal mapping of currency to index+1 (0 means currency not supported)
+    /// @dev Stores index+1 to distinguish between index 0 and unsupported currencies
+    mapping(Currency => uint256) private _currencyIndex;
 
     /// @notice Current reserves for each currency in the pool
     uint256[] public reserves;
@@ -68,11 +70,12 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
         reserves = new uint256[](currenciesLength);
 
-        for (uint256 i = 0; i < _currencies.length; ++i) {
+        for (uint256 i = 0; i < currenciesLength; ++i) {
             rates.push(StableSwapMath.getRate(_currencies[i]));
-            currenciesIndexes[_currencies[i]] = i;
 
-            for (uint256 j = i + 1; j < _currencies.length; ++j) {
+            _currencyIndex[_currencies[i]] = i + 1;
+
+            for (uint256 j = i + 1; j < currenciesLength; ++j) {
                 PoolKey memory poolKey = PoolKey({
                     currency0: _currencies[i],
                     currency1: _currencies[j],
@@ -83,9 +86,17 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
                 _poolManager.initialize(poolKey, 1 << 96);
 
-                poolIds[poolKey.toId()] = true;
+                isValidPoolId[poolKey.toId()] = true;
             }
         }
+    }
+
+    /// @notice Returns the index of a currency in the currencies array
+    /// @dev Reverts with underflow if currency is not supported
+    /// @param _currency The currency to look up
+    /// @return The index of the currency in the currencies array
+    function getCurrencyIndex(Currency _currency) public view returns (uint256) {
+        return _currencyIndex[_currency] - 1;
     }
 
     /// @notice Returns the hook permissions required by this contract
@@ -114,7 +125,7 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @dev Reverts with InvalidPoolId if the pool ID doesn't match
     /// @param _poolKey The pool key to validate
     function _validatePoolId(PoolKey calldata _poolKey) internal view {
-        if (!poolIds[_poolKey.toId()]) {
+        if (!isValidPoolId[_poolKey.toId()]) {
             revert InvalidPoolId();
         }
     }

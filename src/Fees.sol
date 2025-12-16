@@ -52,7 +52,7 @@ abstract contract Fees is Liquidity {
     /// @notice Emitted when protocol fees are withdrawn
     /// @param _sender Address that initiated the withdrawal
     /// @param _protocolFeeCollector Address receiving the fees
-    /// @param _protocolFees Amounts of currencies fees withdrawn
+    /// @param _protocolFees Array of fee amounts withdrawn for each currency
     event ProtocolFeesWithdrawn(
         address indexed _sender, address indexed _protocolFeeCollector, uint256[] _protocolFees
     );
@@ -60,7 +60,7 @@ abstract contract Fees is Liquidity {
     /// @notice Emitted when hook fees are withdrawn
     /// @param _sender Address that initiated the withdrawal
     /// @param _beneficiary Address receiving the fees
-    /// @param _hookFees Amounts of currencies fees withdrawn
+    /// @param _hookFees Array of fee amounts withdrawn for each currency
     event HookFeesWithdrawn(address indexed _sender, address indexed _beneficiary, uint256[] _hookFees);
 
     /// @notice Error thrown when an invalid address (zero address) is provided
@@ -70,7 +70,7 @@ abstract contract Fees is Liquidity {
     error InvalidFeePercentage();
 
     /// @notice Initializes the fee configuration
-    /// @dev Validates that the sum of all fee percentages does not exceed FEE_PRECISION
+    /// @dev Each fee setter validates that the sum of all fee percentages does not exceed FEE_PRECISION
     /// @param _protocolFeeCollector Address that will receive protocol fees
     /// @param _protocolFeePercentage Initial protocol fee percentage
     /// @param _hookFeePercentage Initial hook fee percentage
@@ -162,7 +162,7 @@ abstract contract Fees is Liquidity {
     /// @dev Called during unlock callback to process hook fee withdrawal
     /// @dev Resets hook fee counters to zero after withdrawal
     /// @param data Encoded data containing the original sender and beneficiary addresses
-    function _handleWithdrawHookFeesCallback(bytes memory data) internal {
+    function _handleWithdrawHookFeesCallback(bytes calldata data) internal {
         (, address sender, address _beneficiary) = abi.decode(data, (uint256, address, address));
 
         uint256[] memory _hookFees = hookFees;
@@ -193,14 +193,12 @@ abstract contract Fees is Liquidity {
     }
 
     /// @notice Adds fees to the appropriate accumulators
-    /// @param _currency Currency to add fees for
+    /// @param _currencyIndex Index of the currency in the currencies array
     /// @param _protocolFees Amount of protocol fees to add
     /// @param _hookFees Amount of hook fees to add
-    function _addFees(Currency _currency, uint256 _protocolFees, uint256 _hookFees) internal {
-        uint256 _index = currenciesIndexes[_currency];
-
-        protocolFees[_index] += _protocolFees;
-        hookFees[_index] += _hookFees;
+    function _addFees(uint256 _currencyIndex, uint256 _protocolFees, uint256 _hookFees) internal {
+        protocolFees[_currencyIndex] += _protocolFees;
+        hookFees[_currencyIndex] += _hookFees;
     }
 
     /// @notice Internal setter for protocol fee collector address
@@ -260,11 +258,12 @@ abstract contract Fees is Liquidity {
     /// @dev Burns fees from this contract and takes them to the beneficiary
     /// @dev Reverts if beneficiary is the zero address
     /// @param _beneficiary Address receiving the fees
-    /// @param _fees Amount of fees to withdraw for each currency
+    /// @param _fees Array of fee amounts to withdraw for each currency
     function _handleWithdrawFeesPoolManagerAccounting(address _beneficiary, uint256[] memory _fees) private {
         if (_beneficiary == address(0)) {
             revert InvalidAddress();
         }
+
         for (uint256 i = 0; i < _fees.length; i++) {
             if (_fees[i] != 0) {
                 poolManager.burn(address(this), currencies[i].toId(), _fees[i]);
