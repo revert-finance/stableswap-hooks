@@ -17,7 +17,6 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
 abstract contract Base is BaseHook, AccessControlEnumerable {
-
     /// @notice Fixed tick spacing used for all pools
     /// @dev Set to 1 since concentrated liquidity is not used; only needed to form the pool key
     int24 public constant TICK_SPACING = 1;
@@ -38,6 +37,8 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Mapping of valid pool IDs managed by this hook
     /// @dev Used to validate that operations are performed on authorized pools
     mapping(PoolId => bool) poolIds;
+
+    mapping(Currency => uint256) public currenciesIndexes;
 
     /// @notice Current reserves for each currency in the pool
     uint256[] public reserves;
@@ -69,6 +70,7 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
         for (uint256 i = 0; i < _currencies.length; ++i) {
             rates.push(StableSwapMath.getRate(_currencies[i]));
+            currenciesIndexes[_currencies[i]] = i;
 
             for (uint256 j = i + 1; j < _currencies.length; ++j) {
                 PoolKey memory poolKey = PoolKey({

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+
 import {Actions} from "src/libraries/Actions.sol";
 import {Liquidity} from "src/Liquidity.sol";
 
@@ -15,20 +17,14 @@ abstract contract Fees is Liquidity {
     /// @notice Protocol fee percentage (scaled by FEE_PRECISION)
     uint256 public protocolFeePercentage;
 
-    /// @notice Accumulated protocol fees for currency0
-    uint256 public protocolFees0;
-
-    /// @notice Accumulated protocol fees for currency1
-    uint256 public protocolFees1;
+    /// @notice Accumulated protocol fees for currencies
+    uint256[] public protocolFees;
 
     /// @notice Hook fee percentage (scaled by FEE_PRECISION)
     uint256 public hookFeePercentage;
 
-    /// @notice Accumulated hook fees for currency0
-    uint256 public hookFees0;
-
-    /// @notice Accumulated hook fees for currency1
-    uint256 public hookFees1;
+    /// @notice Accumulated hook fees for currencies
+    uint256[] public hookFees;
 
     /// @notice LP fee percentage (scaled by FEE_PRECISION)
     uint256 public lpFeePercentage;
@@ -56,20 +52,16 @@ abstract contract Fees is Liquidity {
     /// @notice Emitted when protocol fees are withdrawn
     /// @param _sender Address that initiated the withdrawal
     /// @param _protocolFeeCollector Address receiving the fees
-    /// @param _protocolFees0 Amount of currency0 fees withdrawn
-    /// @param _protocolFees1 Amount of currency1 fees withdrawn
+    /// @param _protocolFees Amounts of currencies fees withdrawn
     event ProtocolFeesWithdrawn(
-        address indexed _sender, address indexed _protocolFeeCollector, uint256 _protocolFees0, uint256 _protocolFees1
+        address indexed _sender, address indexed _protocolFeeCollector, uint256[] _protocolFees
     );
 
     /// @notice Emitted when hook fees are withdrawn
     /// @param _sender Address that initiated the withdrawal
     /// @param _beneficiary Address receiving the fees
-    /// @param _hookFees0 Amount of currency0 fees withdrawn
-    /// @param _hookFees1 Amount of currency1 fees withdrawn
-    event HookFeesWithdrawn(
-        address indexed _sender, address indexed _beneficiary, uint256 _hookFees0, uint256 _hookFees1
-    );
+    /// @param _hookFees Amounts of currencies fees withdrawn
+    event HookFeesWithdrawn(address indexed _sender, address indexed _beneficiary, uint256[] _hookFees);
 
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
@@ -93,6 +85,9 @@ abstract contract Fees is Liquidity {
         _setProtocolFeePercentage(_protocolFeePercentage);
         _setHookFeePercentage(_hookFeePercentage);
         _setLpFeePercentage(_lpFeePercentage);
+
+        protocolFees = new uint256[](currenciesLength);
+        hookFees = new uint256[](currenciesLength);
     }
 
     /// @notice Updates the protocol fee collector address
@@ -148,19 +143,19 @@ abstract contract Fees is Liquidity {
     /// @dev Called during unlock callback to process protocol fee withdrawal
     /// @dev Resets protocol fee counters to zero after withdrawal
     /// @param data Encoded data containing the original sender address
-    function _handleWithdrawProtocolFeesCallback(bytes memory data) internal {
+    function _handleWithdrawProtocolFeesCallback(bytes calldata data) internal {
         (, address sender) = abi.decode(data, (uint256, address));
 
         address _protocolFeeCollector = protocolFeeCollector;
-        uint256 _protocolFees0 = protocolFees0;
-        uint256 _protocolFees1 = protocolFees1;
+        uint256[] memory _protocolFees = protocolFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees0, _protocolFees1);
+        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
 
-        protocolFees0 = 0;
-        protocolFees1 = 0;
+        for (uint256 i = 0; i < currenciesLength; i++) {
+            protocolFees[i] = 0;
+        }
 
-        emit ProtocolFeesWithdrawn(sender, _protocolFeeCollector, _protocolFees0, _protocolFees1);
+        emit ProtocolFeesWithdrawn(sender, _protocolFeeCollector, _protocolFees);
     }
 
     /// @notice Internal callback handler for hook fee withdrawals
@@ -170,41 +165,42 @@ abstract contract Fees is Liquidity {
     function _handleWithdrawHookFeesCallback(bytes memory data) internal {
         (, address sender, address _beneficiary) = abi.decode(data, (uint256, address, address));
 
-        uint256 _hookFees0 = hookFees0;
-        uint256 _hookFees1 = hookFees1;
+        uint256[] memory _hookFees = hookFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_beneficiary, _hookFees0, _hookFees1);
+        _handleWithdrawFeesPoolManagerAccounting(_beneficiary, _hookFees);
 
-        hookFees0 = 0;
-        hookFees1 = 0;
+        for (uint256 i = 0; i < currenciesLength; i++) {
+            hookFees[i] = 0;
+        }
 
-        emit HookFeesWithdrawn(sender, _beneficiary, _hookFees0, _hookFees1);
+        emit HookFeesWithdrawn(sender, _beneficiary, _hookFees);
     }
 
     /// @notice Calculates LP, hook, and protocol fees from a given amount
     /// @dev Uses simple percentage calculation with FEE_PRECISION as denominator
     /// @param _amount Total amount to calculate fees from
-    /// @return lpFees Calculated LP fee amount
-    /// @return hookFees Calculated hook fee amount
-    /// @return protocolFees Calculated protocol fee amount
-    function _getFees(uint256 _amount) internal view returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees) {
-        lpFees = _amount * lpFeePercentage / FEE_PRECISION;
-        hookFees = _amount * hookFeePercentage / FEE_PRECISION;
-        protocolFees = _amount * protocolFeePercentage / FEE_PRECISION;
+    /// @return _lpFees Calculated LP fee amount
+    /// @return _hookFees Calculated hook fee amount
+    /// @return _protocolFees Calculated protocol fee amount
+    function _getFees(uint256 _amount)
+        internal
+        view
+        returns (uint256 _lpFees, uint256 _hookFees, uint256 _protocolFees)
+    {
+        _lpFees = _amount * lpFeePercentage / FEE_PRECISION;
+        _hookFees = _amount * hookFeePercentage / FEE_PRECISION;
+        _protocolFees = _amount * protocolFeePercentage / FEE_PRECISION;
     }
 
     /// @notice Adds fees to the appropriate accumulators
-    /// @param _isCurrency0 True if fees are for currency0, false for currency1
+    /// @param _currency Currency to add fees for
     /// @param _protocolFees Amount of protocol fees to add
     /// @param _hookFees Amount of hook fees to add
-    function _addFees(bool _isCurrency0, uint256 _protocolFees, uint256 _hookFees) internal {
-        if (_isCurrency0) {
-            protocolFees0 += _protocolFees;
-            hookFees0 += _hookFees;
-        } else {
-            protocolFees1 += _protocolFees;
-            hookFees1 += _hookFees;
-        }
+    function _addFees(Currency _currency, uint256 _protocolFees, uint256 _hookFees) internal {
+        uint256 _index = currenciesIndexes[_currency];
+
+        protocolFees[_index] += _protocolFees;
+        hookFees[_index] += _hookFees;
     }
 
     /// @notice Internal setter for protocol fee collector address
@@ -264,21 +260,16 @@ abstract contract Fees is Liquidity {
     /// @dev Burns fees from this contract and takes them to the beneficiary
     /// @dev Reverts if beneficiary is the zero address
     /// @param _beneficiary Address receiving the fees
-    /// @param _fees0 Amount of currency0 fees to withdraw
-    /// @param _fees1 Amount of currency1 fees to withdraw
-    function _handleWithdrawFeesPoolManagerAccounting(address _beneficiary, uint256 _fees0, uint256 _fees1) private {
+    /// @param _fees Amount of fees to withdraw for each currency
+    function _handleWithdrawFeesPoolManagerAccounting(address _beneficiary, uint256[] memory _fees) private {
         if (_beneficiary == address(0)) {
             revert InvalidAddress();
         }
-
-        if (_fees0 != 0) {
-            poolManager.burn(address(this), currency0.toId(), _fees0);
-            poolManager.take(currency0, _beneficiary, _fees0);
-        }
-
-        if (_fees1 != 0) {
-            poolManager.burn(address(this), currency1.toId(), _fees1);
-            poolManager.take(currency1, _beneficiary, _fees1);
+        for (uint256 i = 0; i < _fees.length; i++) {
+            if (_fees[i] != 0) {
+                poolManager.burn(address(this), currencies[i].toId(), _fees[i]);
+                poolManager.take(currencies[i], _beneficiary, _fees[i]);
+            }
         }
     }
 }
