@@ -16,9 +16,10 @@ library StableSwapMath {
     /// @notice Error thrown when Newton-Raphson iteration fails to converge within 255 iterations
     error ConvergenceNotReached();
 
-    /// @notice Compute the StableSwap invariant D for N reserves.
-    /// @param _scaledReserves Array of scaled reserves for all currencies.
-    /// @param _amplification Amplification coefficient A.
+    /// @notice Compute the stable swap invariant for the provided currency reserves.
+    /// @param _scaledReserves The array of scaled reserves.
+    /// @param _amplification The amplification coefficient.
+    /// @return The converged Invariant.
     function getInvariant(uint256[] memory _scaledReserves, uint256 _amplification)
         internal
         pure
