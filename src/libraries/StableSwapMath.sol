@@ -29,7 +29,6 @@ library StableSwapMath {
         pure
         returns (uint256 invariant)
     {
-        // TODO: Keep in immutable value?
         uint256 nCurrencies = _scaledReserves.length;
 
         uint256 totalReserves = 0;
@@ -98,7 +97,6 @@ library StableSwapMath {
         uint256 _amplification,
         uint256 _invariant
     ) internal pure returns (uint256 targetReserves) {
-        // TODO: Keep in immutable value?
         uint256 nCurrencies = _scaledReserves.length;
 
         uint256 ampTimesCoins = _amplification * nCurrencies;
