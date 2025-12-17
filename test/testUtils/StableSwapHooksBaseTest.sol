@@ -135,12 +135,12 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     }
 
     function _dealTokens() private {
-        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 1e6));
-        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 1e6));
-        deal(Currency.unwrap(currency2), liquidityProvider, _toTokenWei(currency2, 1e6));
-        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 1e6));
-        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 1e6));
-        deal(Currency.unwrap(currency2), swapper, _toTokenWei(currency2, 1e6));
+        deal(Currency.unwrap(currency0), liquidityProvider, _toTokenWei(currency0, 2e6));
+        deal(Currency.unwrap(currency1), liquidityProvider, _toTokenWei(currency1, 2e6));
+        deal(Currency.unwrap(currency2), liquidityProvider, _toTokenWei(currency2, 2e6));
+        deal(Currency.unwrap(currency0), swapper, _toTokenWei(currency0, 2e6));
+        deal(Currency.unwrap(currency1), swapper, _toTokenWei(currency1, 2e6));
+        deal(Currency.unwrap(currency2), swapper, _toTokenWei(currency2, 2e6));
 
         vm.startPrank(liquidityProvider);
         IERC20(Currency.unwrap(currency0)).forceApprove(address(hooks), type(uint256).max);
@@ -181,6 +181,45 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
 
         vm.prank(liquidityProvider);
         hooks3.addLiquidity(amounts, 0);
+    }
+
+    function _executeExactInputSwap3(Currency _inputCurrency, Currency _outputCurrency, uint256 _amountIn) internal {
+        PoolKey memory poolKey = PoolKey({
+            currency0: Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency)
+                ? _inputCurrency
+                : _outputCurrency,
+            currency1: Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency)
+                ? _outputCurrency
+                : _inputCurrency,
+            fee: uint24(BASE_LP_FEE_PERCENTAGE),
+            tickSpacing: hooks3.TICK_SPACING(),
+            hooks: IHooks(address(hooks3))
+        });
+
+        bool zeroForOne = Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency);
+
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(
+            IV4Router.ExactInputSingleParams({
+                poolKey: poolKey,
+                zeroForOne: zeroForOne,
+                amountIn: uint128(_amountIn),
+                amountOutMinimum: 0,
+                hookData: bytes("")
+            })
+        );
+        params[1] = abi.encode(_inputCurrency, _amountIn);
+        params[2] = abi.encode(_outputCurrency, 0);
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(actions, params);
+
+        vm.prank(swapper);
+        universalRouter.execute(commands, inputs, block.timestamp + 100);
     }
 
     function _executeExactInputSwap(bool _zeroForOne, uint256 _amountIn) internal {

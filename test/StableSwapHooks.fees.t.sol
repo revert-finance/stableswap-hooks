@@ -5,62 +5,14 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-
-import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
-import {Actions as PeripheryActions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
-import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
 import {Fees} from "src/Fees.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1e6;
     uint256 private constant SWAP_AMOUNT = 1000;
-
-    function _executeSwap3(Currency _inputCurrency, Currency _outputCurrency, uint256 _amountIn) internal {
-        PoolKey memory poolKey = PoolKey({
-            currency0: Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency)
-                ? _inputCurrency
-                : _outputCurrency,
-            currency1: Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency)
-                ? _outputCurrency
-                : _inputCurrency,
-            fee: uint24(BASE_LP_FEE_PERCENTAGE),
-            tickSpacing: hooks3.TICK_SPACING(),
-            hooks: IHooks(address(hooks3))
-        });
-
-        bool zeroForOne = Currency.unwrap(_inputCurrency) < Currency.unwrap(_outputCurrency);
-
-        bytes memory actions = abi.encodePacked(
-            uint8(PeripheryActions.SWAP_EXACT_IN_SINGLE),
-            uint8(PeripheryActions.SETTLE_ALL),
-            uint8(PeripheryActions.TAKE_ALL)
-        );
-
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactInputSingleParams({
-                poolKey: poolKey,
-                zeroForOne: zeroForOne,
-                amountIn: uint128(_amountIn),
-                amountOutMinimum: 0,
-                hookData: bytes("")
-            })
-        );
-        params[1] = abi.encode(_inputCurrency, _amountIn);
-        params[2] = abi.encode(_outputCurrency, 0);
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-
-        vm.prank(swapper);
-        universalRouter.execute(commands, inputs, block.timestamp + 100);
-    }
 
     function test_constructor_ShouldAssignVariablesCorrectly() public view {
         assertEq(hooks.protocolFeeCollector(), protocolFeeCollector);
@@ -467,7 +419,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(hooks3.protocolFees(2), 0);
 
         // Swap 0 -> 1: fees on currency1
-        _executeSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT));
+        _executeExactInputSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT));
         assertEq(hooks3.protocolFees(0), 0);
         assertGt(hooks3.protocolFees(1), 0);
         assertEq(hooks3.protocolFees(2), 0);
@@ -475,7 +427,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         uint256 fees1After01Swap = hooks3.protocolFees(1);
 
         // Swap 0 -> 2: fees on currency2
-        _executeSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT));
+        _executeExactInputSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT));
         assertEq(hooks3.protocolFees(0), 0);
         assertEq(hooks3.protocolFees(1), fees1After01Swap);
         assertGt(hooks3.protocolFees(2), 0);
@@ -483,7 +435,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         uint256 fees2After02Swap = hooks3.protocolFees(2);
 
         // Swap 1 -> 2: fees on currency2
-        _executeSwap3(currency1, currency2, _toTokenWei(currency1, SWAP_AMOUNT));
+        _executeExactInputSwap3(currency1, currency2, _toTokenWei(currency1, SWAP_AMOUNT));
         assertEq(hooks3.protocolFees(0), 0);
         assertEq(hooks3.protocolFees(1), fees1After01Swap);
         assertGt(hooks3.protocolFees(2), fees2After02Swap);
@@ -493,9 +445,9 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         _addLiquidity3(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
         // Execute swaps to accumulate fees on all currencies
-        _executeSwap3(currency1, currency0, _toTokenWei(currency1, SWAP_AMOUNT)); // fees on 0
-        _executeSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 1
-        _executeSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 2
+        _executeExactInputSwap3(currency1, currency0, _toTokenWei(currency1, SWAP_AMOUNT)); // fees on 0
+        _executeExactInputSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 1
+        _executeExactInputSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 2
 
         uint256 protocolFees0 = hooks3.protocolFees(0);
         uint256 protocolFees1 = hooks3.protocolFees(1);
@@ -527,9 +479,9 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         _addLiquidity3(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
         // Execute swaps to accumulate fees on all currencies
-        _executeSwap3(currency1, currency0, _toTokenWei(currency1, SWAP_AMOUNT)); // fees on 0
-        _executeSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 1
-        _executeSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 2
+        _executeExactInputSwap3(currency1, currency0, _toTokenWei(currency1, SWAP_AMOUNT)); // fees on 0
+        _executeExactInputSwap3(currency0, currency1, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 1
+        _executeExactInputSwap3(currency0, currency2, _toTokenWei(currency0, SWAP_AMOUNT)); // fees on 2
 
         uint256 hookFees0 = hooks3.hookFees(0);
         uint256 hookFees1 = hooks3.hookFees(1);
