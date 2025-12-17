@@ -14,7 +14,6 @@ import {Actions} from "src/libraries/Actions.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract contract that manages liquidity provision and withdrawal for the StableSwap pool
-/// @dev Inherits from Amp for amplification factor management and ERC20 for LP token functionality
 abstract contract Liquidity is Amp, ERC20 {
     using SafeERC20 for IERC20;
 
@@ -26,17 +25,15 @@ abstract contract Liquidity is Amp, ERC20 {
 
     /// @notice Emitted when liquidity is added to the pool
     /// @param _sender Address that added liquidity
-    /// @param _amount0 Amount of currency0 added
-    /// @param _amount1 Amount of currency1 added
+    /// @param _amounts Amounts of each currency added
     /// @param _shares Number of LP shares minted
-    event LiquidityAdded(address indexed _sender, uint256 _amount0, uint256 _amount1, uint256 _shares);
+    event LiquidityAdded(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
     /// @notice Emitted when liquidity is removed from the pool
     /// @param _sender Address that removed liquidity
-    /// @param _amount0 Amount of currency0 withdrawn
-    /// @param _amount1 Amount of currency1 withdrawn
+    /// @param _amounts Amounts of each currency withdrawn
     /// @param _shares Number of LP shares burned
-    event LiquidityRemoved(address indexed _sender, uint256 _amount0, uint256 _amount1, uint256 _shares);
+    event LiquidityRemoved(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
     /// @notice Error thrown when adding liquidity would decrease the invariant
     error InvalidInvariant();
@@ -59,23 +56,21 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Add liquidity to the pool
     /// @dev Supports single-sided deposits; at least one amount must be non-zero
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
-    /// @param _amount0 The amount of currency0 to add
-    /// @param _amount1 The amount of currency1 to add
+    /// @param _amounts Array of amounts for each currency to add
     /// @param _minShares The minimum number of shares to receive (slippage protection)
-    function addLiquidity(uint256 _amount0, uint256 _amount1, uint256 _minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amount0, _amount1, _minShares, _msgSender());
+    function addLiquidity(uint256[] calldata _amounts, uint256 _minShares) external {
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, _msgSender());
 
         poolManager.unlock(data);
     }
 
     /// @notice Remove liquidity from the pool
-    /// @dev Burns LP shares and returns proportional amounts of both tokens
+    /// @dev Burns LP shares and returns proportional amounts of all currencies
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     /// @param _shares The number of LP shares to burn
-    /// @param _minAmount0 The minimum amount of currency0 to receive (slippage protection)
-    /// @param _minAmount1 The minimum amount of currency1 to receive (slippage protection)
-    function removeLiquidity(uint256 _shares, uint256 _minAmount0, uint256 _minAmount1) external {
-        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmount0, _minAmount1, _msgSender());
+    /// @param _minAmounts Array of minimum amounts for each currency to receive (slippage protection)
+    function removeLiquidity(uint256 _shares, uint256[] calldata _minAmounts) external {
+        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmounts, _msgSender());
 
         poolManager.unlock(data);
     }
@@ -118,36 +113,34 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @dev Validates amounts, computes shares, transfers tokens, and mints LP tokens
     /// @param data Encoded data containing amounts, minShares, and sender address
     function _handleAddLiquidityCallback(bytes calldata data) internal {
-        (, uint256 amount0, uint256 amount1, uint256 minShares, address sender) =
-            abi.decode(data, (uint256, uint256, uint256, uint256, address));
+        (, uint256[] memory amounts, uint256 minShares, address sender) =
+            abi.decode(data, (uint256, uint256[], uint256, address));
 
         bool isFirstDeposit = totalSupply() == 0;
 
-        uint256 newShares = _computeNewShares(amount0, amount1);
+        uint256 newShares = _computeNewShares(amounts);
 
         // Check that the new shares are above the minimum
         if (newShares < minShares) {
             revert InsufficientShares();
         }
 
-        // Transfer tokens from sender to PoolManager
-        if (amount0 > 0) {
-            poolManager.sync(currency0);
-            IERC20(Currency.unwrap(currency0)).safeTransferFrom(sender, address(poolManager), amount0);
-            poolManager.settle();
-            poolManager.mint(address(this), currency0.toId(), amount0);
-        }
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            uint256 amount = amounts[i];
 
-        if (amount1 > 0) {
-            poolManager.sync(currency1);
-            IERC20(Currency.unwrap(currency1)).safeTransferFrom(sender, address(poolManager), amount1);
-            poolManager.settle();
-            poolManager.mint(address(this), currency1.toId(), amount1);
-        }
+            if (amount == 0) {
+                continue;
+            }
 
-        // Update storage
-        reserves0 += amount0;
-        reserves1 += amount1;
+            Currency currency = currencies[i];
+
+            poolManager.sync(currency);
+            IERC20(Currency.unwrap(currency)).safeTransferFrom(sender, address(poolManager), amount);
+            poolManager.settle();
+            poolManager.mint(address(this), currency.toId(), amount);
+
+            reserves[i] += amount;
+        }
 
         _mint(sender, newShares);
 
@@ -156,29 +149,31 @@ abstract contract Liquidity is Amp, ERC20 {
             _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         }
 
-        emit LiquidityAdded(sender, amount0, amount1, newShares);
+        emit LiquidityAdded(sender, amounts, newShares);
     }
 
     /// @notice Computes the number of LP shares to mint for a given deposit
     /// @dev Uses the StableSwap invariant to calculate proportional shares
     /// @dev For first deposit, shares equal the invariant minus MINIMUM_LIQUIDITY; for subsequent deposits, shares are proportional to invariant increase
-    /// @param _amount0 Amount of currency0 being deposited
-    /// @param _amount1 Amount of currency1 being deposited
+    /// @param _amounts Array of amounts for each currency being deposited
     /// @return newShares Number of LP shares to mint
-    function _computeNewShares(uint256 _amount0, uint256 _amount1) internal view returns (uint256 newShares) {
+    function _computeNewShares(uint256[] memory _amounts) internal view returns (uint256 newShares) {
         uint256 oldTotalShares = totalSupply();
 
-        uint256 oldReserves0 = reserves0;
-        uint256 oldReserves1 = reserves1;
+        uint256[] memory oldScaledReserves = new uint256[](currenciesLength);
+        uint256[] memory newScaledReserves = new uint256[](currenciesLength);
 
-        uint256 newReserves0 = oldReserves0 + _amount0;
-        uint256 newReserves1 = oldReserves1 + _amount1;
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            uint256 _reserves = reserves[i];
+            uint256 _rate = rates[i];
+
+            oldScaledReserves[i] = StableSwapMath.scaleTo(_reserves, _rate);
+            newScaledReserves[i] = StableSwapMath.scaleTo(_reserves + _amounts[i], _rate);
+        }
 
         uint256 currentAmp = _currentAmp();
 
-        uint256 newInvariant = StableSwapMath.getInvariant(
-            StableSwapMath.scaleTo(newReserves0, rate0), StableSwapMath.scaleTo(newReserves1, rate1), currentAmp
-        );
+        uint256 newInvariant = StableSwapMath.getInvariant(newScaledReserves, currentAmp);
 
         if (oldTotalShares == 0) {
             if (newInvariant < MINIMUM_LIQUIDITY) {
@@ -187,9 +182,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
             newShares = newInvariant - MINIMUM_LIQUIDITY;
         } else {
-            uint256 oldInvariant = StableSwapMath.getInvariant(
-                StableSwapMath.scaleTo(oldReserves0, rate0), StableSwapMath.scaleTo(oldReserves1, rate1), currentAmp
-            );
+            uint256 oldInvariant = StableSwapMath.getInvariant(oldScaledReserves, currentAmp);
 
             if (newInvariant <= oldInvariant) {
                 revert InvalidInvariant();
@@ -204,8 +197,8 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @dev Validates shares, calculates proportional amounts, burns LP tokens, and transfers underlying tokens
     /// @param data Encoded data containing shares, minAmounts, and sender address
     function _handleRemoveLiquidityCallback(bytes calldata data) internal {
-        (, uint256 shares, uint256 minAmount0, uint256 minAmount1, address sender) =
-            abi.decode(data, (uint256, uint256, uint256, uint256, address));
+        (, uint256 shares, uint256[] memory minAmounts, address sender) =
+            abi.decode(data, (uint256, uint256, uint256[], address));
 
         uint256 userShares = balanceOf(sender);
 
@@ -214,33 +207,29 @@ abstract contract Liquidity is Amp, ERC20 {
             revert InsufficientShares();
         }
 
-        // Calculate proportional amounts to withdraw
         uint256 currentTotalSupply = totalSupply();
-        uint256 amount0 = (shares * reserves0) / currentTotalSupply;
-        uint256 amount1 = (shares * reserves1) / currentTotalSupply;
 
-        // Check slippage
-        if (amount0 < minAmount0 || amount1 < minAmount1) {
-            revert InsufficientAmounts();
+        uint256[] memory amounts = new uint256[](currenciesLength);
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            uint256 amount = (shares * reserves[i]) / currentTotalSupply;
+
+            amounts[i] = amount;
+
+            if (amount < minAmounts[i]) {
+                revert InsufficientAmounts();
+            }
+
+            Currency currency = currencies[i];
+
+            poolManager.burn(address(this), currency.toId(), amount);
+            poolManager.take(currency, sender, amount);
+
+            reserves[i] -= amount;
         }
-
-        // Burn claims and transfer tokens from PoolManager to sender
-        if (amount0 > 0) {
-            poolManager.burn(address(this), currency0.toId(), amount0);
-            poolManager.take(currency0, sender, amount0);
-        }
-
-        if (amount1 > 0) {
-            poolManager.burn(address(this), currency1.toId(), amount1);
-            poolManager.take(currency1, sender, amount1);
-        }
-
-        // Update storage
-        reserves0 -= amount0;
-        reserves1 -= amount1;
 
         _burn(sender, shares);
 
-        emit LiquidityRemoved(sender, amount0, amount1, shares);
+        emit LiquidityRemoved(sender, amounts, shares);
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Base} from "src/Base.sol";
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Abstract contract that manages the amplification coefficient (A) for StableSwap pools
 abstract contract Amp is Base {
@@ -13,9 +14,6 @@ abstract contract Amp is Base {
 
     /// @notice Minimum time required between amp changes
     uint256 public constant MIN_AMP_RAMP_TIME = 1 days;
-
-    /// @notice Precision multiplier for internal amp calculations
-    uint256 public constant AMP_PRECISION = 100;
 
     /// @notice Initial amplification coefficient (scaled by AMP_PRECISION)
     uint256 public baseAmp;
@@ -65,7 +63,7 @@ abstract contract Amp is Base {
             revert InvalidAmp();
         }
 
-        uint256 scaledBaseAmp = _baseAmp * AMP_PRECISION;
+        uint256 scaledBaseAmp = _baseAmp * StableSwapMath.AMP_PRECISION;
 
         baseAmp = scaledBaseAmp;
         nextAmp = scaledBaseAmp;
@@ -89,7 +87,7 @@ abstract contract Amp is Base {
             revert InsufficientRampTime();
         }
 
-        uint256 scaledNextAmp = _nextAmp * AMP_PRECISION;
+        uint256 scaledNextAmp = _nextAmp * StableSwapMath.AMP_PRECISION;
         uint256 currentAmp = _currentAmp();
 
         if (scaledNextAmp < currentAmp) {

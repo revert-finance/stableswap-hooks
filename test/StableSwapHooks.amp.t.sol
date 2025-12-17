@@ -6,22 +6,31 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {Amp} from "src/Amp.sol";
+import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
+    // ==========================================================================
+    // Start Amp Ramp
+    // ==========================================================================
+
     function test_startAmpRamp_ShouldRampUpSuccessfully() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
         vm.expectEmit(address(hooks));
         emit Amp.AmpRampStarted(
-            defaultAdmin, 100 * hooks.AMP_PRECISION(), 200 * hooks.AMP_PRECISION(), block.timestamp, nextAmpTime
+            defaultAdmin,
+            100 * StableSwapMath.AMP_PRECISION,
+            200 * StableSwapMath.AMP_PRECISION,
+            block.timestamp,
+            nextAmpTime
         );
 
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.baseAmp(), 100 * hooks.AMP_PRECISION());
-        assertEq(hooks.nextAmp(), 200 * hooks.AMP_PRECISION());
+        assertEq(hooks.baseAmp(), 100 * StableSwapMath.AMP_PRECISION);
+        assertEq(hooks.nextAmp(), 200 * StableSwapMath.AMP_PRECISION);
         assertEq(hooks.baseAmpTime(), block.timestamp);
         assertEq(hooks.nextAmpTime(), nextAmpTime);
     }
@@ -32,14 +41,18 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.expectEmit(address(hooks));
         emit Amp.AmpRampStarted(
-            defaultAdmin, 100 * hooks.AMP_PRECISION(), 50 * hooks.AMP_PRECISION(), block.timestamp, nextAmpTime
+            defaultAdmin,
+            100 * StableSwapMath.AMP_PRECISION,
+            50 * StableSwapMath.AMP_PRECISION,
+            block.timestamp,
+            nextAmpTime
         );
 
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.baseAmp(), 100 * hooks.AMP_PRECISION());
-        assertEq(hooks.nextAmp(), 50 * hooks.AMP_PRECISION());
+        assertEq(hooks.baseAmp(), 100 * StableSwapMath.AMP_PRECISION);
+        assertEq(hooks.nextAmp(), 50 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldInterpolateWhileRamping() public {
@@ -54,7 +67,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Should be approximately halfway through the ramp from 100 up to 200 (in scaled values: 10000 to 20000)
         uint256 currentAmp = hooks.currentAmp();
-        assertApproxEqAbs(currentAmp, 150 * hooks.AMP_PRECISION(), hooks.AMP_PRECISION());
+        assertApproxEqAbs(currentAmp, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldReturnFutureAAfterRampingComplete() public {
@@ -67,7 +80,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Fast forward past ramping completion
         vm.warp(nextAmpTime + 1);
 
-        assertEq(hooks.currentAmp(), 200 * hooks.AMP_PRECISION());
+        assertEq(hooks.currentAmp(), 200 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
@@ -87,6 +100,10 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.expectRevert(Amp.InsufficientRampTime.selector);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
+
+    // ==========================================================================
+    // Stop Amp Ramp
+    // ==========================================================================
 
     function test_stopAmpRamp_ShouldStopRampingAtCurrentValue() public {
         uint256 nextAmp = 200;
@@ -117,6 +134,10 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         assertEq(hooks.currentAmp(), currentAmpBeforeStop);
     }
 
+    // ==========================================================================
+    // Validation
+    // ==========================================================================
+
     function test_startAmpRamp_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
@@ -145,7 +166,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(300, block.timestamp + 2 days);
 
-        assertEq(hooks.nextAmp(), 300 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 300 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRevertWhenRampDurationTooShort() public {
@@ -183,7 +204,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.nextAmp(), 1000 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 1000 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRevertWhenRampingDownTooMuch() public {
@@ -204,7 +225,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.nextAmp(), 10 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 10 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRespectMaxChangeAfterPartialRamp() public {
@@ -216,24 +237,26 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.warp(block.timestamp + 1 days);
 
         uint256 currentA = hooks.currentAmp();
-        assertApproxEqAbs(currentA, 150 * hooks.AMP_PRECISION(), hooks.AMP_PRECISION());
+        assertApproxEqAbs(currentA, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
 
         // Wait for MIN_RAMP_TIME
         vm.warp(block.timestamp + hooks.MIN_AMP_RAMP_TIME() + 1);
 
         // Now max allowed change from ~150 is 150 * 10 = 1500 (up) or 150 / 10 = 15 (down)
         // currentA is scaled, so divide by AMP_PRECISION to get unscaled value for startAmpRamp
-        uint256 currentAUnscaled = currentA / hooks.AMP_PRECISION();
+        uint256 currentAUnscaled = currentA / StableSwapMath.AMP_PRECISION;
         uint256 maxAllowedUp = currentAUnscaled * hooks.MAX_AMP_MULTIPLIER();
 
         // This should succeed
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(maxAllowedUp, block.timestamp + 2 days);
 
-        assertEq(hooks.nextAmp(), maxAllowedUp * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), maxAllowedUp * StableSwapMath.AMP_PRECISION);
     }
 
-    // Access control tests
+    // ==========================================================================
+    // Access Control
+    // ==========================================================================
 
     function test_startAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
         uint256 nextAmp = 200;
@@ -267,7 +290,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.prank(defaultAdmin);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
 
-        assertEq(hooks.nextAmp(), 200 * hooks.AMP_PRECISION());
+        assertEq(hooks.nextAmp(), 200 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_stopAmpRamp_ShouldSucceedWhenCalledByDefaultAdmin() public {
