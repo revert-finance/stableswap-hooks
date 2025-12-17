@@ -9,8 +9,7 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 contract StableSwapHooksHarness is StableSwapHooks {
     constructor(
         IPoolManager _poolManager,
-        Currency _currency0,
-        Currency _currency1,
+        Currency[] memory _currencies,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
@@ -19,8 +18,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
     )
         StableSwapHooks(
             _poolManager,
-            _currency0,
-            _currency1,
+            _currencies,
             _protocolFeeCollector,
             _protocolFeePercentage,
             _hookFeePercentage,
@@ -43,7 +41,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
 
     // Liquidity.sol
 
-    function computeNewShares(uint256 _amount0, uint256 _amount1) external view returns (uint256) {
-        return _computeNewShares(_amount0, _amount1);
+    function computeNewShares(uint256[] memory _amounts) external view returns (uint256) {
+        return _computeNewShares(_amounts);
     }
 }

@@ -51,11 +51,14 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Thrown when attempting to create a pool with more currencies than MAX_CURRENCIES
     error TooManyCurrencies();
 
+    /// @notice Thrown when currencies array is not sorted in ascending order
+    error CurrenciesNotSorted();
+
     /// @notice Initializes the base StableSwap hook configuration
     /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
-    /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
+    /// @param _currencies Array of currencies to create pools for, must be sorted in ascending order by address
     constructor(IPoolManager _poolManager, uint256 _lpFeePercentage, Currency[] memory _currencies)
         BaseHook(_poolManager)
     {
@@ -76,6 +79,10 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
             _currencyIndex[_currencies[i]] = i + 1;
 
             for (uint256 j = i + 1; j < currenciesLength; ++j) {
+                if (Currency.unwrap(_currencies[j]) <= Currency.unwrap(_currencies[i])) {
+                    revert CurrenciesNotSorted();
+                }
+
                 PoolKey memory poolKey = PoolKey({
                     currency0: _currencies[i],
                     currency1: _currencies[j],

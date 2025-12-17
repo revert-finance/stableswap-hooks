@@ -296,8 +296,7 @@ contract StableSwapMathTest is Test {
         // Even with a large swap, target reserve should be >= 0
         uint256 largeSwapIn = 900e18;
         uint256 newReserves0 = reserves0 + largeSwapIn;
-        uint256 targetReserve =
-            StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
+        uint256 targetReserve = StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
 
         assertTrue(targetReserve <= reserves1);
         assertTrue(targetReserve > 0);
@@ -315,8 +314,7 @@ contract StableSwapMathTest is Test {
         // Swap that would deplete ~95% of reserves1
         uint256 veryLargeSwapIn = 5000e18;
         uint256 newReserves0 = reserves0 + veryLargeSwapIn;
-        uint256 targetReserve =
-            StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
+        uint256 targetReserve = StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
 
         // Target reserve should be positive but very small
         assertTrue(targetReserve > 0);
