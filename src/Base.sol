@@ -21,6 +21,9 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @dev Set to 1 since concentrated liquidity is not used; only needed to form the pool key
     int24 public constant TICK_SPACING = 1;
 
+    /// @notice Minimum number of currencies required in the pool
+    uint256 public constant MIN_CURRENCIES = 2;
+
     /// @notice Maximum number of currencies allowed in the pool
     uint256 public constant MAX_CURRENCIES = 8;
 
@@ -48,8 +51,8 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Thrown when the operation is attempted on a pool that doesn't match this hook's poolId
     error InvalidPoolId();
 
-    /// @notice Thrown when attempting to create a pool with more currencies than MAX_CURRENCIES
-    error TooManyCurrencies();
+    /// @notice Thrown when currencies array length is outside valid range [MIN_CURRENCIES, MAX_CURRENCIES]
+    error InvalidCurrenciesLength();
 
     /// @notice Thrown when currencies array is not sorted in ascending order
     error CurrenciesNotSorted();
@@ -67,8 +70,8 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
         currencies = _currencies;
         currenciesLength = _currencies.length;
 
-        if (currenciesLength > MAX_CURRENCIES) {
-            revert TooManyCurrencies();
+        if (currenciesLength < MIN_CURRENCIES || currenciesLength > MAX_CURRENCIES) {
+            revert InvalidCurrenciesLength();
         }
 
         reserves = new uint256[](currenciesLength);

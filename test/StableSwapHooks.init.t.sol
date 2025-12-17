@@ -92,6 +92,70 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         );
     }
 
+    function test_initialize_ShouldRevertWhenTooFewCurrencies() public {
+        Currency[] memory singleCurrency = new Currency[](1);
+        singleCurrency[0] = currency0;
+
+        (, bytes32 salt) = HookMiner.find(
+            address(this),
+            HOOK_FLAGS,
+            type(StableSwapHooksHarness).creationCode,
+            abi.encode(
+                poolManager,
+                singleCurrency,
+                protocolFeeCollector,
+                BASE_PROTOCOL_FEE_PERCENTAGE,
+                BASE_HOOK_FEE_PERCENTAGE,
+                BASE_LP_FEE_PERCENTAGE,
+                BASE_AMP
+            )
+        );
+
+        vm.expectRevert(Base.InvalidCurrenciesLength.selector);
+        new StableSwapHooksHarness{salt: salt}(
+            IPoolManager(poolManager),
+            singleCurrency,
+            protocolFeeCollector,
+            BASE_PROTOCOL_FEE_PERCENTAGE,
+            BASE_HOOK_FEE_PERCENTAGE,
+            BASE_LP_FEE_PERCENTAGE,
+            BASE_AMP
+        );
+    }
+
+    function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
+        Currency[] memory nineCurrencies = new Currency[](9);
+        for (uint160 i = 0; i < 9; i++) {
+            nineCurrencies[i] = Currency.wrap(address(uint160(i + 1)));
+        }
+
+        (, bytes32 salt) = HookMiner.find(
+            address(this),
+            HOOK_FLAGS,
+            type(StableSwapHooksHarness).creationCode,
+            abi.encode(
+                poolManager,
+                nineCurrencies,
+                protocolFeeCollector,
+                BASE_PROTOCOL_FEE_PERCENTAGE,
+                BASE_HOOK_FEE_PERCENTAGE,
+                BASE_LP_FEE_PERCENTAGE,
+                BASE_AMP
+            )
+        );
+
+        vm.expectRevert(Base.InvalidCurrenciesLength.selector);
+        new StableSwapHooksHarness{salt: salt}(
+            IPoolManager(poolManager),
+            nineCurrencies,
+            protocolFeeCollector,
+            BASE_PROTOCOL_FEE_PERCENTAGE,
+            BASE_HOOK_FEE_PERCENTAGE,
+            BASE_LP_FEE_PERCENTAGE,
+            BASE_AMP
+        );
+    }
+
     function test_initialize_ShouldSetCorrectPoolId() public view {
         PoolKey memory poolKey = _getPoolKey();
         PoolId poolId = poolKey.toId();
