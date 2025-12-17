@@ -419,4 +419,137 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertGt(hooks3.reserves(1), 0);
         assertGt(hooks3.reserves(2), 0);
     }
+
+    function test_swap_ImbalancedPool_ShouldHavePriceImpact() public {
+        // Create imbalanced pool: 90% currency0, 10% currency1
+        uint256 imbalancedAmount0 = LIQUIDITY_AMOUNT * 9 / 10;
+        uint256 imbalancedAmount1 = LIQUIDITY_AMOUNT / 10;
+
+        // Remove existing liquidity first
+        uint256 existingShares = hooks.balanceOf(liquidityProvider);
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(existingShares, minAmounts);
+
+        // Add imbalanced liquidity
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, imbalancedAmount0);
+        amounts[1] = _toTokenWei(currency1, imbalancedAmount1);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        // Swap currency0 -> currency1 (buying the scarce asset)
+        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
+        uint256 swapperBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        _executeExactInputSwap(true, amountIn);
+
+        uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 amountOut = swapperBalance1After - swapperBalance1Before;
+
+        // Output should be less than input due to imbalance (buying scarce asset)
+        // Even accounting for fees, the price impact should be significant
+        assertLt(amountOut, amountIn);
+    }
+
+    function test_swap_ImbalancedPool_ReverseDirection_ShouldHaveBetterRate() public {
+        // Create imbalanced pool: 90% currency0, 10% currency1
+        uint256 imbalancedAmount0 = LIQUIDITY_AMOUNT * 9 / 10;
+        uint256 imbalancedAmount1 = LIQUIDITY_AMOUNT / 10;
+
+        // Remove existing liquidity first
+        uint256 existingShares = hooks.balanceOf(liquidityProvider);
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(existingShares, minAmounts);
+
+        // Add imbalanced liquidity
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, imbalancedAmount0);
+        amounts[1] = _toTokenWei(currency1, imbalancedAmount1);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        // Swap currency1 -> currency0 (selling the scarce asset)
+        uint256 amountIn = _toTokenWei(currency1, SWAP_AMOUNT / 10); // Smaller amount since currency1 is scarce
+        uint256 swapperBalance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        _executeExactInputSwap(false, amountIn);
+
+        uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 amountOut = swapperBalance0After - swapperBalance0Before;
+
+        // Output should be more than input (selling scarce asset for abundant one)
+        assertGt(amountOut, amountIn);
+    }
+
+    function test_swap_VerySmallAmount_ShouldSucceed() public {
+        // Test with 1 wei
+        uint256 amountIn = 1;
+
+        uint256 swapperBalance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        _executeExactInputSwap(true, amountIn);
+
+        uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        assertEq(swapperBalance0After, swapperBalance0Before - amountIn);
+    }
+
+    function test_swap_ConsecutiveSwaps_ShouldAccumulatePriceImpact() public {
+        uint256 swapAmount = _toTokenWei(currency0, SWAP_AMOUNT * 10);
+
+        // First swap
+        uint256 balance1Before1 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        _executeExactInputSwap(true, swapAmount);
+        uint256 balance1After1 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 output1 = balance1After1 - balance1Before1;
+
+        // Second identical swap - should get less output due to price impact
+        uint256 balance1Before2 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        _executeExactInputSwap(true, swapAmount);
+        uint256 balance1After2 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 output2 = balance1After2 - balance1Before2;
+
+        // Second swap should yield less due to accumulated price impact
+        assertLt(output2, output1);
+    }
+
+    function test_swap_RoundTrip_ShouldLoseToFees() public {
+        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
+
+        uint256 initialBalance0 = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 initialBalance1 = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        // Swap currency0 -> currency1
+        _executeExactInputSwap(true, amountIn);
+
+        uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 received1 = balance1After - initialBalance1;
+
+        // Swap only the received currency1 back to currency0
+        _executeExactInputSwap(false, received1);
+
+        uint256 finalBalance0 = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        // Should have less than started due to fees on both swaps
+        assertLt(finalBalance0, initialBalance0);
+    }
+
+    function test_swap_ExactOutput_NearFullReserves_ShouldSucceed() public {
+        // Try to swap out 80% of reserves (significant but not draining)
+        uint256 reserve1 = hooks.reserves(1);
+        uint256 amountOut = reserve1 * 80 / 100;
+
+        uint256 swapperBalance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 swapperBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        _executeExactOutputSwap(true, amountOut);
+
+        uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        assertEq(swapperBalance1After, swapperBalance1Before + amountOut);
+        assertLt(swapperBalance0After, swapperBalance0Before);
+    }
 }

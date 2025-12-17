@@ -629,4 +629,216 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before, expectedAmount1);
         assertEq(IERC20(Currency.unwrap(currency2)).balanceOf(liquidityProvider) - balance2Before, expectedAmount2);
     }
+
+    function test_addLiquidity_SingleSided_ShouldMintFewerSharesThanBalanced() public {
+        // First add balanced liquidity
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 sharesBefore = hooks.totalSupply();
+
+        // Add single-sided liquidity (only currency0)
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 1000);
+        amounts[1] = 0;
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 singleSidedShares = hooks.totalSupply() - sharesBefore;
+
+        // Now compare with balanced deposit of same total value (500 each)
+        uint256 sharesBeforeBalanced = hooks.totalSupply();
+        uint256[] memory balancedAmounts = new uint256[](2);
+        balancedAmounts[0] = _toTokenWei(currency0, 500);
+        balancedAmounts[1] = _toTokenWei(currency1, 500);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(balancedAmounts, 0);
+
+        uint256 balancedShares = hooks.totalSupply() - sharesBeforeBalanced;
+
+        // Single-sided deposit should mint fewer shares than balanced deposit of same total value
+        assertGt(singleSidedShares, 0);
+        assertLt(singleSidedShares, balancedShares);
+    }
+
+    function test_addLiquidity_ImbalancedDeposit_ShouldSucceed() public {
+        // First add balanced liquidity
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Add imbalanced liquidity (90% currency0, 10% currency1)
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 900);
+        amounts[1] = _toTokenWei(currency1, 100);
+
+        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
+
+        assertGt(sharesAfter, sharesBefore);
+    }
+
+    function test_addLiquidity_VerySmallAmount_ShouldSucceed() public {
+        // First add normal liquidity
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Add tiny amount
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 100; // 100 wei
+        amounts[1] = 100; // 100 wei
+
+        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
+
+        assertGt(sharesAfter, sharesBefore);
+    }
+
+    function test_removeLiquidity_VerySmallAmount_ShouldSucceed() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 sharesToRemove = 1; // 1 wei of LP tokens
+        uint256[] memory minAmounts = new uint256[](2);
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, minAmounts);
+
+        uint256 lpBalanceAfter = hooks.balanceOf(liquidityProvider);
+
+        assertEq(lpBalanceAfter, lpBalanceBefore - sharesToRemove);
+    }
+
+    function test_addLiquidity_AfterSwaps_ShouldAccountForImbalance() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Execute several swaps to imbalance the pool
+        uint256 swapAmount = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
+        vm.startPrank(swapper);
+        IERC20(Currency.unwrap(currency0)).approve(address(permit2), type(uint256).max);
+        permit2.approve(Currency.unwrap(currency0), address(universalRouter), type(uint160).max, type(uint48).max);
+        vm.stopPrank();
+
+        _executeExactInputSwap(true, swapAmount);
+        _executeExactInputSwap(true, swapAmount);
+        _executeExactInputSwap(true, swapAmount);
+
+        uint256 reserves0After = hooks.reserves(0);
+        uint256 reserves1After = hooks.reserves(1);
+
+        // Pool is now imbalanced
+        assertGt(reserves0After, reserves1After);
+
+        // Add balanced liquidity to imbalanced pool
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 1000);
+        amounts[1] = _toTokenWei(currency1, 1000);
+
+        uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
+
+        // Should still mint shares
+        assertGt(sharesAfter, sharesBefore);
+    }
+
+    function test_removeLiquidity_FromImbalancedPool_ShouldReturnProportionalAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Imbalance the pool with swaps
+        uint256 swapAmount = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 5);
+        _executeExactInputSwap(true, swapAmount);
+
+        uint256 reserves0 = hooks.reserves(0);
+        uint256 reserves1 = hooks.reserves(1);
+        uint256 totalSupply = hooks.totalSupply();
+
+        uint256 sharesToRemove = hooks.balanceOf(liquidityProvider) / 4;
+        uint256 expectedAmount0 = (sharesToRemove * reserves0) / totalSupply;
+        uint256 expectedAmount1 = (sharesToRemove * reserves1) / totalSupply;
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, minAmounts);
+
+        uint256 received0 = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider) - balance0Before;
+        uint256 received1 = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before;
+
+        // Should receive proportional amounts even from imbalanced pool
+        assertEq(received0, expectedAmount0);
+        assertEq(received1, expectedAmount1);
+        // More currency0 than currency1 due to imbalance
+        assertGt(received0, received1);
+    }
+
+    function test_addLiquidity_MultipleDeposits_ShouldAccumulateCorrectly() public {
+        // First deposit
+        _addLiquidity(1000, 1000);
+        uint256 shares1 = hooks.balanceOf(liquidityProvider);
+
+        // Second deposit
+        uint256[] memory amounts2 = new uint256[](2);
+        amounts2[0] = _toTokenWei(currency0, 1000);
+        amounts2[1] = _toTokenWei(currency1, 1000);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts2, 0);
+        uint256 shares2 = hooks.balanceOf(liquidityProvider) - shares1;
+
+        // Third deposit
+        uint256[] memory amounts3 = new uint256[](2);
+        amounts3[0] = _toTokenWei(currency0, 1000);
+        amounts3[1] = _toTokenWei(currency1, 1000);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts3, 0);
+        uint256 shares3 = hooks.balanceOf(liquidityProvider) - shares1 - shares2;
+
+        // Each balanced deposit should mint roughly similar shares
+        assertApproxEqRel(shares2, shares3, 0.01e18); // Within 1%
+    }
+
+    function test_removeLiquidity_AllShares_ShouldDrainReserves() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Another LP adds liquidity
+        address secondLP = makeAddr("secondLP");
+        deal(Currency.unwrap(currency0), secondLP, _toTokenWei(currency0, LIQUIDITY_AMOUNT));
+        deal(Currency.unwrap(currency1), secondLP, _toTokenWei(currency1, LIQUIDITY_AMOUNT));
+
+        vm.startPrank(secondLP);
+        IERC20(Currency.unwrap(currency0)).forceApprove(address(hooks), type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).forceApprove(address(hooks), type(uint256).max);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+        hooks.addLiquidity(amounts, 0);
+        vm.stopPrank();
+
+        // First LP removes all their shares
+        uint256 lpShares = hooks.balanceOf(liquidityProvider);
+        uint256[] memory minAmounts = new uint256[](2);
+
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(lpShares, minAmounts);
+
+        // First LP should have 0 shares
+        assertEq(hooks.balanceOf(liquidityProvider), 0);
+
+        // Pool should still have reserves from second LP
+        assertGt(hooks.reserves(0), 0);
+        assertGt(hooks.reserves(1), 0);
+    }
 }
