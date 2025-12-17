@@ -8,6 +8,10 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 import {Amp} from "src/Amp.sol";
 
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
+    // ==========================================================================
+    // Start Amp Ramp
+    // ==========================================================================
+
     function test_startAmpRamp_ShouldRampUpSuccessfully() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
@@ -88,6 +92,10 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
+    // ==========================================================================
+    // Stop Amp Ramp
+    // ==========================================================================
+
     function test_stopAmpRamp_ShouldStopRampingAtCurrentValue() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 2 days;
@@ -116,6 +124,10 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.warp(block.timestamp + 1 days);
         assertEq(hooks.currentAmp(), currentAmpBeforeStop);
     }
+
+    // ==========================================================================
+    // Validation
+    // ==========================================================================
 
     function test_startAmpRamp_ShouldRevertWhenInsufficientTimeSinceLastRamp() public {
         uint256 nextAmp = 200;
@@ -233,7 +245,9 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         assertEq(hooks.nextAmp(), maxAllowedUp * hooks.AMP_PRECISION());
     }
 
-    // Access control tests
+    // ==========================================================================
+    // Access Control
+    // ==========================================================================
 
     function test_startAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
         uint256 nextAmp = 200;

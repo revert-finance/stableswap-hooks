@@ -14,8 +14,12 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
     using SafeERC20 for IERC20;
 
     uint256 private constant LIQUIDITY_AMOUNT = 100_000;
-    uint256 private constant MINIMUM_LIQUIDITY = 1000;
+    uint256 private constant MINIMUM_LIQUIDITY = 1_000;
     address private constant DEAD_ADDRESS = address(0x000000000000000000000000000000000000dEaD);
+
+    // ==========================================================================
+    // Add Liquidity - Initial Deposit
+    // ==========================================================================
 
     function test_addLiquidity_InitialDeposit_ShouldMintSharesMinusMinimumLiquidity() public {
         uint256[] memory amounts = new uint256[](2);
@@ -74,6 +78,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         hooks.addLiquidity(amounts, 0);
     }
 
+    // ==========================================================================
+    // Add Liquidity - Subsequent Deposit
+    // ==========================================================================
+
     function test_addLiquidity_SubsequentDeposit_ShouldMintProportionalShares() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
@@ -129,6 +137,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(deadBalanceAfter, MINIMUM_LIQUIDITY);
     }
 
+    // ==========================================================================
+    // Add Liquidity - Single-Sided
+    // ==========================================================================
+
     function test_addLiquidity_SingleSided_ShouldAllowOnlyToken0() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
@@ -164,6 +176,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(hooks.reserves(0), reserves0Before);
         assertEq(hooks.reserves(1), reserves1Before + amounts[1]);
     }
+
+    // ==========================================================================
+    // Add Liquidity - Validation
+    // ==========================================================================
 
     function test_addLiquidity_ShouldRevertWhenSharesBelowMinimum() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
@@ -210,6 +226,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         vm.prank(liquidityProvider);
         hooks.addLiquidity(amounts, 0);
     }
+
+    // ==========================================================================
+    // Remove Liquidity
+    // ==========================================================================
 
     function test_removeLiquidity_ShouldBurnSharesAndReturnTokens() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
@@ -314,6 +334,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertGt(hooks.reserves(0), 0);
         assertGt(hooks.reserves(1), 0);
     }
+
+    // ==========================================================================
+    // Remove Liquidity - Validation
+    // ==========================================================================
 
     function test_removeLiquidity_ShouldRevertWhenAmount0BelowMinimum() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
@@ -459,6 +483,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(hooks.balanceOf(liquidityProvider), currentBalance - currentBalance / 2);
     }
 
+    // ==========================================================================
+    // LP Token
+    // ==========================================================================
+
     function test_lpToken_ShouldHaveCorrectNameAndSymbol() public view {
         assertEq(hooks.name(), "StableSwap LP Token");
         assertEq(hooks.symbol(), "SSLP");
@@ -498,6 +526,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertGt(IERC20(Currency.unwrap(currency0)).balanceOf(unauthorizedUser), balance0Before);
         assertGt(IERC20(Currency.unwrap(currency1)).balanceOf(unauthorizedUser), balance1Before);
     }
+
+    // ==========================================================================
+    // Array Length Validation
+    // ==========================================================================
 
     function test_addLiquidity_ShouldRevertWhenWrongArrayLength() public {
         uint256[] memory amounts = new uint256[](1);
@@ -541,6 +573,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider), balance0Before);
         assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider), balance1Before);
     }
+
+    // ==========================================================================
+    // Multi-Currency (hooks3)
+    // ==========================================================================
 
     function test_hooks3_addLiquidity_ShouldMintSharesAndUpdateReserves() public {
         uint256[] memory amounts = new uint256[](3);
@@ -629,6 +665,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before, expectedAmount1);
         assertEq(IERC20(Currency.unwrap(currency2)).balanceOf(liquidityProvider) - balance2Before, expectedAmount2);
     }
+
+    // ==========================================================================
+    // Edge Cases
+    // ==========================================================================
 
     function test_addLiquidity_SingleSided_ShouldMintFewerSharesThanBalanced() public {
         // First add balanced liquidity

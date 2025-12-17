@@ -11,8 +11,12 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 import {Fees} from "src/Fees.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
-    uint256 private constant LIQUIDITY_AMOUNT = 1e6;
-    uint256 private constant SWAP_AMOUNT = 1000;
+    uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
+    uint256 private constant SWAP_AMOUNT = 1_000;
+
+    // ==========================================================================
+    // Constructor
+    // ==========================================================================
 
     function test_constructor_ShouldAssignVariablesCorrectly() public view {
         assertEq(hooks.protocolFeeCollector(), protocolFeeCollector);
@@ -20,6 +24,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(hooks.hookFeePercentage(), BASE_HOOK_FEE_PERCENTAGE);
         assertEq(hooks.lpFeePercentage(), BASE_LP_FEE_PERCENTAGE);
     }
+
+    // ==========================================================================
+    // Protocol Fee Collector
+    // ==========================================================================
 
     function test_setProtocolFeeCollector_ShouldSucceedWhenCalledByAdmin() public {
         address newCollector = makeAddr("newCollector");
@@ -52,6 +60,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
 
         assertEq(hooks.protocolFeeCollector(), address(0));
     }
+
+    // ==========================================================================
+    // Protocol Fee Percentage
+    // ==========================================================================
 
     function test_setProtocolFeePercentage_ShouldSucceedWhenCalledByAdmin() public {
         uint256 newPercentage = 500; // 0.05%
@@ -94,6 +106,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setProtocolFeePercentage(invalidPercentage);
     }
 
+    // ==========================================================================
+    // Hook Fee Percentage
+    // ==========================================================================
+
     function test_setHookFeePercentage_ShouldSucceedWhenCalledByAdmin() public {
         uint256 newPercentage = 1000; // 0.1%
 
@@ -135,6 +151,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setHookFeePercentage(invalidPercentage);
     }
 
+    // ==========================================================================
+    // LP Fee Percentage
+    // ==========================================================================
+
     function test_setLpFeePercentage_ShouldSucceedWhenCalledByAdmin() public {
         uint256 newPercentage = 1500; // 0.15%
 
@@ -175,6 +195,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         vm.expectRevert(Fees.InvalidFeePercentage.selector);
         hooks.setLpFeePercentage(invalidPercentage);
     }
+
+    // ==========================================================================
+    // Fee Withdrawal
+    // ==========================================================================
 
     function test_withdrawHookFees_ShouldRevertWhenCalledByUnauthorized() public {
         address beneficiary = makeAddr("beneficiary");
@@ -288,6 +312,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.withdrawHookFees(address(0));
     }
 
+    // ==========================================================================
+    // Fee Calculation
+    // ==========================================================================
+
     function test_getFees_ShouldCalculateFeesCorrectly() public {
         uint256 amount = 1000e18;
 
@@ -304,6 +332,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(hookFees, 2e18);
         assertEq(protocolFees, 1e18);
     }
+
+    // ==========================================================================
+    // Fee Accumulation
+    // ==========================================================================
 
     function test_swaps_ShouldAccumulateFeesOnZeroForOne() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
@@ -409,6 +441,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
 
         assertEq(hooks.lpFeePercentage(), 0);
     }
+
+    // ==========================================================================
+    // Multi-Currency (hooks3)
+    // ==========================================================================
 
     function test_hooks3_ShouldAccumulateFeesOnAllCurrencies() public {
         _addLiquidity3(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);

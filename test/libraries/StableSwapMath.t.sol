@@ -16,20 +16,24 @@ contract TokenMock {
 }
 
 contract StableSwapMathTest is Test {
-    function _makeReserves(uint256 reserves0, uint256 reserves1) internal pure returns (uint256[] memory) {
+    function _makeReserves(uint256 reserves0, uint256 reserves1) private pure returns (uint256[] memory) {
         uint256[] memory reserves = new uint256[](2);
         reserves[0] = reserves0;
         reserves[1] = reserves1;
         return reserves;
     }
 
-    function _makeReserves3(uint256 r0, uint256 r1, uint256 r2) internal pure returns (uint256[] memory) {
+    function _makeReserves3(uint256 r0, uint256 r1, uint256 r2) private pure returns (uint256[] memory) {
         uint256[] memory reserves = new uint256[](3);
         reserves[0] = r0;
         reserves[1] = r1;
         reserves[2] = r2;
         return reserves;
     }
+
+    // ==========================================================================
+    // getInvariant
+    // ==========================================================================
 
     function test_getInvariant_ShouldReturnZeroForEmptyPool() public pure {
         uint256[] memory reserves = _makeReserves(0, 0);
@@ -177,6 +181,10 @@ contract StableSwapMathTest is Test {
         assertEq(inv2, inv3);
     }
 
+    // ==========================================================================
+    // getInvariant - Fuzz Tests
+    // ==========================================================================
+
     function testFuzz_getInvariant_ShouldBeSymmetric(uint64 _r0, uint64 _r1) public pure {
         // Minimum reserves and limit imbalance ratio to 100:1 (extreme imbalance causes convergence issues)
         vm.assume(_r0 >= 1e15 && _r1 >= 1e15);
@@ -211,6 +219,10 @@ contract StableSwapMathTest is Test {
         // Invariant should never exceed sum of reserves
         assertTrue(invariant <= r0 + r1);
     }
+
+    // ==========================================================================
+    // getTargetReserves
+    // ==========================================================================
 
     function test_getTargetReserves_ShouldReturnCurrentReserveWhenNoSwap() public pure {
         uint256 reserves0 = 1000e18;
@@ -405,6 +417,10 @@ contract StableSwapMathTest is Test {
         assertTrue(targetR2 > 0);
     }
 
+    // ==========================================================================
+    // getTargetReserves - Fuzz Tests
+    // ==========================================================================
+
     function testFuzz_getTargetReserves_ShouldPreserveInvariant(uint128 _swapIn) public pure {
         uint256 reserves0 = 1000e18;
         uint256 reserves1 = 1000e18;
@@ -443,6 +459,10 @@ contract StableSwapMathTest is Test {
         assertTrue(targetReserve > 0);
         assertTrue(targetReserve <= reserves1);
     }
+
+    // ==========================================================================
+    // scaleTo / descale
+    // ==========================================================================
 
     function test_scaleTo_ShouldRoundTripWithDescale() public pure {
         // Token with 6 decimals (e.g., USDC) => rate = 10^(36-6) = 1e30
@@ -523,6 +543,10 @@ contract StableSwapMathTest is Test {
         assertEq(descaled, 1);
     }
 
+    // ==========================================================================
+    // scaleTo / descale - Fuzz Tests
+    // ==========================================================================
+
     function testFuzz_scaleTo_ShouldRoundTrip(uint128 _amount, uint8 _decimals) public pure {
         // Bound decimals to realistic range (0-18 for upscaling, avoids precision loss)
         uint8 decimals = uint8(bound(uint256(_decimals), 0, 18));
@@ -568,6 +592,10 @@ contract StableSwapMathTest is Test {
         // Rescaled should be <= original scaled (due to rounding down)
         assertTrue(rescaled <= scaled);
     }
+
+    // ==========================================================================
+    // getRate
+    // ==========================================================================
 
     function test_getRate_ShouldReturnScalingFactorBasedOnDecimals() public {
         // Rate formula: 10^(36 - decimals)

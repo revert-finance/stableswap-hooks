@@ -9,7 +9,7 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 
 contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     uint256 private constant SWAP_AMOUNT = 100;
-    uint256 private constant LIQUIDITY_AMOUNT = 1e6;
+    uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 private constant STABLESWAP_SLIPPAGE_TOLERANCE = 0.0001e18; // 0.01%
 
     uint256 private swapLpFeePercentage;
@@ -52,6 +52,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         return amount - (amount * _totalFeePercentage() / _feePrecision());
     }
 
+    // ==========================================================================
+    // Exact Input Swaps
+    // ==========================================================================
+
     function test_swap_ExactInput_ZeroForOne_ShouldSwapCorrectly() public {
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
 
@@ -88,6 +92,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertApproxEqRel(swapperBalance0After - swapperBalance0Before, expectedOutput, STABLESWAP_SLIPPAGE_TOLERANCE);
     }
 
+    // ==========================================================================
+    // Exact Output Swaps
+    // ==========================================================================
+
     function test_swap_ExactOutput_ZeroForOne_ShouldSwapCorrectly() public {
         uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
 
@@ -123,6 +131,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertLt(swapperBalance1After, swapperBalance1Before);
         assertApproxEqRel(swapperBalance1Before - swapperBalance1After, expectedInput, STABLESWAP_SLIPPAGE_TOLERANCE);
     }
+
+    // ==========================================================================
+    // Fee Accumulation
+    // ==========================================================================
 
     function test_swap_ExactInput_ShouldAccumulateFeesOnOutputCurrency() public {
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
@@ -190,6 +202,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertGt(hookFees1, 0);
     }
 
+    // ==========================================================================
+    // Reserve Updates
+    // ==========================================================================
+
     function test_swap_ExactInput_ZeroForOne_ShouldUpdateReserves() public {
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
 
@@ -249,6 +265,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertGt(reserves1After, reserves1Before);
         assertEq(reserves0After, reserves0Before - amountOut);
     }
+
+    // ==========================================================================
+    // StableSwap Behavior
+    // ==========================================================================
 
     function test_swap_ShouldProvideNearOneToOneForBalancedPool() public {
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
@@ -336,6 +356,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertEq(hooks.hookFees(1), 0);
     }
 
+    // ==========================================================================
+    // Multi-Currency (hooks3)
+    // ==========================================================================
+
     function test_hooks3_swap_ZeroToOne_ShouldSwapCorrectly() public {
         _addLiquidity3(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
@@ -419,6 +443,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertGt(hooks3.reserves(1), 0);
         assertGt(hooks3.reserves(2), 0);
     }
+
+    // ==========================================================================
+    // Edge Cases
+    // ==========================================================================
 
     function test_swap_ImbalancedPool_ShouldHavePriceImpact() public {
         // Create imbalanced pool: 90% currency0, 10% currency1

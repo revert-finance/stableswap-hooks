@@ -24,13 +24,17 @@ import {Base} from "src/Base.sol";
 import {Liquidity} from "src/Liquidity.sol";
 
 contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
-    PoolDonateTest internal donateRouter;
+    PoolDonateTest private donateRouter;
 
     function setUp() public override {
         super.setUp();
 
         donateRouter = new PoolDonateTest(IPoolManager(poolManager));
     }
+
+    // ==========================================================================
+    // Pool Initialization
+    // ==========================================================================
 
     function test_initialize_ShouldRevertWhenPoolAlreadyInitialized() public {
         PoolKey memory poolKey = _getPoolKey();
@@ -95,6 +99,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertTrue(hooks.isValidPoolId(poolId));
     }
 
+    // ==========================================================================
+    // Currency Configuration
+    // ==========================================================================
+
     function test_initialize_ShouldSetCorrectCurrencies() public view {
         assertEq(Currency.unwrap(hooks.currencies(0)), Currency.unwrap(currency0));
         assertEq(Currency.unwrap(hooks.currencies(1)), Currency.unwrap(currency1));
@@ -135,6 +143,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         vm.expectRevert(stdError.arithmeticError);
         hooks.getCurrencyIndex(unsupportedCurrency);
     }
+
+    // ==========================================================================
+    // Hook Permissions
+    // ==========================================================================
 
     function test_getHookPermissions_ShouldReturnCorrectFlags() public view {
         Hooks.Permissions memory permissions = hooks.getHookPermissions();
@@ -177,6 +189,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         );
         donateRouter.donate(poolKey, 100, 100, bytes(""));
     }
+
+    // ==========================================================================
+    // Multi-Currency (hooks3)
+    // ==========================================================================
 
     function test_hooks3_ShouldSetCorrectCurrenciesLength() public view {
         assertEq(hooks3.currenciesLength(), 3);
