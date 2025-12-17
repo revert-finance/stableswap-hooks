@@ -19,7 +19,11 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.expectEmit(address(hooks));
         emit Amp.AmpRampStarted(
-            defaultAdmin, 100 * StableSwapMath.AMP_PRECISION, 200 * StableSwapMath.AMP_PRECISION, block.timestamp, nextAmpTime
+            defaultAdmin,
+            100 * StableSwapMath.AMP_PRECISION,
+            200 * StableSwapMath.AMP_PRECISION,
+            block.timestamp,
+            nextAmpTime
         );
 
         vm.prank(defaultAdmin);
@@ -37,7 +41,11 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         vm.expectEmit(address(hooks));
         emit Amp.AmpRampStarted(
-            defaultAdmin, 100 * StableSwapMath.AMP_PRECISION, 50 * StableSwapMath.AMP_PRECISION, block.timestamp, nextAmpTime
+            defaultAdmin,
+            100 * StableSwapMath.AMP_PRECISION,
+            50 * StableSwapMath.AMP_PRECISION,
+            block.timestamp,
+            nextAmpTime
         );
 
         vm.prank(defaultAdmin);
