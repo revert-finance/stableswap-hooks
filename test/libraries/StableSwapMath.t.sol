@@ -23,6 +23,14 @@ contract StableSwapMathTest is Test {
         return reserves;
     }
 
+    function _makeReserves3(uint256 r0, uint256 r1, uint256 r2) internal pure returns (uint256[] memory) {
+        uint256[] memory reserves = new uint256[](3);
+        reserves[0] = r0;
+        reserves[1] = r1;
+        reserves[2] = r2;
+        return reserves;
+    }
+
     function test_getInvariant_ShouldReturnZeroForEmptyPool() public pure {
         uint256[] memory reserves = _makeReserves(0, 0);
         uint256 invariant = StableSwapMath.getInvariant(reserves, 100);
@@ -108,6 +116,100 @@ contract StableSwapMathTest is Test {
 
         // For balanced pool, invariant should equal sum
         assertEq(invariant, reserves0 + reserves1);
+    }
+
+    function test_getInvariant_ShouldHandleVerySmallReserves() public pure {
+        // Test with dust amounts (1 wei each)
+        uint256 reserves0 = 1;
+        uint256 reserves1 = 1;
+        uint256 amplification = 100;
+
+        uint256[] memory reserves = _makeReserves(reserves0, reserves1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        // For balanced pool, invariant should equal sum even with tiny amounts
+        assertEq(invariant, reserves0 + reserves1);
+    }
+
+    function test_getInvariant_ShouldHandleLowAmp() public pure {
+        // A=50 is low but should work (very low A with imbalanced pools can overflow)
+        uint256 reserves0 = 1000e18;
+        uint256 reserves1 = 1500e18; // Less imbalanced to avoid overflow
+        uint256 amplification = 50;
+
+        uint256[] memory reserves = _makeReserves(reserves0, reserves1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        // With low A, invariant should still be calculated but further from sum
+        uint256 sum = reserves0 + reserves1;
+        assertTrue(invariant > 0);
+        assertTrue(invariant < sum);
+    }
+
+    function test_getInvariant_ShouldWorkWith3Currencies() public pure {
+        uint256 r0 = 1000e18;
+        uint256 r1 = 1000e18;
+        uint256 r2 = 1000e18;
+        uint256 amplification = 100;
+
+        uint256[] memory reserves = _makeReserves3(r0, r1, r2);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        // For balanced 3-currency pool, invariant should equal sum
+        assertEq(invariant, r0 + r1 + r2);
+    }
+
+    function test_getInvariant_ShouldBeSymmetricWith3Currencies() public pure {
+        uint256 r0 = 1000e18;
+        uint256 r1 = 2000e18;
+        uint256 r2 = 3000e18;
+        uint256 amplification = 100;
+
+        uint256[] memory reserves1 = _makeReserves3(r0, r1, r2);
+        uint256[] memory reserves2 = _makeReserves3(r2, r0, r1);
+        uint256[] memory reserves3 = _makeReserves3(r1, r2, r0);
+
+        uint256 inv1 = StableSwapMath.getInvariant(reserves1, amplification);
+        uint256 inv2 = StableSwapMath.getInvariant(reserves2, amplification);
+        uint256 inv3 = StableSwapMath.getInvariant(reserves3, amplification);
+
+        assertEq(inv1, inv2);
+        assertEq(inv2, inv3);
+    }
+
+    function testFuzz_getInvariant_ShouldBeSymmetric(uint64 _r0, uint64 _r1) public pure {
+        // Minimum reserves and limit imbalance ratio to 100:1 (extreme imbalance causes convergence issues)
+        vm.assume(_r0 >= 1e15 && _r1 >= 1e15);
+        uint256 r0 = uint256(_r0);
+        uint256 r1 = uint256(_r1);
+        vm.assume(r0 * 100 >= r1 && r1 * 100 >= r0);
+        uint256 amplification = 100;
+
+        uint256[] memory reservesFwd = _makeReserves(r0, r1);
+        uint256[] memory reservesRev = _makeReserves(r1, r0);
+
+        uint256 invariant1 = StableSwapMath.getInvariant(reservesFwd, amplification);
+        uint256 invariant2 = StableSwapMath.getInvariant(reservesRev, amplification);
+
+        // Newton-Raphson may have 1 wei variance depending on iteration order
+        assertApproxEqAbs(invariant1, invariant2, 1);
+    }
+
+    function testFuzz_getInvariant_ShouldAlwaysConverge(uint64 _r0, uint64 _r1, uint32 _amp) public pure {
+        // Minimum reserves, minimum amp, and limit imbalance ratio
+        vm.assume(_r0 >= 1e15 && _r1 >= 1e15 && _amp >= 50);
+        uint256 r0 = uint256(_r0);
+        uint256 r1 = uint256(_r1);
+        vm.assume(r0 * 100 >= r1 && r1 * 100 >= r0);
+        uint256 amp = uint256(_amp);
+
+        uint256[] memory reserves = _makeReserves(r0, r1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amp);
+
+        // Invariant should always be positive for non-zero reserves
+        assertTrue(invariant > 0);
+        // Invariant should never exceed sum of reserves
+        assertTrue(invariant <= r0 + r1);
     }
 
     function test_getTargetReserves_ShouldReturnCurrentReserveWhenNoSwap() public pure {
@@ -268,6 +370,82 @@ contract StableSwapMathTest is Test {
         assertTrue(outHighA > outLowA);
     }
 
+    function test_getTargetReserves_ShouldHandleLowAmp() public pure {
+        // A=50 is low but should still work (very low A can overflow)
+        uint256 reserves0 = 1000e18;
+        uint256 reserves1 = 1000e18;
+        uint256 amplification = 50;
+
+        uint256[] memory reserves = _makeReserves(reserves0, reserves1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        uint256 swapIn = 100e18;
+        uint256 newReserves0 = reserves0 + swapIn;
+        uint256 targetReserve = StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
+
+        // Should still produce valid output
+        assertTrue(targetReserve > 0);
+        assertTrue(targetReserve < reserves1);
+    }
+
+    function test_getTargetReserves_ShouldWorkWith3Currencies() public pure {
+        uint256 r0 = 1000e18;
+        uint256 r1 = 1000e18;
+        uint256 r2 = 1000e18;
+        uint256 amplification = 100;
+
+        uint256[] memory reserves = _makeReserves3(r0, r1, r2);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        // Swap from currency 0 to currency 2
+        uint256 swapIn = 100e18;
+        uint256 newR0 = r0 + swapIn;
+        uint256 targetR2 = StableSwapMath.getTargetReserves(0, 2, newR0, reserves, amplification, invariant);
+
+        // Output reserve should decrease
+        assertTrue(targetR2 < r2);
+        assertTrue(targetR2 > 0);
+    }
+
+    function testFuzz_getTargetReserves_ShouldPreserveInvariant(uint128 _swapIn) public pure {
+        uint256 reserves0 = 1000e18;
+        uint256 reserves1 = 1000e18;
+        uint256 amplification = 100;
+
+        // Bound swap to reasonable percentage of pool (0.01% to 50%)
+        uint256 swapIn = bound(uint256(_swapIn), reserves0 / 10000, reserves0 / 2);
+
+        uint256[] memory reserves = _makeReserves(reserves0, reserves1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        uint256 newReserves0 = reserves0 + swapIn;
+        uint256 newReserves1 = StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
+
+        uint256[] memory newReserves = _makeReserves(newReserves0, newReserves1);
+        uint256 newInvariant = StableSwapMath.getInvariant(newReserves, amplification);
+
+        // Invariant should be preserved within 2 wei tolerance (Newton-Raphson rounding)
+        assertApproxEqAbs(newInvariant, invariant, 2);
+    }
+
+    function testFuzz_getTargetReserves_OutputShouldNeverExceedReserve(uint128 _swapIn) public pure {
+        uint256 reserves0 = 1000e18;
+        uint256 reserves1 = 1000e18;
+        uint256 amplification = 100;
+
+        // Even with very large swaps, output reserve should stay positive
+        uint256 swapIn = bound(uint256(_swapIn), 1, reserves0 * 100);
+
+        uint256[] memory reserves = _makeReserves(reserves0, reserves1);
+        uint256 invariant = StableSwapMath.getInvariant(reserves, amplification);
+
+        uint256 newReserves0 = reserves0 + swapIn;
+        uint256 targetReserve = StableSwapMath.getTargetReserves(0, 1, newReserves0, reserves, amplification, invariant);
+
+        assertTrue(targetReserve > 0);
+        assertTrue(targetReserve <= reserves1);
+    }
+
     function test_scaleTo_ShouldRoundTripWithDescale() public pure {
         // Token with 6 decimals (e.g., USDC) => rate = 10^(36-6) = 1e30
         // scaleTo: amount * rate / 1e18 = 123e6 * 1e30 / 1e18 = 123e18
@@ -345,6 +523,52 @@ contract StableSwapMathTest is Test {
 
         // (1.1e12 * 1e18) / 1e30 = 1.1, rounds down to 1
         assertEq(descaled, 1);
+    }
+
+    function testFuzz_scaleTo_ShouldRoundTrip(uint128 _amount, uint8 _decimals) public pure {
+        // Bound decimals to realistic range (0-18 for upscaling, avoids precision loss)
+        uint8 decimals = uint8(bound(uint256(_decimals), 0, 18));
+        uint256 rate = 10 ** (36 - decimals);
+
+        // Bound amount to avoid overflow when scaling
+        uint256 maxAmount = type(uint256).max / rate;
+        uint256 amount = bound(uint256(_amount), 0, maxAmount);
+
+        uint256 scaled = StableSwapMath.scaleTo(amount, rate);
+        uint256 back = StableSwapMath.descale(scaled, rate);
+
+        // Round-trip should preserve original value
+        assertEq(back, amount);
+    }
+
+    function testFuzz_scaleTo_ShouldPreserveRelativeOrder(uint128 _a, uint128 _b) public pure {
+        uint256 rate = 1e30; // 6-decimal token
+
+        uint256 a = uint256(_a);
+        uint256 b = uint256(_b);
+
+        uint256 scaledA = StableSwapMath.scaleTo(a, rate);
+        uint256 scaledB = StableSwapMath.scaleTo(b, rate);
+
+        // Scaling should preserve relative ordering
+        if (a > b) {
+            assertTrue(scaledA > scaledB);
+        } else if (a < b) {
+            assertTrue(scaledA < scaledB);
+        } else {
+            assertEq(scaledA, scaledB);
+        }
+    }
+
+    function testFuzz_descale_ShouldRoundDown(uint128 _scaled) public pure {
+        uint256 rate = 1e30; // 6-decimal token
+        uint256 scaled = uint256(_scaled);
+
+        uint256 descaled = StableSwapMath.descale(scaled, rate);
+        uint256 rescaled = StableSwapMath.scaleTo(descaled, rate);
+
+        // Rescaled should be <= original scaled (due to rounding down)
+        assertTrue(rescaled <= scaled);
     }
 
     function test_getRate_ShouldReturnScalingFactorBasedOnDecimals() public {
