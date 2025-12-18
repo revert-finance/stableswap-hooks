@@ -15,6 +15,14 @@ import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
+/// @notice Configuration for a currency's rate oracle
+/// @param oracle The oracle contract address (address(0) if no oracle)
+/// @param selector The function selector to call on the oracle (e.g., stEthPerToken())
+struct RateOracleConfig {
+    address oracle;
+    bytes4 selector;
+}
+
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
 abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Fixed tick spacing used for all pools
@@ -30,9 +38,13 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Number of currencies supported by this hook
     uint256 public immutable currenciesLength;
 
-    /// @notice Scaling rates for each currency to normalize to 1e18 precision
+    /// @notice Base scaling rates for each currency to normalize to 1e18 precision
     /// @dev Each rate is calculated as 10^(36 - decimals) to handle tokens with different decimal places
     uint256[] public rates;
+
+    /// @notice Rate oracle configurations for each currency
+    /// @dev If oracle is address(0), uses static rate; otherwise fetches rate from oracle
+    RateOracleConfig[] public rateOracles;
 
     /// @notice Array of currencies supported by this hook
     Currency[] public currencies;
@@ -57,14 +69,24 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Thrown when currencies array is not sorted in ascending order
     error CurrenciesNotSorted();
 
+    /// @notice Thrown when a rate oracle call fails
+    error RateOracleCallFailed();
+
+    /// @notice Thrown when rate oracles array length doesn't match currencies length
+    error InvalidRateOraclesLength();
+
     /// @notice Initializes the base StableSwap hook configuration
     /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
     /// @param _currencies Array of currencies to create pools for, must be sorted in ascending order by address
-    constructor(IPoolManager _poolManager, uint256 _lpFeePercentage, Currency[] memory _currencies)
-        BaseHook(_poolManager)
-    {
+    /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
+    constructor(
+        IPoolManager _poolManager,
+        uint256 _lpFeePercentage,
+        Currency[] memory _currencies,
+        RateOracleConfig[] memory _rateOracles
+    ) BaseHook(_poolManager) {
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
 
         currencies = _currencies;
@@ -74,10 +96,15 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
             revert InvalidCurrenciesLength();
         }
 
+        if (_rateOracles.length != currenciesLength) {
+            revert InvalidRateOraclesLength();
+        }
+
         reserves = new uint256[](currenciesLength);
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
             rates.push(StableSwapMath.getRate(_currencies[i]));
+            rateOracles.push(_rateOracles[i]);
 
             _currencyIndex[_currencies[i]] = i + 1;
 
@@ -107,6 +134,34 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @return The index of the currency in the currencies array
     function getCurrencyIndex(Currency _currency) public view returns (uint256) {
         return _currencyIndex[_currency] - 1;
+    }
+
+    /// @notice Gets the rate for a currency, fetching from oracle if configured
+    /// @dev If the currency has a rate oracle configured, fetches the rate via static call.
+    ///      The fetched rate is assumed to be 1e18 precision and is multiplied with the base rate.
+    ///      For currencies without an oracle, returns the static base rate.
+    /// @param _index The index of the currency in the currencies array
+    /// @return rate The effective rate for the currency
+    function _getRate(uint256 _index) internal view returns (uint256 rate) {
+        rate = rates[_index];
+
+        RateOracleConfig memory oracleConfig = rateOracles[_index];
+
+        if (oracleConfig.oracle != address(0)) {
+            // Fetch rate from oracle (e.g., wstETH.stEthPerToken())
+            // The oracle rate is assumed to be 1e18 precision
+            (bool success, bytes memory returnData) =
+                oracleConfig.oracle.staticcall(abi.encodeWithSelector(oracleConfig.selector));
+
+            if (!success || returnData.length != 32) {
+                revert RateOracleCallFailed();
+            }
+
+            uint256 fetchedRate = abi.decode(returnData, (uint256));
+
+            // Multiply base rate by fetched rate and divide by precision
+            rate = rate * fetchedRate / StableSwapMath.RATE_PRECISION;
+        }
     }
 
     /// @notice Returns the hook permissions required by this contract

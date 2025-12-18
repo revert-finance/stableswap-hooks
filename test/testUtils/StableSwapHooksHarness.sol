@@ -5,11 +5,13 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
+import {RateOracleConfig} from "src/Base.sol";
 
 contract StableSwapHooksHarness is StableSwapHooks {
     constructor(
         IPoolManager _poolManager,
         Currency[] memory _currencies,
+        RateOracleConfig[] memory _rateOracles,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
@@ -19,6 +21,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
         StableSwapHooks(
             _poolManager,
             _currencies,
+            _rateOracles,
             _protocolFeeCollector,
             _protocolFeePercentage,
             _hookFeePercentage,

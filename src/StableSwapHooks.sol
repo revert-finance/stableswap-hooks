@@ -6,7 +6,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
-import {Base} from "src/Base.sol";
+import {Base, RateOracleConfig} from "src/Base.sol";
 import {Amp} from "src/Amp.sol";
 import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";
@@ -19,6 +19,7 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     /// @notice Initializes the StableSwap hook with pool configuration and fee parameters
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
+    /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
     /// @param _protocolFeeCollector Address that receives protocol fees
     /// @param _protocolFeePercentage Protocol fee percentage (scaled by FEE_PRECISION)
     /// @param _hookFeePercentage Hook fee percentage (scaled by FEE_PRECISION)
@@ -27,13 +28,14 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     constructor(
         IPoolManager _poolManager,
         Currency[] memory _currencies,
+        RateOracleConfig[] memory _rateOracles,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
         uint256 _lpFeePercentage,
         uint256 _baseAmp
     )
-        Base(_poolManager, _lpFeePercentage, _currencies)
+        Base(_poolManager, _lpFeePercentage, _currencies, _rateOracles)
         Amp(_baseAmp)
         Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
     {}

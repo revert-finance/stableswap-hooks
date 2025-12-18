@@ -165,7 +165,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
             uint256 _reserves = reserves[i];
-            uint256 _rate = rates[i];
+            uint256 _rate = _getRate(i);
 
             oldScaledReserves[i] = StableSwapMath.scaleTo(_reserves, _rate);
             newScaledReserves[i] = StableSwapMath.scaleTo(_reserves + _amounts[i], _rate);

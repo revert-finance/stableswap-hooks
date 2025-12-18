@@ -18,6 +18,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
+import {RateOracleConfig} from "src/Base.sol";
 
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
@@ -74,6 +75,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         currencies[0] = currency0;
         currencies[1] = currency1;
 
+        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
+        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
         (, bytes32 salt) = HookMiner.find(
             defaultAdmin,
             HOOK_FLAGS,
@@ -81,6 +86,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             abi.encode(
                 poolManager,
                 currencies,
+                rateOracles,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
@@ -93,6 +99,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         hooks = new StableSwapHooksHarness{salt: salt}(
             IPoolManager(poolManager),
             currencies,
+            rateOracles,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
@@ -107,6 +114,11 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         currencies[1] = currency1;
         currencies[2] = currency2;
 
+        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](3);
+        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[2] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
         (, bytes32 salt) = HookMiner.find(
             defaultAdmin,
             HOOK_FLAGS,
@@ -114,6 +126,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
             abi.encode(
                 poolManager,
                 currencies,
+                rateOracles,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
@@ -126,6 +139,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         hooks3 = new StableSwapHooksHarness{salt: salt}(
             IPoolManager(poolManager),
             currencies,
+            rateOracles,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
