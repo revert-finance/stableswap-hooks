@@ -44,7 +44,7 @@ abstract contract Swap is Fees {
         uint256[] memory scaledReserves = new uint256[](currenciesLength);
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
-            scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], rates[i]);
+            scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], _getRate(i));
         }
 
         uint256 amp = _currentAmp();
@@ -68,14 +68,14 @@ abstract contract Swap is Fees {
             uint256 amountSpecified = uint256(-_params.amountSpecified);
 
             uint256 increasedReserves =
-                scaledReserves[increasedIndex] + StableSwapMath.scaleTo(amountSpecified, rates[increasedIndex]);
+                scaledReserves[increasedIndex] + StableSwapMath.scaleTo(amountSpecified, _getRate(increasedIndex));
 
             uint256 decreasedReserves = StableSwapMath.getTargetReserves(
                 increasedIndex, decreasedIndex, increasedReserves, scaledReserves, amp, invariant
             );
 
             uint256 decreased =
-                StableSwapMath.descale(scaledReserves[decreasedIndex] - decreasedReserves, rates[decreasedIndex]);
+                StableSwapMath.descale(scaledReserves[decreasedIndex] - decreasedReserves, _getRate(decreasedIndex));
 
             (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(decreased);
 
@@ -94,14 +94,14 @@ abstract contract Swap is Fees {
             uint256 amountSpecified = uint256(_params.amountSpecified);
 
             uint256 decreasedReserves =
-                scaledReserves[decreasedIndex] - StableSwapMath.scaleTo(amountSpecified, rates[decreasedIndex]);
+                scaledReserves[decreasedIndex] - StableSwapMath.scaleTo(amountSpecified, _getRate(decreasedIndex));
 
             uint256 increasedReserves = StableSwapMath.getTargetReserves(
                 decreasedIndex, increasedIndex, decreasedReserves, scaledReserves, amp, invariant
             );
 
             uint256 increased =
-                StableSwapMath.descale(increasedReserves - scaledReserves[increasedIndex], rates[increasedIndex]);
+                StableSwapMath.descale(increasedReserves - scaledReserves[increasedIndex], _getRate(increasedIndex));
 
             (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(increased);
 

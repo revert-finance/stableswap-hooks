@@ -10,6 +10,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
     constructor(
         IPoolManager _poolManager,
         Currency[] memory _currencies,
+        RateOracleConfig[] memory _rateOracles,
         address _protocolFeeCollector,
         uint256 _protocolFeePercentage,
         uint256 _hookFeePercentage,
@@ -19,6 +20,7 @@ contract StableSwapHooksHarness is StableSwapHooks {
         StableSwapHooks(
             _poolManager,
             _currencies,
+            _rateOracles,
             _protocolFeeCollector,
             _protocolFeePercentage,
             _hookFeePercentage,

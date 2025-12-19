@@ -65,6 +65,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         unsortedCurrencies[0] = currency1;
         unsortedCurrencies[1] = currency0;
 
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
         (, bytes32 salt) = HookMiner.find(
             address(this),
             HOOK_FLAGS,
@@ -72,6 +76,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             abi.encode(
                 poolManager,
                 unsortedCurrencies,
+                rateOracles,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
@@ -84,6 +89,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         new StableSwapHooksHarness{salt: salt}(
             IPoolManager(poolManager),
             unsortedCurrencies,
+            rateOracles,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
@@ -96,6 +102,9 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         Currency[] memory singleCurrency = new Currency[](1);
         singleCurrency[0] = currency0;
 
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](1);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
         (, bytes32 salt) = HookMiner.find(
             address(this),
             HOOK_FLAGS,
@@ -103,6 +112,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             abi.encode(
                 poolManager,
                 singleCurrency,
+                rateOracles,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
@@ -115,6 +125,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         new StableSwapHooksHarness{salt: salt}(
             IPoolManager(poolManager),
             singleCurrency,
+            rateOracles,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
@@ -125,8 +136,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
         Currency[] memory nineCurrencies = new Currency[](9);
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](9);
         for (uint160 i = 0; i < 9; i++) {
             nineCurrencies[i] = Currency.wrap(address(uint160(i + 1)));
+            rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
         (, bytes32 salt) = HookMiner.find(
@@ -136,6 +149,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             abi.encode(
                 poolManager,
                 nineCurrencies,
+                rateOracles,
                 protocolFeeCollector,
                 BASE_PROTOCOL_FEE_PERCENTAGE,
                 BASE_HOOK_FEE_PERCENTAGE,
@@ -148,6 +162,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         new StableSwapHooksHarness{salt: salt}(
             IPoolManager(poolManager),
             nineCurrencies,
+            rateOracles,
             protocolFeeCollector,
             BASE_PROTOCOL_FEE_PERCENTAGE,
             BASE_HOOK_FEE_PERCENTAGE,
