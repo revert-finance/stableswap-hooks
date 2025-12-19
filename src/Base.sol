@@ -9,6 +9,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
@@ -150,10 +151,10 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
         if (oracleConfig.oracle != address(0)) {
             // Fetch rate from oracle (e.g., wstETH.stEthPerToken())
             // The oracle rate is assumed to be 1e18 precision
-            (bool success, bytes memory returnData) =
-                oracleConfig.oracle.staticcall(abi.encodeWithSelector(oracleConfig.selector));
+            bytes memory returnData =
+                Address.functionStaticCall(oracleConfig.oracle, abi.encodeWithSelector(oracleConfig.selector));
 
-            if (!success || returnData.length != 32) {
+            if (returnData.length != 32) {
                 revert RateOracleCallFailed();
             }
 
