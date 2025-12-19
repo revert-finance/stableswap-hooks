@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Library containing StableSwap mathematical functions for invariant and reserve calculations
 library StableSwapMath {
@@ -15,6 +16,9 @@ library StableSwapMath {
 
     /// @notice Error thrown when Newton-Raphson iteration fails to converge within 255 iterations
     error ConvergenceNotReached();
+
+    /// @notice Error thrown when nthRoot is called with an unsupported degree (must be 2, 3, or 4)
+    error InvalidDegree();
 
     /// @notice Compute the stable swap invariant for the provided currency reserves.
     /// @dev Solves the StableSwap invariant equation using Newton-Raphson iteration:
@@ -172,5 +176,43 @@ library StableSwapMath {
     /// @return The rate for the currency.
     function getRate(Currency _currency) internal view returns (uint256) {
         return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
+    }
+
+    /// @notice Calculate the nth root of a value, rounded down.
+    /// @param _radicand The value to take the root of.
+    /// @param _degree The root degree (2, 3, or 4).
+    /// @return The nth root of _radicand.
+    function nthRoot(uint256 _radicand, uint256 _degree) internal pure returns (uint256) {
+        if (_degree == 2) return Math.sqrt(_radicand);
+        if (_degree == 3) return cbrt(_radicand);
+        if (_degree == 4) return Math.sqrt(Math.sqrt(_radicand));
+
+        revert InvalidDegree();
+    }
+
+    /// @notice Returns the cube root of `x`, rounded down.
+    /// @dev Obtained from Solady: https://github.com/Vectorized/solady/blob/v0.1.26/src/utils/FixedPointMathLib.sol
+    /// @dev Formally verified by xuwinnie: https://github.com/vectorized/solady/blob/main/audits/xuwinnie-solady-cbrt-proof.pdf
+    function cbrt(uint256 x) internal pure returns (uint256 z) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let r := shl(7, lt(0xffffffffffffffffffffffffffffffff, x))
+            r := or(r, shl(6, lt(0xffffffffffffffff, shr(r, x))))
+            r := or(r, shl(5, lt(0xffffffff, shr(r, x))))
+            r := or(r, shl(4, lt(0xffff, shr(r, x))))
+            r := or(r, shl(3, lt(0xff, shr(r, x))))
+            // Makeshift lookup table to nudge the approximate log2 result.
+            z := div(shl(div(r, 3), shl(lt(0xf, shr(r, x)), 0xf)), xor(7, mod(r, 3)))
+            // Newton-Raphson's.
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            z := div(add(add(div(x, mul(z, z)), z), z), 3)
+            // Round down.
+            z := sub(z, lt(div(x, mul(z, z)), z))
+        }
     }
 }

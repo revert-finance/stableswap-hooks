@@ -8,6 +8,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Amp} from "src/Amp.sol";
 import {Actions} from "src/libraries/Actions.sol";
@@ -35,9 +36,6 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @param _shares Number of LP shares burned
     event LiquidityRemoved(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
-    /// @notice Error thrown when adding liquidity would decrease the invariant
-    error InvalidInvariant();
-
     /// @notice Error thrown when user has insufficient LP shares for the operation
     error InsufficientShares();
 
@@ -54,9 +52,9 @@ abstract contract Liquidity is Amp, ERC20 {
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
     /// @notice Add liquidity to the pool
-    /// @dev Supports single-sided deposits; at least one amount must be non-zero
+    /// @dev First deposit uses all amounts; subsequent deposits must be proportional to reserves
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
-    /// @param _amounts Array of amounts for each currency to add
+    /// @param _amounts Array of amounts for each currency (max amounts for subsequent deposits)
     /// @param _minShares The minimum number of shares to receive (slippage protection)
     function addLiquidity(uint256[] calldata _amounts, uint256 _minShares) external {
         bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, _msgSender());
@@ -109,87 +107,91 @@ abstract contract Liquidity is Amp, ERC20 {
     }
 
     /// @notice Internal callback handler for adding liquidity
-    /// @dev Called during unlock callback to process the liquidity addition
-    /// @dev Validates amounts, computes shares, transfers tokens, and mints LP tokens
+    /// @dev First deposit: shares = geometric mean of scaled amounts - MINIMUM_LIQUIDITY
+    /// @dev Subsequent deposits: shares = min proportion across all currencies
     /// @param data Encoded data containing amounts, minShares, and sender address
     function _handleAddLiquidityCallback(bytes calldata data) internal {
         (, uint256[] memory amounts, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256[], uint256, address));
 
-        bool isFirstDeposit = totalSupply() == 0;
+        uint256 currentTotalSupply = totalSupply();
+        uint256[] memory actualAmounts = new uint256[](currenciesLength);
+        uint256 newShares;
 
-        uint256 newShares = _computeNewShares(amounts);
+        if (currentTotalSupply == 0) {
+            // First deposit: compute product of scaled amounts for geometric mean
+            uint256 product = StableSwapMath.scaleTo(amounts[0], _getRate(0));
 
-        // Check that the new shares are above the minimum
+            for (uint256 i = 1; i < currenciesLength; ++i) {
+                product *= StableSwapMath.scaleTo(amounts[i], _getRate(i));
+            }
+
+            // Geometric mean: (scaledA0 * scaledA1 * ... * scaledAn)^(1/n)
+            newShares = StableSwapMath.nthRoot(product, currenciesLength);
+
+            // Ensure enough liquidity to lock minimum shares
+            if (newShares < MINIMUM_LIQUIDITY) {
+                revert InsufficientInitialLiquidity();
+            }
+
+            // Reserve MINIMUM_LIQUIDITY shares for dead address
+            newShares -= MINIMUM_LIQUIDITY;
+
+            // First deposit uses all provided amounts
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                actualAmounts[i] = amounts[i];
+            }
+
+            // Lock minimum liquidity to prevent price manipulation
+            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
+        } else {
+            // Cache rates to avoid duplicate sloads and possible external calls
+            uint256[] memory cachedRates = new uint256[](currenciesLength);
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                cachedRates[i] = _getRate(i);
+            }
+
+            // Find limiting proportion using SCALED reserves
+            uint256 minProportion = type(uint256).max;
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                uint256 scaledAmount = StableSwapMath.scaleTo(amounts[i], cachedRates[i]);
+                uint256 scaledReserve = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
+                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserve);
+
+                if (proportion < minProportion) {
+                    minProportion = proportion;
+                }
+            }
+
+            newShares = minProportion;
+
+            // Calculate proportional RAW amounts to actually use
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                uint256 scaledReserve = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
+                uint256 scaledAmount = (minProportion * scaledReserve) / currentTotalSupply;
+                actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
+            }
+        }
+
         if (newShares < minShares) {
             revert InsufficientShares();
         }
 
+        // Transfer only the actual proportional amounts
         for (uint256 i = 0; i < currenciesLength; ++i) {
-            uint256 amount = amounts[i];
-
-            if (amount == 0) {
-                continue;
-            }
-
             Currency currency = currencies[i];
-
             poolManager.sync(currency);
-            IERC20(Currency.unwrap(currency)).safeTransferFrom(sender, address(poolManager), amount);
+            IERC20(Currency.unwrap(currency)).safeTransferFrom(sender, address(poolManager), actualAmounts[i]);
             poolManager.settle();
-            poolManager.mint(address(this), currency.toId(), amount);
-
-            reserves[i] += amount;
+            poolManager.mint(address(this), currency.toId(), actualAmounts[i]);
+            reserves[i] += actualAmounts[i];
         }
 
         _mint(sender, newShares);
 
-        // Lock minimum liquidity on first deposit to prevent dust attacks and price manipulation
-        if (isFirstDeposit) {
-            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
-        }
-
-        emit LiquidityAdded(sender, amounts, newShares);
-    }
-
-    /// @notice Computes the number of LP shares to mint for a given deposit
-    /// @dev Uses the StableSwap invariant to calculate proportional shares
-    /// @dev For first deposit, shares equal the invariant minus MINIMUM_LIQUIDITY; for subsequent deposits, shares are proportional to invariant increase
-    /// @param _amounts Array of amounts for each currency being deposited
-    /// @return newShares Number of LP shares to mint
-    function _computeNewShares(uint256[] memory _amounts) internal view returns (uint256 newShares) {
-        uint256 oldTotalShares = totalSupply();
-
-        uint256[] memory oldScaledReserves = new uint256[](currenciesLength);
-        uint256[] memory newScaledReserves = new uint256[](currenciesLength);
-
-        for (uint256 i = 0; i < currenciesLength; ++i) {
-            uint256 _reserves = reserves[i];
-            uint256 _rate = _getRate(i);
-
-            oldScaledReserves[i] = StableSwapMath.scaleTo(_reserves, _rate);
-            newScaledReserves[i] = StableSwapMath.scaleTo(_reserves + _amounts[i], _rate);
-        }
-
-        uint256 currentAmp = _currentAmp();
-
-        uint256 newInvariant = StableSwapMath.getInvariant(newScaledReserves, currentAmp);
-
-        if (oldTotalShares == 0) {
-            if (newInvariant < MINIMUM_LIQUIDITY) {
-                revert InsufficientInitialLiquidity();
-            }
-
-            newShares = newInvariant - MINIMUM_LIQUIDITY;
-        } else {
-            uint256 oldInvariant = StableSwapMath.getInvariant(oldScaledReserves, currentAmp);
-
-            if (newInvariant <= oldInvariant) {
-                revert InvalidInvariant();
-            }
-
-            newShares = oldTotalShares * (newInvariant - oldInvariant) / oldInvariant;
-        }
+        emit LiquidityAdded(sender, actualAmounts, newShares);
     }
 
     /// @notice Internal callback handler for removing liquidity
