@@ -5,7 +5,6 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
-import {RateOracleConfig} from "src/Base.sol";
 
 contract StableSwapHooksHarness is StableSwapHooks {
     constructor(

@@ -6,7 +6,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
-import {Base, RateOracleConfig} from "src/Base.sol";
+import {Base} from "src/Base.sol";
 import {Amp} from "src/Amp.sol";
 import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";

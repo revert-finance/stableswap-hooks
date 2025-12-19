@@ -15,10 +15,10 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
+import {Base} from "src/Base.sol";
 import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
-import {RateOracleConfig} from "src/Base.sol";
 
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
@@ -75,9 +75,9 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         currencies[0] = currency0;
         currencies[1] = currency1;
 
-        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
-        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        rateOracles[1] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         (, bytes32 salt) = HookMiner.find(
             defaultAdmin,
@@ -114,10 +114,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         currencies[1] = currency1;
         currencies[2] = currency2;
 
-        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](3);
-        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        rateOracles[1] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        rateOracles[2] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](3);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[2] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         (, bytes32 salt) = HookMiner.find(
             defaultAdmin,

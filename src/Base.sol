@@ -15,14 +15,6 @@ import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
-/// @notice Configuration for a currency's rate oracle
-/// @param oracle The oracle contract address (address(0) if no oracle)
-/// @param selector The function selector to call on the oracle (e.g., stEthPerToken())
-struct RateOracleConfig {
-    address oracle;
-    bytes4 selector;
-}
-
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
 abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Fixed tick spacing used for all pools
@@ -59,6 +51,14 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
     /// @notice Current reserves for each currency in the pool
     uint256[] public reserves;
+
+    /// @notice Configuration for a currency's rate oracle
+    /// @param oracle The oracle contract address (address(0) if no oracle)
+    /// @param selector The function selector to call on the oracle (e.g., stEthPerToken())
+    struct RateOracleConfig {
+        address oracle;
+        bytes4 selector;
+    }
 
     /// @notice Thrown when the operation is attempted on a pool that doesn't match this hook's poolId
     error InvalidPoolId();

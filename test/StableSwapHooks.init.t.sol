@@ -20,7 +20,7 @@ import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol"
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {PoolDonateTest} from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 
-import {Base, RateOracleConfig} from "src/Base.sol";
+import {Base} from "src/Base.sol";
 import {Liquidity} from "src/Liquidity.sol";
 
 contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
@@ -65,9 +65,9 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         unsortedCurrencies[0] = currency1;
         unsortedCurrencies[1] = currency0;
 
-        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
-        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        rateOracles[1] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         (, bytes32 salt) = HookMiner.find(
             address(this),
@@ -102,8 +102,8 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         Currency[] memory singleCurrency = new Currency[](1);
         singleCurrency[0] = currency0;
 
-        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](1);
-        rateOracles[0] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](1);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         (, bytes32 salt) = HookMiner.find(
             address(this),
@@ -136,10 +136,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
         Currency[] memory nineCurrencies = new Currency[](9);
-        RateOracleConfig[] memory rateOracles = new RateOracleConfig[](9);
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](9);
         for (uint160 i = 0; i < 9; i++) {
             nineCurrencies[i] = Currency.wrap(address(uint160(i + 1)));
-            rateOracles[i] = RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+            rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
         (, bytes32 salt) = HookMiner.find(
