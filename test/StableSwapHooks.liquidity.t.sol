@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -181,6 +182,8 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
     function test_addLiquidity_Proportional_ShouldOnlyTransferProportionalAmounts() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
+        uint256 reserves0Before = hooks.reserves(0);
+        uint256 reserves1Before = hooks.reserves(1);
         uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
@@ -195,12 +198,16 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
-        // Should only transfer proportional amounts (1000 each), not the full 2000 of token0
+        // Should only transfer proportional amounts, not the full 2000 of token0
         uint256 transferred0 = balance0Before - balance0After;
         uint256 transferred1 = balance1Before - balance1After;
 
-        // Both should be approximately equal (token1 limits to 1000, so token0 also ~1000)
-        assertApproxEqRel(transferred0, transferred1, 0.01e18);
+        // Compare proportions, not absolute amounts (tokens may have different decimals)
+        // Each transfer should be the same proportion of its respective reserves
+        uint256 proportion0 = (transferred0 * 1e18) / reserves0Before;
+        uint256 proportion1 = (transferred1 * 1e18) / reserves1Before;
+        assertApproxEqRel(proportion0, proportion1, 0.01e18);
+
         // Token0 transferred should be less than the max amount requested
         assertLt(transferred0, amounts[0]);
         // Token1 transferred should equal what was requested (it's the limit)
@@ -816,8 +823,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256 actualDeposit0 = hooks.reserves(0) - reserves0Before;
         uint256 actualDeposit1 = hooks.reserves(1) - reserves1Before;
 
-        // Both should be proportional, so approximately equal in this case
-        assertApproxEqRel(actualDeposit0, actualDeposit1, 0.01e18); // Within 1%
+        // Compare proportions, not absolute amounts (tokens may have different decimals)
+        uint256 proportion0 = (actualDeposit0 * 1e18) / reserves0Before;
+        uint256 proportion1 = (actualDeposit1 * 1e18) / reserves1Before;
+        assertApproxEqRel(proportion0, proportion1, 0.01e18); // Within 1%
     }
 
     function test_addLiquidity_VerySmallAmount_ShouldSucceed() public {
@@ -951,12 +960,20 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
     function test_lpShareValue_ShouldAppreciateFromSwapFees() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
-        uint256 lpShares = hooks.balanceOf(liquidityProvider);
         uint256 totalSupply = hooks.totalSupply();
 
         // Calculate initial share value (what LP would get if they withdrew now)
-        uint256 initialValue0 = (lpShares * hooks.reserves(0)) / totalSupply;
-        uint256 initialValue1 = (lpShares * hooks.reserves(1)) / totalSupply;
+        // Normalize to 18 decimals for comparison
+        uint256 decimals0 = IERC20Metadata(Currency.unwrap(currency0)).decimals();
+        uint256 decimals1 = IERC20Metadata(Currency.unwrap(currency1)).decimals();
+
+        uint256 initialReserves0 = hooks.reserves(0);
+        uint256 initialReserves1 = hooks.reserves(1);
+
+        // Normalize reserves to 18 decimals for fair comparison
+        uint256 initialNormalizedValue0 = (initialReserves0 * 1e18) / (10 ** decimals0);
+        uint256 initialNormalizedValue1 = (initialReserves1 * 1e18) / (10 ** decimals1);
+        uint256 initialTotalNormalizedValue = initialNormalizedValue0 + initialNormalizedValue1;
 
         // Execute many swaps to accumulate fees (LP fees stay in reserves)
         uint256 swapAmount = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
@@ -967,17 +984,22 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         // Calculate new share value
         uint256 newTotalSupply = hooks.totalSupply();
-        uint256 newValue0 = (lpShares * hooks.reserves(0)) / newTotalSupply;
-        uint256 newValue1 = (lpShares * hooks.reserves(1)) / newTotalSupply;
 
         // Total supply should be unchanged (no new shares minted from swaps)
         assertEq(newTotalSupply, totalSupply);
 
+        uint256 newReserves0 = hooks.reserves(0);
+        uint256 newReserves1 = hooks.reserves(1);
+
+        // Normalize new reserves to 18 decimals
+        uint256 newNormalizedValue0 = (newReserves0 * 1e18) / (10 ** decimals0);
+        uint256 newNormalizedValue1 = (newReserves1 * 1e18) / (10 ** decimals1);
+        uint256 newTotalNormalizedValue = newNormalizedValue0 + newNormalizedValue1;
+
         // LP share value should have increased due to accumulated fees
         // (reserves grew from LP fees while share count stayed constant)
-        uint256 initialTotalValue = initialValue0 + initialValue1;
-        uint256 newTotalValue = newValue0 + newValue1;
-        assertGt(newTotalValue, initialTotalValue);
+        // Individual reserves may shift due to swap direction, but total should increase
+        assertGt(newTotalNormalizedValue, initialTotalNormalizedValue);
     }
 
     function test_addRemoveLiquidity_ShouldNotLeakValue() public {
