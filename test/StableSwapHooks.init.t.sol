@@ -250,8 +250,8 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertEq(hooks.TICK_SPACING(), 1);
     }
 
-    function test_MAX_CURRENCIES_ShouldBeEight() public view {
-        assertEq(hooks.MAX_CURRENCIES(), 8);
+    function test_MAX_CURRENCIES_ShouldBeFour() public view {
+        assertEq(hooks.MAX_CURRENCIES(), 4);
     }
 
     function test_beforeDonate_ShouldRevertWithUseHookLiquidityModifiers() public {

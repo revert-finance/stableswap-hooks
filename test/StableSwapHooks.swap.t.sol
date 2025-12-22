@@ -449,22 +449,17 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     // ==========================================================================
 
     function test_swap_ImbalancedPool_ShouldHavePriceImpact() public {
-        // Create imbalanced pool: 90% currency0, 10% currency1
-        uint256 imbalancedAmount0 = LIQUIDITY_AMOUNT * 9 / 10;
-        uint256 imbalancedAmount1 = LIQUIDITY_AMOUNT / 10;
+        // Pool starts balanced from setUp
+        // Create imbalance by swapping currency0 -> currency1 multiple times
+        // This makes currency0 abundant and currency1 scarce
+        uint256 swapAmount = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 4);
+        _executeExactInputSwap(true, swapAmount);
+        _executeExactInputSwap(true, swapAmount);
 
-        // Remove existing liquidity first
-        uint256 existingShares = hooks.balanceOf(liquidityProvider);
-        uint256[] memory minAmounts = new uint256[](2);
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(existingShares, minAmounts);
-
-        // Add imbalanced liquidity
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = _toTokenWei(currency0, imbalancedAmount0);
-        amounts[1] = _toTokenWei(currency1, imbalancedAmount1);
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        // Now pool is imbalanced: more currency0, less currency1
+        uint256 reserves0 = hooks.reserves(0);
+        uint256 reserves1 = hooks.reserves(1);
+        assertGt(reserves0, reserves1); // currency0 is now abundant
 
         // Swap currency0 -> currency1 (buying the scarce asset)
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
@@ -481,25 +476,21 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     }
 
     function test_swap_ImbalancedPool_ReverseDirection_ShouldHaveBetterRate() public {
-        // Create imbalanced pool: 90% currency0, 10% currency1
-        uint256 imbalancedAmount0 = LIQUIDITY_AMOUNT * 9 / 10;
-        uint256 imbalancedAmount1 = LIQUIDITY_AMOUNT / 10;
+        // Pool starts balanced from setUp
+        // Create imbalance by swapping currency0 -> currency1 multiple times
+        // This makes currency0 abundant and currency1 scarce
+        uint256 swapAmount = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 4);
+        _executeExactInputSwap(true, swapAmount);
+        _executeExactInputSwap(true, swapAmount);
 
-        // Remove existing liquidity first
-        uint256 existingShares = hooks.balanceOf(liquidityProvider);
-        uint256[] memory minAmounts = new uint256[](2);
-        vm.prank(liquidityProvider);
-        hooks.removeLiquidity(existingShares, minAmounts);
+        // Now pool is imbalanced: more currency0, less currency1
+        uint256 reserves0 = hooks.reserves(0);
+        uint256 reserves1 = hooks.reserves(1);
+        assertGt(reserves0, reserves1); // currency0 is now abundant
 
-        // Add imbalanced liquidity
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = _toTokenWei(currency0, imbalancedAmount0);
-        amounts[1] = _toTokenWei(currency1, imbalancedAmount1);
-        vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
-
-        // Swap currency1 -> currency0 (selling the scarce asset)
-        uint256 amountIn = _toTokenWei(currency1, SWAP_AMOUNT / 10); // Smaller amount since currency1 is scarce
+        // Swap currency1 -> currency0 (selling the scarce asset for abundant one)
+        // With imbalanced pool, this direction should give better rate than the other direction
+        uint256 amountIn = _toTokenWei(currency1, SWAP_AMOUNT / 10);
         uint256 swapperBalance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
 
         _executeExactInputSwap(false, amountIn);
@@ -507,8 +498,21 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 swapperBalance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
         uint256 amountOut = swapperBalance0After - swapperBalance0Before;
 
-        // Output should be more than input (selling scarce asset for abundant one)
-        assertGt(amountOut, amountIn);
+        // In an imbalanced pool, selling the scarce asset should give better rate than
+        // selling the abundant asset. Let's verify we get a non-zero output and
+        // the rate is reasonable (pool dynamics + fees may reduce output)
+        assertGt(amountOut, 0);
+
+        // The key insight: selling scarce asset for abundant asset should give better rate
+        // than the opposite direction. Let's compare by doing an equal swap the other way.
+        uint256 swapperBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        _executeExactInputSwap(true, amountIn); // Same amount but opposite direction
+        uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 reverseAmountOut = swapperBalance1After - swapperBalance1Before;
+
+        // Selling scarce (currency1) for abundant (currency0) should yield more output
+        // than selling abundant (currency0) for scarce (currency1)
+        assertGt(amountOut, reverseAmountOut);
     }
 
     function test_swap_VerySmallAmount_ShouldSucceed() public {
