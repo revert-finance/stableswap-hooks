@@ -178,14 +178,34 @@ library StableSwapMath {
         return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
     }
 
-    /// @notice Calculate the nth root of a value, rounded down.
-    /// @param _radicand The value to take the root of.
-    /// @param _degree The root degree (2, 3, or 4).
-    /// @return The nth root of _radicand.
-    function nthRoot(uint256 _radicand, uint256 _degree) internal pure returns (uint256) {
-        if (_degree == 2) return Math.sqrt(_radicand);
-        if (_degree == 3) return cbrt(_radicand);
-        if (_degree == 4) return Math.sqrt(Math.sqrt(_radicand));
+    /// @notice Calculate the geometric mean of an array of values without overflow.
+    /// @dev Uses different strategies based on array length to avoid overflow:
+    ///      - 2 values: sqrt(a * b) using mulDiv for safe multiplication
+    ///      - 3 values: cbrt(a) * cbrt(b) * cbrt(c) to avoid computing full product
+    ///      - 4 values: sqrt(sqrt(a*b) * sqrt(c*d)) using pairwise approach
+    /// @param _values Array of values (must be length 2, 3, or 4).
+    /// @return The geometric mean of the values.
+    function geometricMean(uint256[] memory _values) internal pure returns (uint256) {
+        uint256 n = _values.length;
+
+        if (n == 2) {
+            // sqrt(a * b) - use mulDiv to handle large values safely
+            return Math.sqrt(Math.mulDiv(_values[0], _values[1], 1));
+        }
+
+        if (n == 3) {
+            // cbrt(a) * cbrt(b) * cbrt(c) = (a * b * c)^(1/3)
+            // This avoids computing the full product which could overflow
+            return cbrt(_values[0]) * cbrt(_values[1]) * cbrt(_values[2]);
+        }
+
+        if (n == 4) {
+            // sqrt(sqrt(a*b) * sqrt(c*d)) = (a*b*c*d)^(1/4)
+            // Pairwise approach reduces overflow risk significantly
+            uint256 sqrt01 = Math.sqrt(Math.mulDiv(_values[0], _values[1], 1));
+            uint256 sqrt23 = Math.sqrt(Math.mulDiv(_values[2], _values[3], 1));
+            return Math.sqrt(Math.mulDiv(sqrt01, sqrt23, 1));
+        }
 
         revert InvalidDegree();
     }

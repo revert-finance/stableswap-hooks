@@ -119,15 +119,15 @@ abstract contract Liquidity is Amp, ERC20 {
         uint256 newShares;
 
         if (currentTotalSupply == 0) {
-            // First deposit: compute product of scaled amounts for geometric mean
-            uint256 product = StableSwapMath.scaleTo(amounts[0], _getRate(0));
+            // First deposit: compute geometric mean of scaled amounts
+            uint256[] memory scaledAmounts = new uint256[](currenciesLength);
 
-            for (uint256 i = 1; i < currenciesLength; ++i) {
-                product *= StableSwapMath.scaleTo(amounts[i], _getRate(i));
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                scaledAmounts[i] = StableSwapMath.scaleTo(amounts[i], _getRate(i));
             }
 
-            // Geometric mean: (scaledA0 * scaledA1 * ... * scaledAn)^(1/n)
-            newShares = StableSwapMath.nthRoot(product, currenciesLength);
+            // Geometric mean using overflow-safe algorithm
+            newShares = StableSwapMath.geometricMean(scaledAmounts);
 
             // Ensure enough liquidity to lock minimum shares
             if (newShares < MINIMUM_LIQUIDITY) {
@@ -145,20 +145,21 @@ abstract contract Liquidity is Amp, ERC20 {
             // Lock minimum liquidity to prevent price manipulation
             _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         } else {
-            // Cache rates to avoid duplicate sloads and possible external calls
+            // Cache rates and scaled reserves to avoid duplicate calculations
             uint256[] memory cachedRates = new uint256[](currenciesLength);
+            uint256[] memory scaledReserves = new uint256[](currenciesLength);
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
                 cachedRates[i] = _getRate(i);
+                scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
             }
 
-            // Find limiting proportion using SCALED reserves
+            // Find limiting proportion using scaled reserves
             uint256 minProportion = type(uint256).max;
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
                 uint256 scaledAmount = StableSwapMath.scaleTo(amounts[i], cachedRates[i]);
-                uint256 scaledReserve = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
-                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserve);
+                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserves[i]);
 
                 if (proportion < minProportion) {
                     minProportion = proportion;
@@ -169,8 +170,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
             // Calculate proportional RAW amounts to actually use
             for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledReserve = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
-                uint256 scaledAmount = (minProportion * scaledReserve) / currentTotalSupply;
+                uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
                 actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
             }
         }
