@@ -26,7 +26,7 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     uint256 public constant MIN_CURRENCIES = 2;
 
     /// @notice Maximum number of currencies allowed in the pool
-    uint256 public constant MAX_CURRENCIES = 8;
+    uint256 public constant MAX_CURRENCIES = 4;
 
     /// @notice Number of currencies supported by this hook
     uint256 public immutable currenciesLength;

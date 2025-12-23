@@ -40,10 +40,4 @@ contract StableSwapHooksHarness is StableSwapHooks {
     function getFees(uint256 _amount) external view returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees) {
         return _getFees(_amount);
     }
-
-    // Liquidity.sol
-
-    function computeNewShares(uint256[] memory _amounts) external view returns (uint256) {
-        return _computeNewShares(_amounts);
-    }
 }
