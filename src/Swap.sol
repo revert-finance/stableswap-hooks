@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
@@ -10,116 +11,166 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Fees} from "src/Fees.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
-/// @notice Abstract contract implementing StableSwap (Curve-style) swap logic as a Uniswap v4 hook
+/// @title Swap
+/// @notice Implements StableSwap (Curve-style) swap logic as a Uniswap v4 hook
+/// @dev Supports both exact input and exact output swaps using the StableSwap invariant.
+///      Fees are deducted from output for exact input swaps, or added to input for exact output swaps.
 abstract contract Swap is Fees {
-    /// @notice Hook called before a swap is executed
-    /// @dev Validates the pool and calculates the swap using the StableSwap invariant
-    /// @param _poolKey The pool key identifying the pool
-    /// @param _params The swap parameters containing direction, amount, and sqrt price limit
-    /// @return bytes4 The function selector to indicate successful hook execution
-    /// @return BeforeSwapDelta The delta amounts for specified and unspecified tokens
-    /// @return uint24 The LP fee override (0 = use pool's default fee)
-    function _beforeSwap(address, PoolKey calldata _poolKey, SwapParams calldata _params, bytes calldata)
+    /// @dev Swap execution context containing pool state
+    struct SwapContext {
+        uint256 tokenInIndex;
+        uint256 tokenOutIndex;
+        uint256[] scaledReserves;
+        uint256 amp;
+        uint256 invariant;
+    }
+
+    /// @dev Result of a swap containing amounts and fee breakdown
+    struct SwapResult {
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 lpFees;
+        uint256 hookFees;
+        uint256 protocolFees;
+    }
+
+    /// @notice Emitted when a swap is executed
+    event StableSwap(
+        address indexed _sender,
+        Currency indexed _currencyIn,
+        Currency indexed _currencyOut,
+        uint256 _amountIn,
+        uint256 _amountOut,
+        uint256 _lpFees,
+        uint256 _hookFees,
+        uint256 _protocolFees
+    );
+
+    /// @notice Hook called before a swap, executes the StableSwap logic
+    function _beforeSwap(address _sender, PoolKey calldata _poolKey, SwapParams calldata _params, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         _validatePoolId(_poolKey);
 
-        BeforeSwapDelta delta = toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_poolKey, _params));
+        BeforeSwapDelta delta =
+            toBeforeSwapDelta(-SafeCast.toInt128(_params.amountSpecified), _swap(_sender, _poolKey, _params));
 
         return (this.beforeSwap.selector, delta, 0);
     }
 
-    /// @notice Executes a swap using the StableSwap invariant
-    /// @dev Handles both exact input (amountSpecified < 0) and exact output (amountSpecified > 0) swaps.
-    ///      Fees are deducted from output for exact input, or added to input for exact output.
-    /// @param _poolKey The pool key identifying the currencies being swapped
-    /// @param _params The swap parameters from Uniswap v4
-    /// @return The unspecified delta amount (negative for exact input, positive for exact output)
-    function _swap(PoolKey calldata _poolKey, SwapParams calldata _params) private returns (int128) {
+    /// @dev Executes a swap and emits the StableSwap event
+    function _swap(address _sender, PoolKey calldata _poolKey, SwapParams calldata _params) private returns (int128) {
+        SwapContext memory ctx = _createSwapContext(_poolKey, _params.zeroForOne);
+
+        bool isExactInput = _params.amountSpecified < 0;
+
+        uint256 specifiedAmount = isExactInput ? uint256(-_params.amountSpecified) : uint256(_params.amountSpecified);
+
+        SwapResult memory result =
+            isExactInput ? _swapExactInput(specifiedAmount, ctx) : _swapExactOutput(specifiedAmount, ctx);
+
+        emit StableSwap(
+            _sender,
+            currencies[ctx.tokenInIndex],
+            currencies[ctx.tokenOutIndex],
+            result.amountIn,
+            result.amountOut,
+            result.lpFees,
+            result.hookFees,
+            result.protocolFees
+        );
+
+        uint256 unspecifiedAmount = isExactInput ? result.amountOut : result.amountIn;
+        int128 unspecifiedDelta = SafeCast.toInt128(SafeCast.toInt256(unspecifiedAmount));
+
+        return isExactInput ? -unspecifiedDelta : unspecifiedDelta;
+    }
+
+    /// @dev Builds the swap context with scaled reserves, amp, and invariant
+    function _createSwapContext(PoolKey calldata _poolKey, bool _zeroForOne)
+        private
+        view
+        returns (SwapContext memory ctx)
+    {
         uint256 index0 = getCurrencyIndex(_poolKey.currency0);
         uint256 index1 = getCurrencyIndex(_poolKey.currency1);
 
-        uint256[] memory scaledReserves = new uint256[](currenciesLength);
+        ctx.tokenInIndex = _zeroForOne ? index0 : index1;
+        ctx.tokenOutIndex = _zeroForOne ? index1 : index0;
 
+        ctx.scaledReserves = new uint256[](currenciesLength);
         for (uint256 i = 0; i < currenciesLength; ++i) {
-            scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], _getRate(i));
+            ctx.scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], _getRate(i));
         }
 
-        uint256 amp = _currentAmp();
+        ctx.amp = _currentAmp();
+        ctx.invariant = StableSwapMath.getInvariant(ctx.scaledReserves, ctx.amp);
+    }
 
-        uint256 invariant = StableSwapMath.getInvariant(scaledReserves, amp);
+    /// @dev Calculates output amount for exact input swap, fees deducted from output
+    function _swapExactInput(uint256 _amountIn, SwapContext memory _ctx) private returns (SwapResult memory result) {
+        uint256 newTokenInReserves =
+            _ctx.scaledReserves[_ctx.tokenInIndex] + StableSwapMath.scaleTo(_amountIn, _getRate(_ctx.tokenInIndex));
 
-        uint256 increasedIndex;
-        uint256 decreasedIndex;
+        uint256 newTokenOutReserves = StableSwapMath.getTargetReserves(
+            _ctx.tokenInIndex, _ctx.tokenOutIndex, newTokenInReserves, _ctx.scaledReserves, _ctx.amp, _ctx.invariant
+        );
 
-        if (_params.zeroForOne) {
-            increasedIndex = index0;
-            decreasedIndex = index1;
+        uint256 rawAmountOut = StableSwapMath.descale(
+            _ctx.scaledReserves[_ctx.tokenOutIndex] - newTokenOutReserves, _getRate(_ctx.tokenOutIndex)
+        );
+
+        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(rawAmountOut);
+        uint256 totalFees = result.lpFees + result.hookFees + result.protocolFees;
+
+        result.amountIn = _amountIn;
+        result.amountOut = rawAmountOut - totalFees;
+
+        _settleTrade(_ctx, result, true);
+    }
+
+    /// @dev Calculates input amount for exact output swap, fees added to input
+    function _swapExactOutput(uint256 _amountOut, SwapContext memory _ctx) private returns (SwapResult memory result) {
+        uint256 newTokenOutReserves =
+            _ctx.scaledReserves[_ctx.tokenOutIndex] - StableSwapMath.scaleTo(_amountOut, _getRate(_ctx.tokenOutIndex));
+
+        uint256 newTokenInReserves = StableSwapMath.getTargetReserves(
+            _ctx.tokenOutIndex, _ctx.tokenInIndex, newTokenOutReserves, _ctx.scaledReserves, _ctx.amp, _ctx.invariant
+        );
+
+        uint256 rawAmountIn = StableSwapMath.descale(
+            newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
+        );
+
+        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(rawAmountIn);
+        uint256 totalFees = result.lpFees + result.hookFees + result.protocolFees;
+
+        result.amountIn = rawAmountIn + totalFees;
+        result.amountOut = _amountOut;
+
+        _settleTrade(_ctx, result, false);
+    }
+
+    /// @dev Settles the trade by updating pool manager claims and reserves
+    function _settleTrade(SwapContext memory _ctx, SwapResult memory _result, bool _isExactInput) private {
+        if (_isExactInput) {
+            _addFees(_ctx.tokenOutIndex, _result.protocolFees, _result.hookFees);
+
+            poolManager.burn(address(this), currencies[_ctx.tokenOutIndex].toId(), _result.amountOut);
+            poolManager.mint(address(this), currencies[_ctx.tokenInIndex].toId(), _result.amountIn);
+
+            reserves[_ctx.tokenInIndex] += _result.amountIn;
+            reserves[_ctx.tokenOutIndex] -= _result.amountOut + _result.hookFees + _result.protocolFees;
         } else {
-            increasedIndex = index1;
-            decreasedIndex = index0;
+            _addFees(_ctx.tokenInIndex, _result.protocolFees, _result.hookFees);
+
+            poolManager.burn(address(this), currencies[_ctx.tokenOutIndex].toId(), _result.amountOut);
+            poolManager.mint(address(this), currencies[_ctx.tokenInIndex].toId(), _result.amountIn);
+
+            reserves[_ctx.tokenInIndex] += _result.amountIn - _result.hookFees - _result.protocolFees;
+            reserves[_ctx.tokenOutIndex] -= _result.amountOut;
         }
-
-        uint256 unspecifiedAmount;
-
-        if (_params.amountSpecified < 0) {
-            uint256 amountSpecified = uint256(-_params.amountSpecified);
-
-            uint256 increasedReserves =
-                scaledReserves[increasedIndex] + StableSwapMath.scaleTo(amountSpecified, _getRate(increasedIndex));
-
-            uint256 decreasedReserves = StableSwapMath.getTargetReserves(
-                increasedIndex, decreasedIndex, increasedReserves, scaledReserves, amp, invariant
-            );
-
-            uint256 decreased =
-                StableSwapMath.descale(scaledReserves[decreasedIndex] - decreasedReserves, _getRate(decreasedIndex));
-
-            (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(decreased);
-
-            _addFees(decreasedIndex, protocolFees, hookFees);
-
-            uint256 decreasedMinusFees = decreased - lpFees - hookFees - protocolFees;
-
-            poolManager.burn(address(this), currencies[decreasedIndex].toId(), decreasedMinusFees);
-            poolManager.mint(address(this), currencies[increasedIndex].toId(), amountSpecified);
-
-            reserves[increasedIndex] += amountSpecified;
-            reserves[decreasedIndex] -= decreased - lpFees;
-
-            unspecifiedAmount = decreasedMinusFees;
-        } else {
-            uint256 amountSpecified = uint256(_params.amountSpecified);
-
-            uint256 decreasedReserves =
-                scaledReserves[decreasedIndex] - StableSwapMath.scaleTo(amountSpecified, _getRate(decreasedIndex));
-
-            uint256 increasedReserves = StableSwapMath.getTargetReserves(
-                decreasedIndex, increasedIndex, decreasedReserves, scaledReserves, amp, invariant
-            );
-
-            uint256 increased =
-                StableSwapMath.descale(increasedReserves - scaledReserves[increasedIndex], _getRate(increasedIndex));
-
-            (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getFees(increased);
-
-            _addFees(increasedIndex, protocolFees, hookFees);
-
-            uint256 increasedPlusFees = increased + lpFees + hookFees + protocolFees;
-
-            poolManager.burn(address(this), currencies[decreasedIndex].toId(), amountSpecified);
-            poolManager.mint(address(this), currencies[increasedIndex].toId(), increasedPlusFees);
-
-            reserves[increasedIndex] += increased + lpFees;
-            reserves[decreasedIndex] -= amountSpecified;
-
-            unspecifiedAmount = increasedPlusFees;
-        }
-
-        int128 unspecifiedDelta = SafeCast.toInt128(SafeCast.toInt256(unspecifiedAmount));
-
-        return _params.amountSpecified < 0 ? -unspecifiedDelta : unspecifiedDelta;
     }
 }
