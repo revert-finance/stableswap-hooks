@@ -27,7 +27,6 @@ library StableSwapMath {
     ///      Converges when the difference between iterations is <= 1.
     /// @param _scaledReserves The array of scaled reserves.
     /// @param _amplification The amplification coefficient.
-    /// @return invariant The converged invariant.
     function getInvariant(uint256[] memory _scaledReserves, uint256 _amplification)
         internal
         pure
@@ -92,7 +91,6 @@ library StableSwapMath {
     /// @param _scaledReserves Current scaled reserves for all currencies.
     /// @param _amplification The amplification coefficient.
     /// @param _invariant The invariant that must be preserved.
-    /// @return targetReserves The scaled reserves for the target currency.
     function getTargetReserves(
         uint256 _source,
         uint256 _target,
@@ -158,7 +156,6 @@ library StableSwapMath {
     /// @dev Scales a token amount into 1e18 precision using the given rate.
     /// @param _amount Token-denominated amount.
     /// @param _rate Scaling factor for the token.
-    /// @return Scaled amount in 1e18 precision.
     function scaleTo(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
         return _rate * _amount / RATE_PRECISION;
     }
@@ -166,14 +163,12 @@ library StableSwapMath {
     /// @dev Converts a 1e18-precision amount back to token units using the given rate.
     /// @param _amount 1e18-scaled amount.
     /// @param _rate Scaling factor for the token.
-    /// @return Token-denominated amount.
     function descale(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
         return _amount * RATE_PRECISION / _rate;
     }
 
     /// @dev Returns the rate for a given currency.
     /// @param _currency The currency to get the rate for.
-    /// @return The rate for the currency.
     function getRate(Currency _currency) internal view returns (uint256) {
         return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
     }
@@ -184,7 +179,6 @@ library StableSwapMath {
     ///      - 3 values: cbrt(a) * cbrt(b) * cbrt(c) to avoid computing full product
     ///      - 4 values: sqrt(sqrt(a*b) * sqrt(c*d)) using pairwise approach
     /// @param _values Array of values (must be length 2, 3, or 4).
-    /// @return The geometric mean of the values.
     function geometricMean(uint256[] memory _values) internal pure returns (uint256) {
         uint256 n = _values.length;
 
@@ -213,6 +207,7 @@ library StableSwapMath {
     /// @notice Returns the cube root of `x`, rounded down.
     /// @dev Obtained from Solady: https://github.com/Vectorized/solady/blob/v0.1.26/src/utils/FixedPointMathLib.sol
     /// @dev Formally verified by xuwinnie: https://github.com/vectorized/solady/blob/main/audits/xuwinnie-solady-cbrt-proof.pdf
+    /// @param x The value to compute the cube root of.
     function cbrt(uint256 x) internal pure returns (uint256 z) {
         /// @solidity memory-safe-assembly
         assembly {
