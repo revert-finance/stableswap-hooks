@@ -4,7 +4,9 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Vm} from "forge-std/Vm.sol";
 
+import {Swap} from "src/Swap.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
@@ -50,6 +52,44 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
 
     function _subtractFeesFromAmount(uint256 amount) private view returns (uint256) {
         return amount - (amount * _totalFeePercentage() / _feePrecision());
+    }
+
+    struct StableSwapEventData {
+        address sender;
+        address currencyIn;
+        address currencyOut;
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 lpFees;
+        uint256 hookFees;
+        uint256 protocolFees;
+    }
+
+    function _findStableSwapEvent(Vm.Log[] memory _logs) private pure returns (StableSwapEventData memory data) {
+        for (uint256 i = 0; i < _logs.length; i++) {
+            if (_logs[i].topics[0] == Swap.StableSwap.selector) {
+                data.sender = address(uint160(uint256(_logs[i].topics[1])));
+                data.currencyIn = address(uint160(uint256(_logs[i].topics[2])));
+                data.currencyOut = address(uint160(uint256(_logs[i].topics[3])));
+                (data.amountIn, data.amountOut, data.lpFees, data.hookFees, data.protocolFees) =
+                    abi.decode(_logs[i].data, (uint256, uint256, uint256, uint256, uint256));
+                return data;
+            }
+        }
+        revert("StableSwap event not found");
+    }
+
+    function _assertFeeRatios(StableSwapEventData memory _eventData) private view {
+        // Calculate expected fees from total (more accurate than multiplying lpFees)
+        uint256 totalFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
+        uint256 expectedLpFees = totalFees * swapLpFeePercentage / _totalFeePercentage();
+        uint256 expectedHookFees = totalFees * swapHookFeePercentage / _totalFeePercentage();
+        uint256 expectedProtocolFees = totalFees * swapProtocolFeePercentage / _totalFeePercentage();
+
+        // Allow small rounding differences
+        assertApproxEqAbs(_eventData.lpFees, expectedLpFees, 2);
+        assertApproxEqAbs(_eventData.hookFees, expectedHookFees, 2);
+        assertApproxEqAbs(_eventData.protocolFees, expectedProtocolFees, 2);
     }
 
     // ==========================================================================
@@ -583,5 +623,93 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
 
         assertEq(swapperBalance1After, swapperBalance1Before + amountOut);
         assertLt(swapperBalance0After, swapperBalance0Before);
+    }
+
+    // ==========================================================================
+    // Event Emission
+    // ==========================================================================
+
+    function test_swap_ExactInput_ZeroForOne_ShouldEmitCorrectEvent() public {
+        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        vm.recordLogs();
+        _executeExactInputSwap(true, amountIn);
+
+        uint256 actualAmountOut = IERC20(Currency.unwrap(currency1)).balanceOf(swapper) - balanceBefore;
+        StableSwapEventData memory eventData = _findStableSwapEvent(vm.getRecordedLogs());
+
+        // Verify indexed params
+        assertNotEq(eventData.sender, address(0));
+        assertEq(eventData.currencyIn, Currency.unwrap(currency0));
+        assertEq(eventData.currencyOut, Currency.unwrap(currency1));
+
+        // Verify amounts match actual transfers
+        assertEq(eventData.amountIn, amountIn);
+        assertEq(eventData.amountOut, actualAmountOut);
+
+        // Verify fee ratios (1:2:3 ratio configured in setUp)
+        _assertFeeRatios(eventData);
+    }
+
+    function test_swap_ExactInput_OneForZero_ShouldEmitCorrectEvent() public {
+        uint256 amountIn = _toTokenWei(currency1, SWAP_AMOUNT);
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        vm.recordLogs();
+        _executeExactInputSwap(false, amountIn);
+
+        uint256 actualAmountOut = IERC20(Currency.unwrap(currency0)).balanceOf(swapper) - balanceBefore;
+        StableSwapEventData memory eventData = _findStableSwapEvent(vm.getRecordedLogs());
+
+        // Verify currencies are swapped for oneForZero
+        assertEq(eventData.currencyIn, Currency.unwrap(currency1));
+        assertEq(eventData.currencyOut, Currency.unwrap(currency0));
+
+        // Verify amounts
+        assertEq(eventData.amountIn, amountIn);
+        assertEq(eventData.amountOut, actualAmountOut);
+    }
+
+    function test_swap_ExactOutput_ZeroForOne_ShouldEmitCorrectEvent() public {
+        uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        vm.recordLogs();
+        _executeExactOutputSwap(true, amountOut);
+
+        uint256 actualAmountIn = balanceBefore - IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        StableSwapEventData memory eventData = _findStableSwapEvent(vm.getRecordedLogs());
+
+        // Verify indexed params
+        assertNotEq(eventData.sender, address(0));
+        assertEq(eventData.currencyIn, Currency.unwrap(currency0));
+        assertEq(eventData.currencyOut, Currency.unwrap(currency1));
+
+        // Verify amounts match actual transfers
+        assertEq(eventData.amountIn, actualAmountIn);
+        assertEq(eventData.amountOut, amountOut);
+
+        // Verify fee ratios (fees added to input for exact output)
+        _assertFeeRatios(eventData);
+    }
+
+    function test_swap_ExactOutput_OneForZero_ShouldEmitCorrectEvent() public {
+        uint256 amountOut = _toTokenWei(currency0, SWAP_AMOUNT);
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        vm.recordLogs();
+        _executeExactOutputSwap(false, amountOut);
+
+        uint256 actualAmountIn = balanceBefore - IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        StableSwapEventData memory eventData = _findStableSwapEvent(vm.getRecordedLogs());
+
+        // Verify currencies are swapped for oneForZero
+        assertEq(eventData.currencyIn, Currency.unwrap(currency1));
+        assertEq(eventData.currencyOut, Currency.unwrap(currency0));
+
+        // Verify amounts
+        assertEq(eventData.amountIn, actualAmountIn);
+        assertEq(eventData.amountOut, amountOut);
     }
 }
