@@ -97,8 +97,7 @@ abstract contract Swap is Fees {
         uint256 index0 = getCurrencyIndex(_poolKey.currency0);
         uint256 index1 = getCurrencyIndex(_poolKey.currency1);
 
-        ctx.tokenInIndex = _zeroForOne ? index0 : index1;
-        ctx.tokenOutIndex = _zeroForOne ? index1 : index0;
+        (ctx.tokenInIndex, ctx.tokenOutIndex) = _zeroForOne ? (index0, index1) : (index1, index0);
 
         ctx.scaledReserves = new uint256[](currenciesLength);
         for (uint256 i = 0; i < currenciesLength; ++i) {
