@@ -25,15 +25,9 @@ abstract contract Liquidity is Amp, ERC20 {
     address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     /// @notice Emitted when liquidity is added to the pool
-    /// @param _sender Address that added liquidity
-    /// @param _amounts Amounts of each currency added
-    /// @param _shares Number of LP shares minted
     event LiquidityAdded(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
     /// @notice Emitted when liquidity is removed from the pool
-    /// @param _sender Address that removed liquidity
-    /// @param _amounts Amounts of each currency withdrawn
-    /// @param _shares Number of LP shares burned
     event LiquidityRemoved(address indexed _sender, uint256[] _amounts, uint256 _shares);
 
     /// @notice Error thrown when user has insufficient LP shares for the operation
@@ -43,7 +37,6 @@ abstract contract Liquidity is Amp, ERC20 {
     error InsufficientAmounts();
 
     /// @notice Error thrown when attempting to modify liquidity via PoolManager directly
-    /// @param _hookAddress The address of this hook contract that should be used instead
     error UseHookLiquidityModifiers(address _hookAddress);
 
     /// @notice Error thrown when initial liquidity is below minimum
@@ -73,8 +66,7 @@ abstract contract Liquidity is Amp, ERC20 {
         poolManager.unlock(data);
     }
 
-    /// @notice Hook called before liquidity is added via PoolManager
-    /// @dev Always reverts to enforce using this contract's addLiquidity function
+    /// @dev Hook called before liquidity is added via PoolManager, always reverts
     function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         view
@@ -84,8 +76,7 @@ abstract contract Liquidity is Amp, ERC20 {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    /// @notice Hook called before liquidity is removed via PoolManager
-    /// @dev Always reverts to enforce using this contract's removeLiquidity function
+    /// @dev Hook called before liquidity is removed via PoolManager, always reverts
     function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         view
@@ -95,8 +86,7 @@ abstract contract Liquidity is Amp, ERC20 {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    /// @notice Hook called before tokens are donated to the pool
-    /// @dev Always reverts as donations are not supported
+    /// @dev Hook called before tokens are donated to the pool, always reverts
     function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         internal
         view
@@ -106,10 +96,7 @@ abstract contract Liquidity is Amp, ERC20 {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    /// @notice Internal callback handler for adding liquidity
-    /// @dev First deposit: shares = geometric mean of scaled amounts - MINIMUM_LIQUIDITY
-    /// @dev Subsequent deposits: shares = min proportion across all currencies
-    /// @param data Encoded data containing amounts, minShares, and sender address
+    /// @dev Callback handler for adding liquidity
     function _handleAddLiquidityCallback(bytes calldata data) internal {
         (, uint256[] memory amounts, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256[], uint256, address));
@@ -119,33 +106,26 @@ abstract contract Liquidity is Amp, ERC20 {
         uint256 newShares;
 
         if (currentTotalSupply == 0) {
-            // First deposit: compute geometric mean of scaled amounts
             uint256[] memory scaledAmounts = new uint256[](currenciesLength);
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
                 scaledAmounts[i] = StableSwapMath.scaleTo(amounts[i], _getRate(i));
             }
 
-            // Geometric mean using overflow-safe algorithm
             newShares = StableSwapMath.geometricMean(scaledAmounts);
 
-            // Ensure enough liquidity to lock minimum shares
             if (newShares < MINIMUM_LIQUIDITY) {
                 revert InsufficientInitialLiquidity();
             }
 
-            // Reserve MINIMUM_LIQUIDITY shares for dead address
             newShares -= MINIMUM_LIQUIDITY;
 
-            // First deposit uses all provided amounts
             for (uint256 i = 0; i < currenciesLength; ++i) {
                 actualAmounts[i] = amounts[i];
             }
 
-            // Lock minimum liquidity to prevent price manipulation
             _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         } else {
-            // Cache rates and scaled reserves to avoid duplicate calculations
             uint256[] memory cachedRates = new uint256[](currenciesLength);
             uint256[] memory scaledReserves = new uint256[](currenciesLength);
 
@@ -154,7 +134,6 @@ abstract contract Liquidity is Amp, ERC20 {
                 scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
             }
 
-            // Find limiting proportion using scaled reserves
             uint256 minProportion = type(uint256).max;
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
@@ -168,7 +147,6 @@ abstract contract Liquidity is Amp, ERC20 {
 
             newShares = minProportion;
 
-            // Calculate proportional RAW amounts to actually use
             for (uint256 i = 0; i < currenciesLength; ++i) {
                 uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
                 actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
@@ -179,7 +157,6 @@ abstract contract Liquidity is Amp, ERC20 {
             revert InsufficientShares();
         }
 
-        // Transfer only the actual proportional amounts
         for (uint256 i = 0; i < currenciesLength; ++i) {
             Currency currency = currencies[i];
             poolManager.sync(currency);
@@ -194,17 +171,13 @@ abstract contract Liquidity is Amp, ERC20 {
         emit LiquidityAdded(sender, actualAmounts, newShares);
     }
 
-    /// @notice Internal callback handler for removing liquidity
-    /// @dev Called during unlock callback to process the liquidity removal
-    /// @dev Validates shares, calculates proportional amounts, burns LP tokens, and transfers underlying tokens
-    /// @param data Encoded data containing shares, minAmounts, and sender address
+    /// @dev Callback handler for removing liquidity
     function _handleRemoveLiquidityCallback(bytes calldata data) internal {
         (, uint256 shares, uint256[] memory minAmounts, address sender) =
             abi.decode(data, (uint256, uint256, uint256[], address));
 
         uint256 userShares = balanceOf(sender);
 
-        // Check that user has enough shares
         if (shares > userShares) {
             revert InsufficientShares();
         }

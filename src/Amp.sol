@@ -28,19 +28,11 @@ abstract contract Amp is Base {
     uint256 public nextAmpTime;
 
     /// @notice Emitted when an amplification coefficient ramp is started
-    /// @param _sender Address that initiated the ramp
-    /// @param _currentAmp Current amplification coefficient at ramp start
-    /// @param _nextAmp Target amplification coefficient
-    /// @param _currentTime Timestamp when the ramp started
-    /// @param _nextAmpTime Timestamp when the ramp will complete
     event AmpRampStarted(
         address indexed _sender, uint256 _currentAmp, uint256 _nextAmp, uint256 _currentTime, uint256 _nextAmpTime
     );
 
     /// @notice Emitted when an amplification coefficient ramp is stopped
-    /// @param _sender Address that stopped the ramp
-    /// @param _currentAmp Current amplification coefficient when stopped
-    /// @param _currentTime Timestamp when the ramp was stopped
     event AmpRampStopped(address indexed _sender, uint256 _currentAmp, uint256 _currentTime);
 
     /// @notice Error thrown when amp value is invalid (zero or exceeds maximum)
@@ -122,10 +114,7 @@ abstract contract Amp is Base {
         emit AmpRampStopped(_msgSender(), currentAmp, block.timestamp);
     }
 
-    /// @notice Calculates the current amplification coefficient using linear interpolation
-    /// @dev Interpolates between baseAmp and nextAmp based on elapsed time
-    /// @dev Uses the formula: currentAmp = baseAmp ± (delta * timeElapsed / totalTime)
-    /// @return Current amplification coefficient (scaled by AMP_PRECISION)
+    /// @dev Calculates the current amplification coefficient using linear interpolation
     function _currentAmp() internal view returns (uint256) {
         uint256 _nextAmp = nextAmp;
         uint256 _nextAmpTime = nextAmpTime;

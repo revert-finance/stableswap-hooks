@@ -43,7 +43,6 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     /// @notice Callback function invoked by the pool manager during unlock
     /// @dev Routes to appropriate handler based on the action type encoded in data
     /// @param data Encoded data containing action type and action-specific parameters
-    /// @return Empty bytes on success
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         uint256 action = abi.decode(data, (uint256));
 
