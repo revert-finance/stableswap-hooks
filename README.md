@@ -19,7 +19,7 @@ A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i)
 Where:
 
 - `A` = Amplification coefficient (controls price curve steepness)
-- `n` = Number of tokens (2 for this implementation)
+- `n` = Number of tokens (2-4 supported)
 - `D` = Invariant value
 - `Σx_i` = Sum of reserves
 - `Πx_i` = Product of reserves
@@ -62,10 +62,11 @@ StableSwapHooks
 
 ### Liquidity Management
 
-- Proportional or single-sided deposits
+- Proportional deposits across all currencies
 - LP tokens (`SSLP`) representing pool shares
-- Slippage protection via `minShares`, `minAmount0`, `minAmount1` parameters
+- Slippage protection via `_minShares` (deposits) and `_minAmounts[]` (withdrawals)
 - Liquidity operations routed through the hook (direct PoolManager access blocked)
+- Only proportional amounts are pulled; excess approval is unused
 
 ### Three-Tier Fee System
 
@@ -93,6 +94,22 @@ Safety mechanisms:
 
 > **Why ramping?** Instant `A` changes could be exploited via sandwich attacks or LP value extraction. Gradual ramping gives LPs time to react and withdraw if they disagree, prevents arbitrageable price discontinuities, and ensures predictable pool behavior at every block.
 
+### Multi-Currency Support
+
+The pool supports 2-4 currencies with automatic pairwise pool initialization:
+
+- All pairwise combinations are initialized on deployment
+- Currencies must be sorted in ascending order by address
+- Swaps between any two supported currencies use the StableSwap invariant
+
+### Dynamic Rate Oracles
+
+Each currency can have a custom rate oracle to define non-1:1 balance rates for LSTs like wstETH (e.g., 1 wstETH = ~1.22 WETH):
+
+- Configure via `RateOracleConfig(oracle, selector)` at deployment
+- Use `address(0)` for static rates
+- **wstETH example** (mainnet): oracle = [`0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0`](https://etherscan.io/token/0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0), selector = `0x035faf82` (`stEthPerToken()`)
+
 ## Usage
 
 ### Deployment & Initialization
@@ -100,11 +117,21 @@ Safety mechanisms:
 The hook must be deployed to an address that encodes the correct permission flags. Use `HookMiner` to find a valid salt:
 
 ```solidity
-// 1. Deploy the hook with CREATE2 to a valid hook address
+// 1. Prepare currencies (must be sorted by address in ascending uint160 order)
+Currency[] memory currencies = new Currency[](2);
+currencies[0] = currency0;
+currencies[1] = currency1;
+
+// 2. Configure rate oracles (use address(0) for static rates)
+RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
+rateOracles[0] = RateOracleConfig(address(0), bytes4(0)); // Static rate
+rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // Static rate
+
+// 3. Deploy the hook with CREATE2 to a valid hook address
 StableSwapHooks hook = new StableSwapHooks{salt: salt}(
     poolManager,
-    currency0,
-    currency1,
+    currencies,
+    rateOracles,
     protocolFeeCollector,
     protocolFeePercentage,   // e.g., 500 = 0.05%
     hookFeePercentage,       // e.g., 1000 = 0.1%
@@ -112,16 +139,33 @@ StableSwapHooks hook = new StableSwapHooks{salt: salt}(
     amplificationCoefficient // e.g., 100
 );
 
-// 2. Initialize the pool with the hook
-PoolKey memory poolKey = PoolKey({
-    currency0: currency0,
-    currency1: currency1,
-    fee: lpFeePercentage,
-    tickSpacing: 1,
-    hooks: IHooks(address(hook))
-});
+// Note: All pairwise pools are automatically initialized by the constructor
+```
 
-poolManager.initialize(poolKey, SQRT_PRICE_1_1); // 1:1 price = 1 << 96
+**WETH/wstETH example** (mainnet):
+
+```solidity
+Currency[] memory currencies = new Currency[](2);
+currencies[0] = Currency.wrap(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0); // wstETH
+currencies[1] = Currency.wrap(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); // WETH
+
+RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
+rateOracles[0] = RateOracleConfig(
+    0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0, // wstETH contract
+    0x035faf82                                  // stEthPerToken()
+);
+rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // WETH: static rate
+
+StableSwapHooks hook = new StableSwapHooks{salt: salt}(
+    poolManager,
+    currencies,
+    rateOracles,
+    protocolFeeCollector,
+    500,  // 0.05% protocol fee
+    1000, // 0.1% hook fee
+    300,  // 0.03% LP fee
+    100   // A = 100
+);
 ```
 
 ### Adding Liquidity
@@ -131,19 +175,27 @@ poolManager.initialize(poolKey, SQRT_PRICE_1_1); // 1:1 price = 1 << 96
 token0.approve(address(hook), amount0);
 token1.approve(address(hook), amount1);
 
+// Prepare amounts array
+uint256[] memory amounts = new uint256[](2);
+amounts[0] = amount0;
+amounts[1] = amount1;
+
 // Add liquidity with slippage protection
-uint256 shares = hook.addLiquidity(amount0, amount1, minShares);
+hook.addLiquidity(amounts, minShares);
 ```
+
+> **Note:** Only proportional amounts are pulled from the user. Unused approval remains. Some tokens like USDT require resetting approval to 0 before approving again.
 
 ### Removing Liquidity
 
 ```solidity
-// Burn LP shares and receive tokens
-(uint256 received0, uint256 received1) = hook.removeLiquidity(
-    shares,
-    minAmount0,
-    minAmount1
-);
+// Prepare minimum amounts array
+uint256[] memory minAmounts = new uint256[](2);
+minAmounts[0] = minAmount0;
+minAmounts[1] = minAmount1;
+
+// Burn LP shares and receive tokens proportionally
+hook.removeLiquidity(shares, minAmounts);
 ```
 
 ### Swapping
@@ -180,6 +232,38 @@ hook.withdrawHookFees(beneficiary);
 hook.startAmpRamp(newAmp, block.timestamp + 7 days);
 hook.stopAmpRamp();  // Emergency stop
 ```
+
+## External Functions
+
+### User Functions
+
+| Function                                                  | Description                                         |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `addLiquidity(uint256[] _amounts, uint256 _minShares)`    | Deposit tokens proportionally and receive LP shares |
+| `removeLiquidity(uint256 _shares, uint256[] _minAmounts)` | Burn LP shares and withdraw proportional tokens     |
+| `withdrawProtocolFees()`                                  | Send accumulated protocol fees to collector address |
+
+### Admin Functions (DEFAULT_ADMIN_ROLE)
+
+| Function                            | Description                                   |
+| ----------------------------------- | --------------------------------------------- |
+| `setProtocolFeeCollector(address)`  | Update protocol fee recipient address         |
+| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6)           |
+| `setHookFeePercentage(uint256)`     | Update hook fee (scaled by 1e6)               |
+| `setLpFeePercentage(uint256)`       | Update LP fee (scaled by 1e6)                 |
+| `startAmpRamp(uint256, uint256)`    | Begin gradual A coefficient change            |
+| `stopAmpRamp()`                     | Emergency stop current A coefficient ramp     |
+| `withdrawHookFees(address)`         | Withdraw accumulated hook fees to beneficiary |
+
+### View Functions
+
+| Function                                      | Description                          |
+| --------------------------------------------- | ------------------------------------ |
+| `getCurrencyIndex(Currency)`                  | Get index of a currency in the pool  |
+| `currencies(uint256)`                         | Get currency address at index        |
+| `reserves(uint256)`                           | Get current reserve for a currency   |
+| `rates(uint256)`                              | Get base scaling rate for a currency |
+| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency    |
 
 ## Hook Permissions
 

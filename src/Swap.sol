@@ -11,10 +11,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Fees} from "src/Fees.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
-/// @title Swap
 /// @notice Implements StableSwap (Curve-style) swap logic as a Uniswap v4 hook
-/// @dev Supports both exact input and exact output swaps using the StableSwap invariant.
-///      Fees are deducted from output for exact input swaps, or added to input for exact output swaps.
+/// @dev Supports both exact input and exact output swaps using the StableSwap invariant
 abstract contract Swap is Fees {
     /// @dev Swap execution context containing pool state
     struct SwapContext {
@@ -46,7 +44,7 @@ abstract contract Swap is Fees {
         uint256 _protocolFees
     );
 
-    /// @notice Hook called before a swap, executes the StableSwap logic
+    /// @dev Hook called before a swap, executes the StableSwap logic
     function _beforeSwap(address _sender, PoolKey calldata _poolKey, SwapParams calldata _params, bytes calldata)
         internal
         override
