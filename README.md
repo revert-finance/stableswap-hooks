@@ -237,33 +237,33 @@ hook.stopAmpRamp();  // Emergency stop
 
 ### User Functions
 
-| Function | Description |
-|----------|-------------|
-| `addLiquidity(uint256[] _amounts, uint256 _minShares)` | Deposit tokens proportionally and receive LP shares |
-| `removeLiquidity(uint256 _shares, uint256[] _minAmounts)` | Burn LP shares and withdraw proportional tokens |
-| `withdrawProtocolFees()` | Send accumulated protocol fees to collector address |
+| Function                                                  | Description                                         |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `addLiquidity(uint256[] _amounts, uint256 _minShares)`    | Deposit tokens proportionally and receive LP shares |
+| `removeLiquidity(uint256 _shares, uint256[] _minAmounts)` | Burn LP shares and withdraw proportional tokens     |
+| `withdrawProtocolFees()`                                  | Send accumulated protocol fees to collector address |
 
 ### Admin Functions (DEFAULT_ADMIN_ROLE)
 
-| Function | Description |
-|----------|-------------|
-| `setProtocolFeeCollector(address)` | Update protocol fee recipient address |
-| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6) |
-| `setHookFeePercentage(uint256)` | Update hook fee (scaled by 1e6) |
-| `setLpFeePercentage(uint256)` | Update LP fee (scaled by 1e6) |
-| `startAmpRamp(uint256, uint256)` | Begin gradual A coefficient change |
-| `stopAmpRamp()` | Emergency stop current A coefficient ramp |
-| `withdrawHookFees(address)` | Withdraw accumulated hook fees to beneficiary |
+| Function                            | Description                                   |
+| ----------------------------------- | --------------------------------------------- |
+| `setProtocolFeeCollector(address)`  | Update protocol fee recipient address         |
+| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6)           |
+| `setHookFeePercentage(uint256)`     | Update hook fee (scaled by 1e6)               |
+| `setLpFeePercentage(uint256)`       | Update LP fee (scaled by 1e6)                 |
+| `startAmpRamp(uint256, uint256)`    | Begin gradual A coefficient change            |
+| `stopAmpRamp()`                     | Emergency stop current A coefficient ramp     |
+| `withdrawHookFees(address)`         | Withdraw accumulated hook fees to beneficiary |
 
 ### View Functions
 
-| Function | Description |
-|----------|-------------|
-| `getCurrencyIndex(Currency)` | Get index of a currency in the pool |
-| `currencies(uint256)` | Get currency address at index |
-| `reserves(uint256)` | Get current reserve for a currency |
-| `rates(uint256)` | Get base scaling rate for a currency |
-| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency |
+| Function                                      | Description                          |
+| --------------------------------------------- | ------------------------------------ |
+| `getCurrencyIndex(Currency)`                  | Get index of a currency in the pool  |
+| `currencies(uint256)`                         | Get currency address at index        |
+| `reserves(uint256)`                           | Get current reserve for a currency   |
+| `rates(uint256)`                              | Get base scaling rate for a currency |
+| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency    |
 
 ## Hook Permissions
 
