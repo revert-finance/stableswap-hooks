@@ -10,7 +10,6 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
-import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 
 contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
@@ -131,92 +130,6 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
     }
 
     // ==========================================================================
-    // Protocol Fee Percentage
-    // ==========================================================================
-
-    function test_setProtocolFeePercentage_ShouldSucceedWhenCalledByOwner() public {
-        StableSwapHooks hook = _deployHook();
-
-        uint256 newPercentage = 500;
-
-        vm.prank(owner);
-        vm.expectEmit(address(factory));
-        emit StableSwapHooksFactory.ProtocolFeePercentageSet(owner, address(hook), newPercentage);
-        factory.setProtocolFeePercentage(address(hook), newPercentage);
-
-        assertEq(factory.protocolFeePercentage(address(hook)), newPercentage);
-    }
-
-    function test_setProtocolFeePercentage_ShouldRevertWhenCalledByNonOwner() public {
-        StableSwapHooks hook = _deployHook();
-
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedUser));
-        vm.prank(unauthorizedUser);
-        factory.setProtocolFeePercentage(address(hook), 500);
-    }
-
-    function test_setProtocolFeePercentage_ShouldRevertWhenUnknownHook() public {
-        vm.expectRevert(StableSwapHooksFactory.UnknownHook.selector);
-        vm.prank(owner);
-        factory.setProtocolFeePercentage(address(0x1234), 500);
-    }
-
-    function test_setProtocolFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
-        StableSwapHooks hook = _deployHook();
-
-        // LP fee is BASE_LP_FEE_PERCENTAGE (300)
-        // Try to set protocol fee to make total >= FEE_PRECISION
-        uint256 invalidPercentage = factory.FEE_PRECISION();
-
-        vm.expectRevert(StableSwapHooksFactory.InvalidFeePercentage.selector);
-        vm.prank(owner);
-        factory.setProtocolFeePercentage(address(hook), invalidPercentage);
-    }
-
-    // ==========================================================================
-    // Hook Fee Percentage
-    // ==========================================================================
-
-    function test_setHookFeePercentage_ShouldSucceedWhenCalledByOwner() public {
-        StableSwapHooks hook = _deployHook();
-
-        uint256 newPercentage = 500;
-
-        vm.prank(owner);
-        vm.expectEmit(address(factory));
-        emit StableSwapHooksFactory.HookFeePercentageSet(owner, address(hook), newPercentage);
-        factory.setHookFeePercentage(address(hook), newPercentage);
-
-        assertEq(factory.hookFeePercentage(address(hook)), newPercentage);
-    }
-
-    function test_setHookFeePercentage_ShouldRevertWhenCalledByNonOwner() public {
-        StableSwapHooks hook = _deployHook();
-
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedUser));
-        vm.prank(unauthorizedUser);
-        factory.setHookFeePercentage(address(hook), 500);
-    }
-
-    function test_setHookFeePercentage_ShouldRevertWhenUnknownHook() public {
-        vm.expectRevert(StableSwapHooksFactory.UnknownHook.selector);
-        vm.prank(owner);
-        factory.setHookFeePercentage(address(0x1234), 500);
-    }
-
-    function test_setHookFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
-        StableSwapHooks hook = _deployHook();
-
-        // LP fee is BASE_LP_FEE_PERCENTAGE (300)
-        // Try to set hook fee to make total >= FEE_PRECISION
-        uint256 invalidPercentage = factory.FEE_PRECISION();
-
-        vm.expectRevert(StableSwapHooksFactory.InvalidFeePercentage.selector);
-        vm.prank(owner);
-        factory.setHookFeePercentage(address(hook), invalidPercentage);
-    }
-
-    // ==========================================================================
     // Pause/Unpause
     // ==========================================================================
 
@@ -286,7 +199,6 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
 
         assertEq(address(hook), expectedAddress);
         assertTrue(factory.isDeployedByFactory(address(hook)));
-        assertEq(factory.lpFeePercentage(address(hook)), BASE_LP_FEE_PERCENTAGE);
     }
 
     function test_deploy_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {
@@ -304,49 +216,5 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
 
         vm.expectRevert(StableSwapHooksFactory.InvalidFeePercentage.selector);
         factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt);
-    }
-
-    // ==========================================================================
-    // getFees
-    // ==========================================================================
-
-    function test_getFees_ShouldCalculateFeesCorrectly() public {
-        StableSwapHooks hook = _deployHook();
-
-        vm.startPrank(owner);
-        factory.setProtocolFeePercentage(address(hook), 1000); // 0.1%
-        factory.setHookFeePercentage(address(hook), 2000); // 0.2%
-        vm.stopPrank();
-
-        uint256 amount = 1000e18;
-
-        (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = factory.getFees(address(hook), amount);
-
-        // LP fee: 300 / 1e6 * 1000e18 = 0.3e18
-        assertEq(lpFees, 0.3e18);
-        // Hook fee: 2000 / 1e6 * 1000e18 = 2e18
-        assertEq(hookFees, 2e18);
-        // Protocol fee: 1000 / 1e6 * 1000e18 = 1e18
-        assertEq(protocolFees, 1e18);
-    }
-
-    function test_getFees_ShouldReturnZeroForZeroAmount() public {
-        StableSwapHooks hook = _deployHook();
-
-        vm.startPrank(owner);
-        factory.setProtocolFeePercentage(address(hook), BASE_PROTOCOL_FEE_PERCENTAGE);
-        factory.setHookFeePercentage(address(hook), BASE_HOOK_FEE_PERCENTAGE);
-        vm.stopPrank();
-
-        (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = factory.getFees(address(hook), 0);
-
-        assertEq(lpFees, 0);
-        assertEq(hookFees, 0);
-        assertEq(protocolFees, 0);
-    }
-
-    function test_getFees_ShouldRevertForUnknownHook() public {
-        vm.expectRevert(StableSwapHooksFactory.UnknownHook.selector);
-        factory.getFees(address(0x1234), 1000e18);
     }
 }

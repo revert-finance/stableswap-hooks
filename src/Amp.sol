@@ -47,9 +47,6 @@ abstract contract Amp is Base {
     /// @notice Error thrown when amp change exceeds maximum allowed multiplier
     error ExcessiveAmpChange();
 
-    /// @notice Error thrown when caller is not the factory owner
-    error OnlyFactoryOwner();
-
     /// @notice Initializes the amplification coefficient
     /// @dev Scales the initial amp by AMP_PRECISION for internal calculations
     /// @param _baseAmp Initial amplification coefficient (unscaled)
@@ -69,11 +66,7 @@ abstract contract Amp is Base {
     /// @dev Validates time constraints and maximum change rate to ensure pool safety
     /// @param _nextAmp Target amplification coefficient (unscaled)
     /// @param _nextAmpTime Timestamp when the ramp should complete
-    function startAmpRamp(uint256 _nextAmp, uint256 _nextAmpTime) external {
-        if (msg.sender != factory.owner()) {
-            revert OnlyFactoryOwner();
-        }
-
+    function startAmpRamp(uint256 _nextAmp, uint256 _nextAmpTime) external onlyFactoryOwner {
         if (_nextAmp == 0 || _nextAmp >= MAX_AMP) {
             revert InvalidAmp();
         }
@@ -110,11 +103,7 @@ abstract contract Amp is Base {
     /// @notice Stops the current amplification coefficient ramp immediately
     /// @dev Only callable by the factory owner
     /// @dev Sets both base and next amp to the current interpolated value
-    function stopAmpRamp() external {
-        if (msg.sender != factory.owner()) {
-            revert OnlyFactoryOwner();
-        }
-
+    function stopAmpRamp() external onlyFactoryOwner {
         uint256 currentAmp = getCurrentAmp();
 
         baseAmp = currentAmp;

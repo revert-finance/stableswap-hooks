@@ -7,11 +7,66 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
+import {Base} from "src/Base.sol";
 import {Fees} from "src/Fees.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 private constant SWAP_AMOUNT = 1_000;
+
+    // ==========================================================================
+    // Fee Percentage Setters
+    // ==========================================================================
+
+    function test_setProtocolFeePercentage_ShouldSucceedWhenCalledByFactoryOwner() public {
+        uint256 newPercentage = 500;
+
+        vm.prank(defaultAdmin);
+        vm.expectEmit(address(hooks));
+        emit Fees.ProtocolFeePercentageSet(defaultAdmin, newPercentage);
+        hooks.setProtocolFeePercentage(newPercentage);
+
+        assertEq(hooks.protocolFeePercentage(), newPercentage);
+    }
+
+    function test_setProtocolFeePercentage_ShouldRevertWhenCalledByNonFactoryOwner() public {
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
+        vm.prank(unauthorizedUser);
+        hooks.setProtocolFeePercentage(500);
+    }
+
+    function test_setProtocolFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
+        uint256 invalidPercentage = hooks.FEE_PRECISION();
+
+        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.prank(defaultAdmin);
+        hooks.setProtocolFeePercentage(invalidPercentage);
+    }
+
+    function test_setHookFeePercentage_ShouldSucceedWhenCalledByFactoryOwner() public {
+        uint256 newPercentage = 500;
+
+        vm.prank(defaultAdmin);
+        vm.expectEmit(address(hooks));
+        emit Fees.HookFeePercentageSet(defaultAdmin, newPercentage);
+        hooks.setHookFeePercentage(newPercentage);
+
+        assertEq(hooks.hookFeePercentage(), newPercentage);
+    }
+
+    function test_setHookFeePercentage_ShouldRevertWhenCalledByNonFactoryOwner() public {
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
+        vm.prank(unauthorizedUser);
+        hooks.setHookFeePercentage(500);
+    }
+
+    function test_setHookFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
+        uint256 invalidPercentage = hooks.FEE_PRECISION();
+
+        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.prank(defaultAdmin);
+        hooks.setHookFeePercentage(invalidPercentage);
+    }
 
     // ==========================================================================
     // Fee Withdrawal - Protocol Fees

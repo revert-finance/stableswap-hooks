@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {Amp} from "src/Amp.sol";
+import {Base} from "src/Base.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
@@ -260,14 +261,14 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.expectRevert(Amp.OnlyFactoryOwner.selector);
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
     function test_stopAmpRamp_ShouldRevertWhenCalledByNonFactoryOwner() public {
-        vm.expectRevert(Amp.OnlyFactoryOwner.selector);
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.stopAmpRamp();

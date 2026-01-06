@@ -35,15 +35,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Returns true if the hook was deployed by this factory
     mapping(address hook => bool deployed) public isDeployedByFactory;
 
-    /// @notice Protocol fee percentage for each deployed hook
-    mapping(address hook => uint256 feePercentage) public protocolFeePercentage;
-
-    /// @notice Hook fee percentage for each deployed hook
-    mapping(address hook => uint256 feePercentage) public hookFeePercentage;
-
-    /// @notice LP fee percentage for each deployed hook
-    mapping(address hook => uint256 feePercentage) public lpFeePercentage;
-
     /// @notice Emitted when a new StableSwapHooks contract is deployed
     event StableSwapHooksDeployed(address indexed _sender, address indexed _hook);
 
@@ -53,20 +44,11 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Emitted when hook fee collector is updated
     event HookFeeCollectorSet(address indexed _sender, address indexed _collector);
 
-    /// @notice Emitted when protocol fee percentage is updated for a hook
-    event ProtocolFeePercentageSet(address indexed _sender, address indexed _hook, uint256 _feePercentage);
-
-    /// @notice Emitted when hook fee percentage is updated for a hook
-    event HookFeePercentageSet(address indexed _sender, address indexed _hook, uint256 _feePercentage);
-
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
 
     /// @notice Thrown when fee percentage exceeds FEE_PRECISION
     error InvalidFeePercentage();
-
-    /// @notice Thrown when hook was not deployed by this factory
-    error UnknownHook();
 
     /// @notice Constructs the factory
     /// @param _poolManager The Uniswap v4 PoolManager contract
@@ -94,20 +76,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         _setHookFeeCollector(_collector);
     }
 
-    /// @notice Sets the protocol fee percentage for a deployed hook
-    /// @param _hook Address of the deployed hook
-    /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
-    function setProtocolFeePercentage(address _hook, uint256 _feePercentage) external onlyOwner {
-        _setProtocolFeePercentage(_hook, _feePercentage);
-    }
-
-    /// @notice Sets the hook fee percentage for a deployed hook
-    /// @param _hook Address of the deployed hook
-    /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
-    function setHookFeePercentage(address _hook, uint256 _feePercentage) external onlyOwner {
-        _setHookFeePercentage(_hook, _feePercentage);
-    }
-
     /// @notice Pauses the factory, preventing new deployments
     function pause() external onlyOwner {
         _pause();
@@ -116,23 +84,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Unpauses the factory, allowing new deployments
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    /// @notice Calculates LP, hook, and protocol fees from a given amount for a hook
-    /// @param _hook The hook address
-    /// @param _amount The amount to calculate fees on
-    function getFees(address _hook, uint256 _amount)
-        external
-        view
-        returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees)
-    {
-        if (!isDeployedByFactory[_hook]) {
-            revert UnknownHook();
-        }
-
-        lpFees = _amount * lpFeePercentage[_hook] / FEE_PRECISION;
-        hookFees = _amount * hookFeePercentage[_hook] / FEE_PRECISION;
-        protocolFees = _amount * protocolFeePercentage[_hook] / FEE_PRECISION;
     }
 
     /// @notice Deploys a new StableSwapHooks contract using CREATE2
@@ -155,7 +106,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
 
         hook = new StableSwapHooks{salt: _salt}(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
         isDeployedByFactory[address(hook)] = true;
-        lpFeePercentage[address(hook)] = _lpFeePercentage;
 
         emit StableSwapHooksDeployed(msg.sender, address(hook));
     }
@@ -200,39 +150,5 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         hookFeeCollector = _collector;
 
         emit HookFeeCollectorSet(msg.sender, _collector);
-    }
-
-    /// @dev Internal setter for protocol fee percentage
-    function _setProtocolFeePercentage(address _hook, uint256 _feePercentage) private {
-        uint256 totalFees = _feePercentage + hookFeePercentage[_hook] + lpFeePercentage[_hook];
-
-        if (totalFees >= FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        if (!isDeployedByFactory[_hook]) {
-            revert UnknownHook();
-        }
-
-        protocolFeePercentage[_hook] = _feePercentage;
-
-        emit ProtocolFeePercentageSet(msg.sender, _hook, _feePercentage);
-    }
-
-    /// @dev Internal setter for hook fee percentage
-    function _setHookFeePercentage(address _hook, uint256 _feePercentage) private {
-        uint256 totalFees = protocolFeePercentage[_hook] + _feePercentage + lpFeePercentage[_hook];
-
-        if (totalFees >= FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        if (!isDeployedByFactory[_hook]) {
-            revert UnknownHook();
-        }
-
-        hookFeePercentage[_hook] = _feePercentage;
-
-        emit HookFeePercentageSet(msg.sender, _hook, _feePercentage);
     }
 }

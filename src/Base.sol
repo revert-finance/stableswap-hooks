@@ -33,6 +33,9 @@ abstract contract Base is BaseHook {
     /// @notice Maximum number of currencies allowed in the pool
     uint256 public constant MAX_CURRENCIES = 4;
 
+    /// @notice LP fee percentage (scaled by FEE_PRECISION)
+    uint256 public immutable lpFeePercentage;
+
     /// @notice The factory that deployed this hook
     IStableSwapHooksFactory public immutable factory;
 
@@ -73,6 +76,17 @@ abstract contract Base is BaseHook {
     /// @notice Thrown when rate oracles array length doesn't match currencies length
     error InvalidRateOraclesLength();
 
+    /// @notice Error thrown when caller is not the factory owner
+    error OnlyFactoryOwner();
+
+    /// @notice Restricts function access to the factory owner
+    modifier onlyFactoryOwner() {
+        if (msg.sender != factory.owner()) {
+            revert OnlyFactoryOwner();
+        }
+        _;
+    }
+
     /// @notice Initializes the base StableSwap hook configuration
     /// @dev Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
@@ -88,6 +102,7 @@ abstract contract Base is BaseHook {
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
         factory = _factory;
+        lpFeePercentage = _lpFeePercentage;
         currencies = _currencies;
         currenciesLength = _currencies.length;
 

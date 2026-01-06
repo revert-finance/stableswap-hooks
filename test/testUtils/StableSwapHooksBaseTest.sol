@@ -85,8 +85,8 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         hooks = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
 
         vm.startPrank(defaultAdmin);
-        factory.setProtocolFeePercentage(address(hooks), BASE_PROTOCOL_FEE_PERCENTAGE);
-        factory.setHookFeePercentage(address(hooks), BASE_HOOK_FEE_PERCENTAGE);
+        hooks.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooks.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
         vm.stopPrank();
     }
 
@@ -106,8 +106,8 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         hooks3 = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
 
         vm.startPrank(defaultAdmin);
-        factory.setProtocolFeePercentage(address(hooks3), BASE_PROTOCOL_FEE_PERCENTAGE);
-        factory.setHookFeePercentage(address(hooks3), BASE_HOOK_FEE_PERCENTAGE);
+        hooks3.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooks3.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
         vm.stopPrank();
     }
 

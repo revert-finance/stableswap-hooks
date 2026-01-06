@@ -119,7 +119,7 @@ abstract contract Swap is Fees {
             _ctx.scaledReserves[_ctx.tokenOutIndex] - newTokenOutReserves, _getRate(_ctx.tokenOutIndex)
         );
 
-        (result.lpFees, result.hookFees, result.protocolFees) = factory.getFees(address(this), rawAmountOut);
+        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(rawAmountOut);
         uint256 totalFees = result.lpFees + result.hookFees + result.protocolFees;
 
         result.amountIn = _amountIn;
@@ -141,7 +141,7 @@ abstract contract Swap is Fees {
             newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
         );
 
-        (result.lpFees, result.hookFees, result.protocolFees) = factory.getFees(address(this), rawAmountIn);
+        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(rawAmountIn);
         uint256 totalFees = result.lpFees + result.hookFees + result.protocolFees;
 
         result.amountIn = rawAmountIn + totalFees;

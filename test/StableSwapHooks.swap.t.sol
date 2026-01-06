@@ -355,10 +355,10 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     }
 
     function test_swap_WithZeroHookAndProtocolFees_ShouldOnlyChargeLpFees() public {
-        // Set hook and protocol fees to 0 via factory
+        // Set hook and protocol fees to 0
         vm.startPrank(defaultAdmin);
-        factory.setHookFeePercentage(address(hooks), 0);
-        factory.setProtocolFeePercentage(address(hooks), 0);
+        hooks.setHookFeePercentage(0);
+        hooks.setProtocolFeePercentage(0);
         vm.stopPrank();
 
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
