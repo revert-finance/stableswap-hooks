@@ -21,6 +21,7 @@ import {PoolDonateTest} from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 
 import {Base} from "src/Base.sol";
 import {Liquidity} from "src/Liquidity.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
     PoolDonateTest private donateRouter;
@@ -67,10 +68,11 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.CurrenciesNotSorted.selector);
-        factory.deploy(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenTooFewCurrencies() public {
@@ -80,10 +82,11 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](1);
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
@@ -94,10 +97,11 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = factory.mineSalt(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {
@@ -111,10 +115,11 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
 
         uint256 invalidFee = hooks.FEE_PRECISION() + 1;
 
-        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP, code);
 
         vm.expectRevert(abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, invalidFee));
-        factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt);
+        factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldSetCorrectPoolId() public view {

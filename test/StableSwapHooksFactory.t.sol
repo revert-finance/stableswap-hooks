@@ -33,7 +33,13 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         protocolFeeCollector = makeAddr("protocolFeeCollector");
         hookFeeCollector = makeAddr("hookFeeCollector");
 
-        factory = new StableSwapHooksFactory(IPoolManager(poolManager), owner, protocolFeeCollector, hookFeeCollector);
+        factory = new StableSwapHooksFactory(
+            IPoolManager(poolManager),
+            owner,
+            protocolFeeCollector,
+            hookFeeCollector,
+            keccak256(type(StableSwapHooks).creationCode)
+        );
     }
 
     function _deployHook() internal returns (StableSwapHooks) {
@@ -45,9 +51,10 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        return factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        return factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     // ==========================================================================
@@ -59,16 +66,29 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         assertEq(factory.protocolFeeCollector(), protocolFeeCollector);
         assertEq(factory.hookFeeCollector(), hookFeeCollector);
         assertEq(factory.owner(), owner);
+        assertEq(factory.creationCodeHash(), keccak256(type(StableSwapHooks).creationCode));
     }
 
     function test_constructor_ShouldRevertWhenProtocolFeeCollectorIsZero() public {
         vm.expectRevert(StableSwapHooksFactory.ZeroAddress.selector);
-        new StableSwapHooksFactory(IPoolManager(poolManager), owner, address(0), hookFeeCollector);
+        new StableSwapHooksFactory(
+            IPoolManager(poolManager),
+            owner,
+            address(0),
+            hookFeeCollector,
+            keccak256(type(StableSwapHooks).creationCode)
+        );
     }
 
     function test_constructor_ShouldRevertWhenHookFeeCollectorIsZero() public {
         vm.expectRevert(StableSwapHooksFactory.ZeroAddress.selector);
-        new StableSwapHooksFactory(IPoolManager(poolManager), owner, protocolFeeCollector, address(0));
+        new StableSwapHooksFactory(
+            IPoolManager(poolManager),
+            owner,
+            protocolFeeCollector,
+            address(0),
+            keccak256(type(StableSwapHooks).creationCode)
+        );
     }
 
     // ==========================================================================
@@ -145,10 +165,11 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Pausable.EnforcedPause.selector);
-        factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_unpause_ShouldAllowDeployment() public {
@@ -180,6 +201,21 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
     // Deploy
     // ==========================================================================
 
+    function test_deploy_ShouldRevertWhenInvalidCreationCode() public {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = currency0;
+        currencies[1] = currency1;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory invalidCode = hex"deadbeef";
+
+        vm.expectRevert(StableSwapHooksFactory.InvalidCreationCode.selector);
+        factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, bytes32(0), invalidCode);
+    }
+
     function test_deploy_ShouldDeployHookCorrectly() public {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = currency0;
@@ -189,13 +225,14 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
+        bytes memory code = type(StableSwapHooks).creationCode;
         (address expectedAddress, bytes32 salt) =
-            factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+            factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectEmit(true, true, false, false, address(factory));
         emit StableSwapHooksFactory.StableSwapHooksDeployed(address(this), expectedAddress);
 
-        StableSwapHooks hook = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        StableSwapHooks hook = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
 
         assertEq(address(hook), expectedAddress);
         assertTrue(factory.isDeployedByFactory(address(hook)));

@@ -75,8 +75,13 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
         hookFeeCollector = makeAddr("hookFeeCollector");
 
         // Deploy factory
-        factory =
-            new StableSwapHooksFactory(IPoolManager(poolManager), defaultAdmin, protocolFeeCollector, hookFeeCollector);
+        factory = new StableSwapHooksFactory(
+            IPoolManager(poolManager),
+            defaultAdmin,
+            protocolFeeCollector,
+            hookFeeCollector,
+            keccak256(type(StableSwapHooks).creationCode)
+        );
 
         // Deploy stETH and wstETH mocks directly
         MockStETH mockStETH = new MockStETH();
@@ -123,9 +128,10 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
             rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        hooksWstETH = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        hooksWstETH = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
 
         vm.startPrank(defaultAdmin);
         hooksWstETH.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);

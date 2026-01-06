@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -22,6 +23,9 @@ contract StableSwapHooksFactory is Ownable, Pausable {
 
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
+
+    /// @notice Hash of the StableSwapHooks creation code for validation
+    bytes32 public immutable creationCodeHash;
 
     /// @notice Address that receives protocol fees
     address public protocolFeeCollector;
@@ -44,18 +48,27 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
 
+    /// @notice Thrown when creation code hash doesn't match
+    error InvalidCreationCode();
+
     /// @notice Constructs the factory
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _owner The owner of the factory
     /// @param _protocolFeeCollector Address that receives protocol fees
     /// @param _hookFeeCollector Address that receives hook fees
-    constructor(IPoolManager _poolManager, address _owner, address _protocolFeeCollector, address _hookFeeCollector)
-        Ownable(_owner)
-    {
+    /// @param _creationCodeHash Hash of StableSwapHooks creation code for validation
+    constructor(
+        IPoolManager _poolManager,
+        address _owner,
+        address _protocolFeeCollector,
+        address _hookFeeCollector,
+        bytes32 _creationCodeHash
+    ) Ownable(_owner) {
         _setProtocolFeeCollector(_protocolFeeCollector);
         _setHookFeeCollector(_hookFeeCollector);
 
         poolManager = _poolManager;
+        creationCodeHash = _creationCodeHash;
     }
 
     /// @notice Sets the protocol fee collector address
@@ -86,14 +99,24 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
     /// @param _salt CREATE2 salt computed via mineSalt or off-chain using HookMiner
+    /// @param _creationCode StableSwapHooks creation bytecode (validated against stored hash)
     function deploy(
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
         uint256 _lpFeePercentage,
         uint256 _baseAmp,
-        bytes32 _salt
+        bytes32 _salt,
+        bytes memory _creationCode
     ) external whenNotPaused returns (StableSwapHooks hook) {
-        hook = new StableSwapHooks{salt: _salt}(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
+        if (keccak256(_creationCode) != creationCodeHash) {
+            revert InvalidCreationCode();
+        }
+
+        bytes memory bytecode = abi.encodePacked(
+            _creationCode, abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp)
+        );
+
+        hook = StableSwapHooks(Create2.deploy(0, _salt, bytecode));
         isDeployedByFactory[address(hook)] = true;
 
         emit StableSwapHooksDeployed(msg.sender, address(hook));
@@ -105,16 +128,17 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _rateOracles Array of rate oracle configurations for each currency
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
+    /// @param _creationCode StableSwapHooks creation bytecode
     function mineSalt(
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
         uint256 _lpFeePercentage,
-        uint256 _baseAmp
+        uint256 _baseAmp,
+        bytes memory _creationCode
     ) external view returns (address hookAddress, bytes32 salt) {
         bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
 
-        (hookAddress, salt) =
-            HookMiner.find(address(this), HOOK_FLAGS, type(StableSwapHooks).creationCode, constructorArgs);
+        (hookAddress, salt) = HookMiner.find(address(this), HOOK_FLAGS, _creationCode, constructorArgs);
     }
 
     /// @dev Internal setter for protocol fee collector
