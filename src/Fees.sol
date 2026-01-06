@@ -137,8 +137,13 @@ abstract contract Fees is Liquidity {
 
     /// @notice Calculates LP, hook, and protocol fees from a given amount
     /// @param _amount The amount to calculate fees on
-    function _getFees(uint256 _amount) internal view returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_) {
-        lpFees = _amount * lpFeePercentage / FEE_PRECISION;
+    function _getFees(uint256 _amount)
+        internal
+        view
+        returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
+    {
+        lpFees =
+            _amount * lpFeePercentage / FEE_PRECISION;
         hookFees_ = _amount * hookFeePercentage / FEE_PRECISION;
         protocolFees_ = _amount * protocolFeePercentage / FEE_PRECISION;
     }

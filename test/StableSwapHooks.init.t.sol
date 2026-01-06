@@ -135,7 +135,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertEq(hooks.reserves(1), 0);
     }
 
-
     function test_getCurrencyIndex_ShouldReturnCorrectIndex() public view {
         assertEq(hooks.getCurrencyIndex(currency0), 0);
         assertEq(hooks.getCurrencyIndex(currency1), 1);
@@ -223,7 +222,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertEq(hooks3.reserves(1), 0);
         assertEq(hooks3.reserves(2), 0);
     }
-
 
     function test_hooks3_getCurrencyIndex_ShouldReturnCorrectIndex() public view {
         assertEq(hooks3.getCurrencyIndex(currency0), 0);
