@@ -200,21 +200,4 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         assertEq(address(hook), expectedAddress);
         assertTrue(factory.isDeployedByFactory(address(hook)));
     }
-
-    function test_deploy_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {
-        Currency[] memory currencies = new Currency[](2);
-        currencies[0] = currency0;
-        currencies[1] = currency1;
-
-        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
-        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-
-        uint256 invalidFee = factory.FEE_PRECISION() + 1;
-
-        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP);
-
-        vm.expectRevert(StableSwapHooksFactory.InvalidFeePercentage.selector);
-        factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt);
-    }
 }

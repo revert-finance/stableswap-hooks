@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+
 import {Actions} from "src/libraries/Actions.sol";
 import {Liquidity} from "src/Liquidity.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
 abstract contract Fees is Liquidity {
     /// @notice Fee denominator for percentage calculations (100% = 1e6)
-    uint256 public constant FEE_PRECISION = 1e6;
+    uint256 public constant FEE_PRECISION = LPFeeLibrary.MAX_LP_FEE;
 
     /// @notice Protocol fee percentage (scaled by FEE_PRECISION)
     uint256 public protocolFeePercentage;

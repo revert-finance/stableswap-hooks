@@ -13,6 +13,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
@@ -97,6 +98,23 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
         factory.deploy(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+    }
+
+    function test_initialize_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = currency0;
+        currencies[1] = currency1;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        uint256 invalidFee = hooks.FEE_PRECISION() + 1;
+
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP);
+
+        vm.expectRevert(abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, invalidFee));
+        factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldSetCorrectPoolId() public view {

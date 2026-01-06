@@ -25,7 +25,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     }
 
     function _feePrecision() private view returns (uint256) {
-        return factory.FEE_PRECISION();
+        return hooks.FEE_PRECISION();
     }
 
     function _addFeesToAmount(uint256 amount) private view returns (uint256) {

@@ -15,9 +15,6 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 /// @notice Factory for deploying StableSwapHooks contracts using CREATE2
 contract StableSwapHooksFactory is Ownable, Pausable {
-    /// @notice Fee denominator for percentage calculations (100% = 1e6)
-    uint256 public constant FEE_PRECISION = 1e6;
-
     /// @notice Hook permission flags required for StableSwapHooks
     uint160 public constant HOOK_FLAGS = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
@@ -46,9 +43,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
 
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
-
-    /// @notice Thrown when fee percentage exceeds FEE_PRECISION
-    error InvalidFeePercentage();
 
     /// @notice Constructs the factory
     /// @param _poolManager The Uniswap v4 PoolManager contract
@@ -99,10 +93,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         uint256 _baseAmp,
         bytes32 _salt
     ) external whenNotPaused returns (StableSwapHooks hook) {
-        if (_lpFeePercentage > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
         hook = new StableSwapHooks{salt: _salt}(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
         isDeployedByFactory[address(hook)] = true;
 
