@@ -115,7 +115,6 @@ abstract contract Amp is Base {
     }
 
     /// @notice Returns the current interpolated amplification coefficient
-    /// @return Current amplification coefficient (scaled by AMP_PRECISION)
     function getCurrentAmp() public view returns (uint256) {
         uint256 _nextAmp = nextAmp;
         uint256 _nextAmpTime = nextAmpTime;

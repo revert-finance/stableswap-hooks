@@ -92,7 +92,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
     /// @param _salt CREATE2 salt computed via mineSalt or off-chain using HookMiner
-    /// @return hook The deployed StableSwapHooks contract
     function deploy(
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
@@ -116,8 +115,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _rateOracles Array of rate oracle configurations for each currency
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
-    /// @return hookAddress The computed hook address
-    /// @return salt The CREATE2 salt to use
     function mineSalt(
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
