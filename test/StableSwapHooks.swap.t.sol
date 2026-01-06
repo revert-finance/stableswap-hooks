@@ -14,36 +14,18 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 private constant STABLESWAP_SLIPPAGE_TOLERANCE = 0.0001e18; // 0.01%
 
-    uint256 private swapLpFeePercentage;
-    uint256 private swapHookFeePercentage;
-    uint256 private swapProtocolFeePercentage;
-
     function setUp() public override {
         super.setUp();
 
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
-
-        // Use 1%, 2%, 3% fees for testing (total 6%)
-        swapLpFeePercentage = 10000;
-        swapHookFeePercentage = 20000;
-        swapProtocolFeePercentage = 30000;
-
-        vm.startPrank(defaultAdmin);
-        hooks.setLpFeePercentage(swapLpFeePercentage);
-        hooks.setHookFeePercentage(swapHookFeePercentage);
-        hooks.setProtocolFeePercentage(swapProtocolFeePercentage);
-        hooks3.setLpFeePercentage(swapLpFeePercentage);
-        hooks3.setHookFeePercentage(swapHookFeePercentage);
-        hooks3.setProtocolFeePercentage(swapProtocolFeePercentage);
-        vm.stopPrank();
     }
 
-    function _totalFeePercentage() private view returns (uint256) {
-        return swapLpFeePercentage + swapHookFeePercentage + swapProtocolFeePercentage;
+    function _totalFeePercentage() private pure returns (uint256) {
+        return BASE_LP_FEE_PERCENTAGE + BASE_HOOK_FEE_PERCENTAGE + BASE_PROTOCOL_FEE_PERCENTAGE;
     }
 
     function _feePrecision() private view returns (uint256) {
-        return hooks.FEE_PRECISION();
+        return factory.FEE_PRECISION();
     }
 
     function _addFeesToAmount(uint256 amount) private view returns (uint256) {
@@ -79,12 +61,12 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         revert("StableSwap event not found");
     }
 
-    function _assertFeeRatios(StableSwapEventData memory _eventData) private view {
+    function _assertFeeRatios(StableSwapEventData memory _eventData) private pure {
         // Calculate expected fees from total (more accurate than multiplying lpFees)
         uint256 totalFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
-        uint256 expectedLpFees = totalFees * swapLpFeePercentage / _totalFeePercentage();
-        uint256 expectedHookFees = totalFees * swapHookFeePercentage / _totalFeePercentage();
-        uint256 expectedProtocolFees = totalFees * swapProtocolFeePercentage / _totalFeePercentage();
+        uint256 expectedLpFees = totalFees * BASE_LP_FEE_PERCENTAGE / _totalFeePercentage();
+        uint256 expectedHookFees = totalFees * BASE_HOOK_FEE_PERCENTAGE / _totalFeePercentage();
+        uint256 expectedProtocolFees = totalFees * BASE_PROTOCOL_FEE_PERCENTAGE / _totalFeePercentage();
 
         // Allow small rounding differences
         assertApproxEqAbs(_eventData.lpFees, expectedLpFees, 2);
@@ -372,24 +354,18 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertApproxEqRel(swapperBalance1After - swapperBalance1Before, expectedOutput, 0.01e18);
     }
 
-    function test_swap_WithZeroFees_ShouldSwapWithoutFeeDeduction() public {
+    function test_swap_WithZeroHookAndProtocolFees_ShouldOnlyChargeLpFees() public {
+        // Set hook and protocol fees to 0 via factory
         vm.startPrank(defaultAdmin);
-        hooks.setLpFeePercentage(0);
-        hooks.setHookFeePercentage(0);
-        hooks.setProtocolFeePercentage(0);
+        factory.setHookFeePercentage(address(hooks), 0);
+        factory.setProtocolFeePercentage(address(hooks), 0);
         vm.stopPrank();
 
         uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
 
-        uint256 swapperBalance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-
         _executeExactInputSwap(true, amountIn);
 
-        uint256 swapperBalance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-        uint256 amountOut = swapperBalance1After - swapperBalance1Before;
-
-        // With zero fees, output should be very close to input (only StableSwap curve variance)
-        assertApproxEqRel(amountOut, _toTokenWei(currency1, SWAP_AMOUNT), STABLESWAP_SLIPPAGE_TOLERANCE);
+        // With zero hook/protocol fees, no fees should accumulate in those buckets
         assertEq(hooks.protocolFees(0), 0);
         assertEq(hooks.protocolFees(1), 0);
         assertEq(hooks.hookFees(0), 0);

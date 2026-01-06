@@ -80,7 +80,7 @@ abstract contract Amp is Base {
         }
 
         uint256 scaledNextAmp = _nextAmp * StableSwapMath.AMP_PRECISION;
-        uint256 currentAmp = _currentAmp();
+        uint256 currentAmp = getCurrentAmp();
 
         if (scaledNextAmp < currentAmp) {
             if (scaledNextAmp * MAX_AMP_MULTIPLIER < currentAmp) {
@@ -104,7 +104,7 @@ abstract contract Amp is Base {
     /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
     /// @dev Sets both base and next amp to the current interpolated value
     function stopAmpRamp() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 currentAmp = _currentAmp();
+        uint256 currentAmp = getCurrentAmp();
 
         baseAmp = currentAmp;
         nextAmp = currentAmp;
@@ -114,8 +114,9 @@ abstract contract Amp is Base {
         emit AmpRampStopped(_msgSender(), currentAmp, block.timestamp);
     }
 
-    /// @dev Calculates the current amplification coefficient using linear interpolation
-    function _currentAmp() internal view returns (uint256) {
+    /// @notice Returns the current interpolated amplification coefficient
+    /// @return Current amplification coefficient (scaled by AMP_PRECISION)
+    function getCurrentAmp() public view returns (uint256) {
         uint256 _nextAmp = nextAmp;
         uint256 _nextAmpTime = nextAmpTime;
 

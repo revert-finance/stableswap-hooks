@@ -40,10 +40,9 @@ abstract contract Fees is Liquidity {
         poolManager.unlock(data);
     }
 
-    /// @notice Withdraws accumulated hook fees to a specified beneficiary
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
+    /// @notice Withdraws accumulated hook fees to the hook fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
-    function withdrawHookFees() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function withdrawHookFees() external {
         bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, _msgSender());
 
         poolManager.unlock(data);

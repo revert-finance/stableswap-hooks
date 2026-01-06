@@ -8,10 +8,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
@@ -19,7 +17,8 @@ import {IWstETH} from "lib/uniswap-hooks/lib/v4-periphery/src/interfaces/externa
 import {MockWstETH} from "lib/uniswap-hooks/lib/v4-periphery/test/mocks/MockWstETH.sol";
 
 import {Base} from "src/Base.sol";
-import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
+import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -46,16 +45,14 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
     uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
     uint256 internal constant BASE_AMP = 100;
-    uint160 internal constant HOOK_FLAGS = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-        | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-        | Hooks.BEFORE_DONATE_FLAG;
 
     uint256 internal constant SWAP_AMOUNT = 100;
     uint256 internal constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 internal constant STABLESWAP_SLIPPAGE_TOLERANCE = 0.01e18; // 1% tolerance for rate-adjusted swaps
     uint256 internal constant EXCHANGE_RATE = 11e17; // 1.1e18 - MockWstETH exchange rate
 
-    StableSwapHooksHarness internal hooksWstETH;
+    StableSwapHooksFactory internal factory;
+    StableSwapHooks internal hooksWstETH;
 
     Currency internal stETH;
     Currency internal wstETH;
@@ -65,6 +62,7 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
     address internal liquidityProvider;
     address internal swapper;
     address internal protocolFeeCollector;
+    address internal hookFeeCollector;
 
     function setUp() public virtual override {
         super.setUp();
@@ -74,6 +72,11 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
         swapper = makeAddr("swapper");
         unauthorizedUser = makeAddr("unauthorizedUser");
         protocolFeeCollector = makeAddr("protocolFeeCollector");
+        hookFeeCollector = makeAddr("hookFeeCollector");
+
+        // Deploy factory
+        factory =
+            new StableSwapHooksFactory(IPoolManager(poolManager), defaultAdmin, protocolFeeCollector, hookFeeCollector);
 
         // Deploy stETH and wstETH mocks directly
         MockStETH mockStETH = new MockStETH();
@@ -120,33 +123,14 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
             rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = HookMiner.find(
-            defaultAdmin,
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                currencies,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        (, bytes32 salt) = factory.mineSalt(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
-        vm.prank(defaultAdmin);
-        hooksWstETH = new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            currencies,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        hooksWstETH = factory.deploy(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+
+        vm.startPrank(defaultAdmin);
+        factory.setProtocolFeePercentage(address(hooksWstETH), BASE_PROTOCOL_FEE_PERCENTAGE);
+        factory.setHookFeePercentage(address(hooksWstETH), BASE_HOOK_FEE_PERCENTAGE);
+        vm.stopPrank();
     }
 
     function _dealWstETHTokens() private {

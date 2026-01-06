@@ -15,9 +15,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
-import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
 
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {PoolDonateTest} from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 
 import {Base} from "src/Base.sol";
@@ -60,7 +58,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
     }
 
     function test_initialize_ShouldRevertWhenCurrenciesNotSorted() public {
-        // Currencies in wrong order (currency1 < currency0 is false, so this is reversed)
         Currency[] memory unsortedCurrencies = new Currency[](2);
         unsortedCurrencies[0] = currency1;
         unsortedCurrencies[1] = currency0;
@@ -69,33 +66,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                unsortedCurrencies,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        (, bytes32 salt) = factory.mineSalt(defaultAdmin, unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.CurrenciesNotSorted.selector);
-        new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            unsortedCurrencies,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        factory.deploy(defaultAdmin, unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldRevertWhenTooFewCurrencies() public {
@@ -105,33 +79,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](1);
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                singleCurrency,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        (, bytes32 salt) = factory.mineSalt(defaultAdmin, singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            singleCurrency,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        factory.deploy(defaultAdmin, singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
@@ -142,33 +93,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                nineCurrencies,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        (, bytes32 salt) = factory.mineSalt(defaultAdmin, nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            nineCurrencies,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        factory.deploy(defaultAdmin, nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldSetCorrectPoolId() public view {
@@ -310,7 +238,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
     }
 
     function test_hooks3_ShouldCreateThreeValidPoolIds() public view {
-        // 3 currencies create 3 pairwise pools: (0,1), (0,2), (1,2)
         PoolKey memory poolKey01 = PoolKey({
             currency0: currency0,
             currency1: currency1,

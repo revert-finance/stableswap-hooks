@@ -66,7 +66,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.warp(block.timestamp + 1 days);
 
         // Should be approximately halfway through the ramp from 100 up to 200 (in scaled values: 10000 to 20000)
-        uint256 currentAmp = hooks.currentAmp();
+        uint256 currentAmp = hooks.getCurrentAmp();
         assertApproxEqAbs(currentAmp, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
     }
 
@@ -80,7 +80,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Fast forward past ramping completion
         vm.warp(nextAmpTime + 1);
 
-        assertEq(hooks.currentAmp(), 200 * StableSwapMath.AMP_PRECISION);
+        assertEq(hooks.getCurrentAmp(), 200 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
@@ -114,7 +114,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Fast forward halfway through ramping
         vm.warp(block.timestamp + 1 days);
-        uint256 currentAmpBeforeStop = hooks.currentAmp();
+        uint256 currentAmpBeforeStop = hooks.getCurrentAmp();
 
         // Stop ramping
         vm.prank(defaultAdmin);
@@ -123,7 +123,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         hooks.stopAmpRamp();
 
         // Verify amp is frozen at current value
-        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
+        assertEq(hooks.getCurrentAmp(), currentAmpBeforeStop);
         assertEq(hooks.baseAmp(), currentAmpBeforeStop);
         assertEq(hooks.nextAmp(), currentAmpBeforeStop);
         assertEq(hooks.baseAmpTime(), block.timestamp);
@@ -131,7 +131,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Warp further and verify amp doesn't change
         vm.warp(block.timestamp + 1 days);
-        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
+        assertEq(hooks.getCurrentAmp(), currentAmpBeforeStop);
     }
 
     // ==========================================================================
@@ -236,7 +236,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Warp halfway (current A should be ~150 scaled = 15000)
         vm.warp(block.timestamp + 1 days);
 
-        uint256 currentA = hooks.currentAmp();
+        uint256 currentA = hooks.getCurrentAmp();
         assertApproxEqAbs(currentA, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
 
         // Wait for MIN_RAMP_TIME
