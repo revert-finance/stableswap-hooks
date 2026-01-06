@@ -6,6 +6,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
+import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 import {Amp} from "src/Amp.sol";
 import {Fees} from "src/Fees.sol";
@@ -16,28 +17,22 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     /// @notice Error thrown when an unrecognized action is passed to the unlock callback
     error InvalidAction();
 
-    /// @notice Initializes the StableSwap hook with pool configuration and fee parameters
+    /// @notice Initializes the StableSwap hook with pool configuration
+    /// @dev Must be deployed via StableSwapHooksFactory. Fee percentages are managed by the factory.
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
     /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
-    /// @param _protocolFeeCollector Address that receives protocol fees
-    /// @param _protocolFeePercentage Protocol fee percentage (scaled by FEE_PRECISION)
-    /// @param _hookFeePercentage Hook fee percentage (scaled by FEE_PRECISION)
-    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
+    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION), stored in PoolKey.fee
     /// @param _baseAmp Initial amplification coefficient
     constructor(
         IPoolManager _poolManager,
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles,
-        address _protocolFeeCollector,
-        uint256 _protocolFeePercentage,
-        uint256 _hookFeePercentage,
         uint256 _lpFeePercentage,
         uint256 _baseAmp
     )
-        Base(_poolManager, _lpFeePercentage, _currencies, _rateOracles)
+        Base(_poolManager, IStableSwapHooksFactory(msg.sender), _lpFeePercentage, _currencies, _rateOracles)
         Amp(_baseAmp)
-        Fees(_protocolFeeCollector, _protocolFeePercentage, _hookFeePercentage, _lpFeePercentage)
     {}
 
     /// @notice Callback function invoked by the pool manager during unlock
