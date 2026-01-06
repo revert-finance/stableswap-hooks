@@ -15,6 +15,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {BaseHook} from "uniswap-hooks/base/BaseHook.sol";
 
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
+import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
 abstract contract Base is BaseHook, AccessControlEnumerable {
@@ -32,6 +33,9 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
 
     /// @notice Maximum number of currencies allowed in the pool
     uint256 public constant MAX_CURRENCIES = 4;
+
+    /// @notice The factory that deployed this hook
+    IStableSwapHooksFactory public immutable factory;
 
     /// @notice Number of currencies supported by this hook
     uint256 public immutable currenciesLength;
@@ -73,17 +77,20 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     /// @notice Initializes the base StableSwap hook configuration
     /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
+    /// @param _factory The factory that deployed this hook
     /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
     /// @param _currencies Array of currencies to create pools for, must be sorted in ascending order by address
     /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
     constructor(
         IPoolManager _poolManager,
+        IStableSwapHooksFactory _factory,
         uint256 _lpFeePercentage,
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
 
+        factory = _factory;
         currencies = _currencies;
         currenciesLength = _currencies.length;
 
@@ -130,25 +137,6 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
         return _currencyIndex[_currency] - 1;
     }
 
-    /// @dev Gets the rate for a currency, fetching from oracle if configured
-    function _getRate(uint256 _index) internal view returns (uint256 rate) {
-        rate = rates[_index];
-
-        RateOracleConfig memory oracleConfig = rateOracles[_index];
-
-        if (oracleConfig.oracle != address(0)) {
-            bytes memory returnData =
-                Address.functionStaticCall(oracleConfig.oracle, abi.encodeWithSelector(oracleConfig.selector));
-
-            if (returnData.length != 32) {
-                revert RateOracleCallFailed();
-            }
-
-            uint256 fetchedRate = abi.decode(returnData, (uint256));
-            rate = rate * fetchedRate / StableSwapMath.RATE_PRECISION;
-        }
-    }
-
     /// @notice Returns the hook permissions required by this contract
     /// @dev Enabled hooks:
     /// 1. beforeInitialize - validates pool is managed by this hook
@@ -174,6 +162,25 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
         });
+    }
+
+    /// @dev Gets the rate for a currency, fetching from oracle if configured
+    function _getRate(uint256 _index) internal view returns (uint256 rate) {
+        rate = rates[_index];
+
+        RateOracleConfig memory oracleConfig = rateOracles[_index];
+
+        if (oracleConfig.oracle != address(0)) {
+            bytes memory returnData =
+                Address.functionStaticCall(oracleConfig.oracle, abi.encodeWithSelector(oracleConfig.selector));
+
+            if (returnData.length != 32) {
+                revert RateOracleCallFailed();
+            }
+
+            uint256 fetchedRate = abi.decode(returnData, (uint256));
+            rate = rate * fetchedRate / StableSwapMath.RATE_PRECISION;
+        }
     }
 
     /// @dev Validates that the given pool key matches this hook's poolId

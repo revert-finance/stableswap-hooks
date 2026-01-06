@@ -11,9 +11,10 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
+import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
 /// @notice Factory for deploying StableSwapHooks contracts using CREATE2
-contract StableSwapHooksFactory is Ownable, Pausable {
+contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
     /// @notice Fee denominator for percentage calculations (100% = 1e6)
     uint256 public constant FEE_PRECISION = 1e6;
 
@@ -70,9 +71,10 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     constructor(IPoolManager _poolManager, address _owner, address _protocolFeeCollector, address _hookFeeCollector)
         Ownable(_owner)
     {
-        poolManager = _poolManager;
         _setProtocolFeeCollector(_protocolFeeCollector);
         _setHookFeeCollector(_hookFeeCollector);
+
+        poolManager = _poolManager;
     }
 
     /// @notice Sets the protocol fee collector address
@@ -111,6 +113,23 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         _unpause();
     }
 
+    /// @notice Calculates LP, hook, and protocol fees from a given amount for a hook
+    /// @param _hook The hook address
+    /// @param _amount The amount to calculate fees on
+    function getFees(address _hook, uint256 _amount)
+        external
+        view
+        returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees)
+    {
+        if (!isDeployedByFactory[_hook]) {
+            revert UnknownHook();
+        }
+
+        lpFees = _amount * lpFeePercentage[_hook] / FEE_PRECISION;
+        hookFees = _amount * hookFeePercentage[_hook] / FEE_PRECISION;
+        protocolFees = _amount * protocolFeePercentage[_hook] / FEE_PRECISION;
+    }
+
     /// @notice Deploys a new StableSwapHooks contract using CREATE2
     /// @param _currencies Array of currencies for the pool (must be sorted ascending)
     /// @param _rateOracles Array of rate oracle configurations for each currency
@@ -125,6 +144,10 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         uint256 _baseAmp,
         bytes32 _salt
     ) external whenNotPaused returns (StableSwapHooks hook) {
+        if (_lpFeePercentage > FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
         hook = new StableSwapHooks{salt: _salt}(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
         isDeployedByFactory[address(hook)] = true;
         lpFeePercentage[address(hook)] = _lpFeePercentage;
@@ -155,33 +178,57 @@ contract StableSwapHooksFactory is Ownable, Pausable {
 
     /// @dev Internal setter for protocol fee collector
     function _setProtocolFeeCollector(address _collector) private {
-        if (_collector == address(0)) revert ZeroAddress();
+        if (_collector == address(0)) {
+            revert ZeroAddress();
+        }
+
         protocolFeeCollector = _collector;
+
         emit ProtocolFeeCollectorSet(msg.sender, _collector);
     }
 
     /// @dev Internal setter for hook fee collector
     function _setHookFeeCollector(address _collector) private {
-        if (_collector == address(0)) revert ZeroAddress();
+        if (_collector == address(0)) {
+            revert ZeroAddress();
+        }
+
         hookFeeCollector = _collector;
+
         emit HookFeeCollectorSet(msg.sender, _collector);
     }
 
     /// @dev Internal setter for protocol fee percentage
     function _setProtocolFeePercentage(address _hook, uint256 _feePercentage) private {
         uint256 totalFees = _feePercentage + hookFeePercentage[_hook] + lpFeePercentage[_hook];
-        if (totalFees >= FEE_PRECISION) revert InvalidFeePercentage();
-        if (!isDeployedByFactory[_hook]) revert UnknownHook();
+
+        if (totalFees >= FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
+        if (!isDeployedByFactory[_hook]) {
+            revert UnknownHook();
+        }
+
         protocolFeePercentage[_hook] = _feePercentage;
+
         emit ProtocolFeePercentageSet(msg.sender, _hook, _feePercentage);
     }
 
     /// @dev Internal setter for hook fee percentage
     function _setHookFeePercentage(address _hook, uint256 _feePercentage) private {
         uint256 totalFees = protocolFeePercentage[_hook] + _feePercentage + lpFeePercentage[_hook];
-        if (totalFees >= FEE_PRECISION) revert InvalidFeePercentage();
-        if (!isDeployedByFactory[_hook]) revert UnknownHook();
+
+        if (totalFees >= FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
+        if (!isDeployedByFactory[_hook]) {
+            revert UnknownHook();
+        }
+
         hookFeePercentage[_hook] = _feePercentage;
+
         emit HookFeePercentageSet(msg.sender, _hook, _feePercentage);
     }
 }
