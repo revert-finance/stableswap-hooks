@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {Amp} from "src/Amp.sol";
@@ -258,26 +256,18 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
     // Access Control
     // ==========================================================================
 
-    function test_startAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
+    function test_startAmpRamp_ShouldRevertWhenCalledByNonFactoryOwner() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(Amp.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_stopAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_stopAmpRamp_ShouldRevertWhenCalledByNonFactoryOwner() public {
+        vm.expectRevert(Amp.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.stopAmpRamp();

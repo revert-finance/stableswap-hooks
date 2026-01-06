@@ -50,7 +50,7 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @param _amounts Array of amounts for each currency (max amounts for subsequent deposits)
     /// @param _minShares The minimum number of shares to receive (slippage protection)
     function addLiquidity(uint256[] calldata _amounts, uint256 _minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, _msgSender());
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -61,7 +61,7 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @param _shares The number of LP shares to burn
     /// @param _minAmounts Array of minimum amounts for each currency to receive (slippage protection)
     function removeLiquidity(uint256 _shares, uint256[] calldata _minAmounts) external {
-        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmounts, _msgSender());
+        bytes memory data = abi.encode(Actions.REMOVE_LIQUIDITY, _shares, _minAmounts, msg.sender);
 
         poolManager.unlock(data);
     }

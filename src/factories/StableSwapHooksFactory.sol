@@ -12,10 +12,9 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
-import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
 /// @notice Factory for deploying StableSwapHooks contracts using CREATE2
-contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
+contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Fee denominator for percentage calculations (100% = 1e6)
     uint256 public constant FEE_PRECISION = 1e6;
 
@@ -137,7 +136,6 @@ contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
     }
 
     /// @notice Deploys a new StableSwapHooks contract using CREATE2
-    /// @param _owner Address to grant DEFAULT_ADMIN_ROLE to on the deployed hook
     /// @param _currencies Array of currencies for the pool (must be sorted ascending)
     /// @param _rateOracles Array of rate oracle configurations for each currency
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
@@ -145,7 +143,6 @@ contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
     /// @param _salt CREATE2 salt computed via mineSalt or off-chain using HookMiner
     /// @return hook The deployed StableSwapHooks contract
     function deploy(
-        address _owner,
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
         uint256 _lpFeePercentage,
@@ -156,7 +153,7 @@ contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
             revert InvalidFeePercentage();
         }
 
-        hook = new StableSwapHooks{salt: _salt}(poolManager, _owner, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
+        hook = new StableSwapHooks{salt: _salt}(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
         isDeployedByFactory[address(hook)] = true;
         lpFeePercentage[address(hook)] = _lpFeePercentage;
 
@@ -165,7 +162,6 @@ contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
 
     /// @notice Mines a CREATE2 salt that produces an address with the required hook permission flags
     /// @dev Intended for off-chain use via eth_call. Reverts if no valid salt found.
-    /// @param _owner Address to grant DEFAULT_ADMIN_ROLE to on the deployed hook
     /// @param _currencies Array of currencies for the pool
     /// @param _rateOracles Array of rate oracle configurations for each currency
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
@@ -173,13 +169,12 @@ contract StableSwapHooksFactory is IStableSwapHooksFactory, Ownable, Pausable {
     /// @return hookAddress The computed hook address
     /// @return salt The CREATE2 salt to use
     function mineSalt(
-        address _owner,
         Currency[] memory _currencies,
         Base.RateOracleConfig[] memory _rateOracles,
         uint256 _lpFeePercentage,
         uint256 _baseAmp
     ) external view returns (address hookAddress, bytes32 salt) {
-        bytes memory constructorArgs = abi.encode(poolManager, _owner, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
+        bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
 
         (hookAddress, salt) =
             HookMiner.find(address(this), HOOK_FLAGS, type(StableSwapHooks).creationCode, constructorArgs);

@@ -66,10 +66,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.CurrenciesNotSorted.selector);
-        factory.deploy(defaultAdmin, unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldRevertWhenTooFewCurrencies() public {
@@ -79,10 +79,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](1);
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(defaultAdmin, singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
@@ -93,10 +93,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
             rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(defaultAdmin, nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        factory.deploy(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
     }
 
     function test_initialize_ShouldSetCorrectPoolId() public view {
@@ -135,9 +135,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertEq(hooks.reserves(1), 0);
     }
 
-    function test_initialize_ShouldGrantDefaultAdminRole() public view {
-        assertTrue(hooks.hasRole(hooks.DEFAULT_ADMIN_ROLE(), defaultAdmin));
-    }
 
     function test_getCurrencyIndex_ShouldReturnCorrectIndex() public view {
         assertEq(hooks.getCurrencyIndex(currency0), 0);
@@ -227,9 +224,6 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertEq(hooks3.reserves(2), 0);
     }
 
-    function test_hooks3_ShouldGrantDefaultAdminRole() public view {
-        assertTrue(hooks3.hasRole(hooks3.DEFAULT_ADMIN_ROLE(), defaultAdmin));
-    }
 
     function test_hooks3_getCurrencyIndex_ShouldReturnCorrectIndex() public view {
         assertEq(hooks3.getCurrencyIndex(currency0), 0);

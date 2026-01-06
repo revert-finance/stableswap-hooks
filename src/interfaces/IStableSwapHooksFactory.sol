@@ -3,6 +3,9 @@ pragma solidity 0.8.30;
 
 /// @notice Interface for StableSwapHooksFactory fee configuration
 interface IStableSwapHooksFactory {
+    /// @notice Returns the factory owner address
+    function owner() external view returns (address);
+
     /// @notice Returns the protocol fee collector address
     function protocolFeeCollector() external view returns (address);
 

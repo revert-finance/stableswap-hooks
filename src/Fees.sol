@@ -35,7 +35,7 @@ abstract contract Fees is Liquidity {
     /// @notice Withdraws accumulated protocol fees to the protocol fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     function withdrawProtocolFees() external {
-        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES, _msgSender());
+        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -43,7 +43,7 @@ abstract contract Fees is Liquidity {
     /// @notice Withdraws accumulated hook fees to the hook fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     function withdrawHookFees() external {
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, _msgSender());
+        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, msg.sender);
 
         poolManager.unlock(data);
     }

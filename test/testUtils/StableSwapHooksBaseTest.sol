@@ -80,9 +80,9 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
-        hooks = factory.deploy(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        hooks = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
 
         vm.startPrank(defaultAdmin);
         factory.setProtocolFeePercentage(address(hooks), BASE_PROTOCOL_FEE_PERCENTAGE);
@@ -101,9 +101,9 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[2] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
-        hooks3 = factory.deploy(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        hooks3 = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
 
         vm.startPrank(defaultAdmin);
         factory.setProtocolFeePercentage(address(hooks3), BASE_PROTOCOL_FEE_PERCENTAGE);

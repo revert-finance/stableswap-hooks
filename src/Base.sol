@@ -8,7 +8,6 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
-import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -18,7 +17,7 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
 /// @notice Abstract base contract for StableSwap hooks providing core state and configuration
-abstract contract Base is BaseHook, AccessControlEnumerable {
+abstract contract Base is BaseHook {
     /// @notice Configuration for a currency's rate oracle
     struct RateOracleConfig {
         address oracle;
@@ -75,23 +74,19 @@ abstract contract Base is BaseHook, AccessControlEnumerable {
     error InvalidRateOraclesLength();
 
     /// @notice Initializes the base StableSwap hook configuration
-    /// @dev Grants DEFAULT_ADMIN_ROLE to the specified owner. Initializes all pairwise pools for the provided currencies.
+    /// @dev Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _factory The factory that deployed this hook
-    /// @param _owner Address to grant DEFAULT_ADMIN_ROLE to
     /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
     /// @param _currencies Array of currencies to create pools for, must be sorted in ascending order by address
     /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
     constructor(
         IPoolManager _poolManager,
         IStableSwapHooksFactory _factory,
-        address _owner,
         uint256 _lpFeePercentage,
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
-        _grantRole(DEFAULT_ADMIN_ROLE, _owner);
-
         factory = _factory;
         currencies = _currencies;
         currenciesLength = _currencies.length;

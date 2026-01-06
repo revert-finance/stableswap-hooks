@@ -47,6 +47,9 @@ abstract contract Amp is Base {
     /// @notice Error thrown when amp change exceeds maximum allowed multiplier
     error ExcessiveAmpChange();
 
+    /// @notice Error thrown when caller is not the factory owner
+    error OnlyFactoryOwner();
+
     /// @notice Initializes the amplification coefficient
     /// @dev Scales the initial amp by AMP_PRECISION for internal calculations
     /// @param _baseAmp Initial amplification coefficient (unscaled)
@@ -62,11 +65,15 @@ abstract contract Amp is Base {
     }
 
     /// @notice Initiates a gradual ramp of the amplification coefficient to a new value
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
+    /// @dev Only callable by the factory owner
     /// @dev Validates time constraints and maximum change rate to ensure pool safety
     /// @param _nextAmp Target amplification coefficient (unscaled)
     /// @param _nextAmpTime Timestamp when the ramp should complete
-    function startAmpRamp(uint256 _nextAmp, uint256 _nextAmpTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function startAmpRamp(uint256 _nextAmp, uint256 _nextAmpTime) external {
+        if (msg.sender != factory.owner()) {
+            revert OnlyFactoryOwner();
+        }
+
         if (_nextAmp == 0 || _nextAmp >= MAX_AMP) {
             revert InvalidAmp();
         }
@@ -97,13 +104,17 @@ abstract contract Amp is Base {
         baseAmpTime = block.timestamp;
         nextAmpTime = _nextAmpTime;
 
-        emit AmpRampStarted(_msgSender(), currentAmp, scaledNextAmp, block.timestamp, _nextAmpTime);
+        emit AmpRampStarted(msg.sender, currentAmp, scaledNextAmp, block.timestamp, _nextAmpTime);
     }
 
     /// @notice Stops the current amplification coefficient ramp immediately
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
+    /// @dev Only callable by the factory owner
     /// @dev Sets both base and next amp to the current interpolated value
-    function stopAmpRamp() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function stopAmpRamp() external {
+        if (msg.sender != factory.owner()) {
+            revert OnlyFactoryOwner();
+        }
+
         uint256 currentAmp = getCurrentAmp();
 
         baseAmp = currentAmp;
@@ -111,7 +122,7 @@ abstract contract Amp is Base {
         baseAmpTime = block.timestamp;
         nextAmpTime = block.timestamp;
 
-        emit AmpRampStopped(_msgSender(), currentAmp, block.timestamp);
+        emit AmpRampStopped(msg.sender, currentAmp, block.timestamp);
     }
 
     /// @notice Returns the current interpolated amplification coefficient

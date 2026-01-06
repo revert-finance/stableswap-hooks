@@ -123,9 +123,9 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
             rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
-        (, bytes32 salt) = factory.mineSalt(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP);
 
-        hooksWstETH = factory.deploy(defaultAdmin, currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
+        hooksWstETH = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt);
 
         vm.startPrank(defaultAdmin);
         factory.setProtocolFeePercentage(address(hooksWstETH), BASE_PROTOCOL_FEE_PERCENTAGE);
