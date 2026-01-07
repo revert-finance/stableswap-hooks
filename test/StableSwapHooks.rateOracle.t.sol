@@ -131,7 +131,8 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        hooksWstETH = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+        hooksWstETH =
+            StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
 
         vm.startPrank(defaultAdmin);
         hooksWstETH.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);

@@ -232,7 +232,8 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         vm.expectEmit(true, true, false, false, address(factory));
         emit StableSwapHooksFactory.StableSwapHooksDeployed(address(this), expectedAddress);
 
-        StableSwapHooks hook = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+        StableSwapHooks hook =
+            StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
 
         assertEq(address(hook), expectedAddress);
         assertTrue(factory.isDeployedByFactory(address(hook)));
