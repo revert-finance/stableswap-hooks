@@ -44,6 +44,24 @@ abstract contract Liquidity is Amp, ERC20 {
 
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
+    /// @notice Quote the result of adding liquidity to the pool
+    /// @dev First deposit uses all amounts; subsequent deposits must be proportional to reserves
+    /// @param _amounts Array of amounts for each currency (max amounts for subsequent deposits)
+    function quoteAddLiquidity(uint256[] calldata _amounts)
+        external
+        view
+        returns (uint256 shares, uint256[] memory actualAmounts)
+    {
+        (shares, actualAmounts) = _calculateAddLiquidity(_amounts);
+    }
+
+    /// @notice Quote the result of removing liquidity from the pool
+    /// @dev Returns proportional amounts of all currencies for the given shares
+    /// @param _shares The number of LP shares to burn
+    function quoteRemoveLiquidity(uint256 _shares) external view returns (uint256[] memory amounts) {
+        amounts = _calculateRemoveLiquidity(_shares);
+    }
+
     /// @notice Add liquidity to the pool
     /// @dev First deposit uses all amounts; subsequent deposits must be proportional to reserves
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
@@ -101,60 +119,16 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256[] memory amounts, uint256 minShares, address sender) =
             abi.decode(data, (uint256, uint256[], uint256, address));
 
-        uint256 currentTotalSupply = totalSupply();
-        uint256[] memory actualAmounts = new uint256[](currenciesLength);
-        uint256 newShares;
+        bool isInitialDeposit = totalSupply() == 0;
 
-        if (currentTotalSupply == 0) {
-            uint256[] memory scaledAmounts = new uint256[](currenciesLength);
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                scaledAmounts[i] = StableSwapMath.scaleTo(amounts[i], _getRate(i));
-            }
-
-            newShares = StableSwapMath.geometricMean(scaledAmounts);
-
-            if (newShares < MINIMUM_LIQUIDITY) {
-                revert InsufficientInitialLiquidity();
-            }
-
-            newShares -= MINIMUM_LIQUIDITY;
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                actualAmounts[i] = amounts[i];
-            }
-
-            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
-        } else {
-            uint256[] memory cachedRates = new uint256[](currenciesLength);
-            uint256[] memory scaledReserves = new uint256[](currenciesLength);
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                cachedRates[i] = _getRate(i);
-                scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
-            }
-
-            uint256 minProportion = type(uint256).max;
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledAmount = StableSwapMath.scaleTo(amounts[i], cachedRates[i]);
-                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserves[i]);
-
-                if (proportion < minProportion) {
-                    minProportion = proportion;
-                }
-            }
-
-            newShares = minProportion;
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
-                actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
-            }
-        }
+        (uint256 newShares, uint256[] memory actualAmounts) = _calculateAddLiquidity(amounts);
 
         if (newShares < minShares) {
             revert InsufficientShares();
+        }
+
+        if (isInitialDeposit) {
+            _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         }
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
@@ -176,35 +150,93 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256 shares, uint256[] memory minAmounts, address sender) =
             abi.decode(data, (uint256, uint256, uint256[], address));
 
-        uint256 userShares = balanceOf(sender);
-
-        if (shares > userShares) {
+        if (shares > balanceOf(sender)) {
             revert InsufficientShares();
         }
 
-        uint256 currentTotalSupply = totalSupply();
-
-        uint256[] memory amounts = new uint256[](currenciesLength);
+        uint256[] memory amounts = _calculateRemoveLiquidity(shares);
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
-            uint256 amount = (shares * reserves[i]) / currentTotalSupply;
-
-            amounts[i] = amount;
-
-            if (amount < minAmounts[i]) {
+            if (amounts[i] < minAmounts[i]) {
                 revert InsufficientAmounts();
             }
 
             Currency currency = currencies[i];
 
-            poolManager.burn(address(this), currency.toId(), amount);
-            poolManager.take(currency, sender, amount);
+            poolManager.burn(address(this), currency.toId(), amounts[i]);
+            poolManager.take(currency, sender, amounts[i]);
 
-            reserves[i] -= amount;
+            reserves[i] -= amounts[i];
         }
 
         _burn(sender, shares);
 
         emit LiquidityRemoved(sender, amounts, shares);
+    }
+
+    /// @dev Calculates shares and actual amounts for adding liquidity
+    function _calculateAddLiquidity(uint256[] memory _amounts)
+        private
+        view
+        returns (uint256 shares, uint256[] memory actualAmounts)
+    {
+        uint256 currentTotalSupply = totalSupply();
+        actualAmounts = new uint256[](currenciesLength);
+
+        if (currentTotalSupply == 0) {
+            uint256[] memory scaledAmounts = new uint256[](currenciesLength);
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                scaledAmounts[i] = StableSwapMath.scaleTo(_amounts[i], _getRate(i));
+            }
+
+            shares = StableSwapMath.geometricMean(scaledAmounts);
+
+            if (shares < MINIMUM_LIQUIDITY) {
+                revert InsufficientInitialLiquidity();
+            }
+
+            shares -= MINIMUM_LIQUIDITY;
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                actualAmounts[i] = _amounts[i];
+            }
+        } else {
+            uint256[] memory cachedRates = new uint256[](currenciesLength);
+            uint256[] memory scaledReserves = new uint256[](currenciesLength);
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                cachedRates[i] = _getRate(i);
+                scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
+            }
+
+            uint256 minProportion = type(uint256).max;
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                uint256 scaledAmount = StableSwapMath.scaleTo(_amounts[i], cachedRates[i]);
+                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserves[i]);
+
+                if (proportion < minProportion) {
+                    minProportion = proportion;
+                }
+            }
+
+            shares = minProportion;
+
+            for (uint256 i = 0; i < currenciesLength; ++i) {
+                uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
+                actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
+            }
+        }
+    }
+
+    /// @dev Calculates withdrawal amounts for removing liquidity
+    function _calculateRemoveLiquidity(uint256 _shares) private view returns (uint256[] memory amounts) {
+        uint256 currentTotalSupply = totalSupply();
+        amounts = new uint256[](currenciesLength);
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            amounts[i] = (_shares * reserves[i]) / currentTotalSupply;
+        }
     }
 }

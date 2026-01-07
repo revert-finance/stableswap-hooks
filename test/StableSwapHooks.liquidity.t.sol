@@ -1062,4 +1062,202 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertGt(hooks.reserves(0), 0);
         assertGt(hooks.reserves(1), 0);
     }
+
+    // ==========================================================================
+    // Quote Add Liquidity
+    // ==========================================================================
+
+    function test_quoteAddLiquidity_InitialDeposit_ShouldMatchActualShares() public {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+
+        (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 actualShares = hooks.balanceOf(liquidityProvider);
+
+        assertEq(quotedShares, actualShares);
+        assertEq(quotedActualAmounts[0], amounts[0]);
+        assertEq(quotedActualAmounts[1], amounts[1]);
+    }
+
+    function test_quoteAddLiquidity_SubsequentDeposit_ShouldMatchActualShares() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 2);
+        amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 2);
+
+        (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 actualShares = hooks.balanceOf(liquidityProvider) - lpBalanceBefore;
+
+        assertEq(quotedShares, actualShares);
+        assertEq(quotedActualAmounts[0], hooks.reserves(0) - _toTokenWei(currency0, LIQUIDITY_AMOUNT));
+        assertEq(quotedActualAmounts[1], hooks.reserves(1) - _toTokenWei(currency1, LIQUIDITY_AMOUNT));
+    }
+
+    function test_quoteAddLiquidity_ImbalancedDeposit_ShouldReturnProportionalAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalanceBefore = hooks.balanceOf(liquidityProvider);
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        // Imbalanced amounts: token1 is limiting factor
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 2000);
+        amounts[1] = _toTokenWei(currency1, 1000);
+
+        (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
+
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, 0);
+
+        uint256 actualShares = hooks.balanceOf(liquidityProvider) - lpBalanceBefore;
+        uint256 actualAmount0 = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 actualAmount1 = balance1Before - IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        assertEq(quotedShares, actualShares);
+        assertEq(quotedActualAmounts[0], actualAmount0);
+        assertEq(quotedActualAmounts[1], actualAmount1);
+    }
+
+    function test_quoteAddLiquidity_ShouldRevertWhenBelowMinimumLiquidity() public {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 1;
+        amounts[1] = 0;
+
+        vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
+        hooks.quoteAddLiquidity(amounts);
+    }
+
+    // ==========================================================================
+    // Quote Remove Liquidity
+    // ==========================================================================
+
+    function test_quoteRemoveLiquidity_ShouldMatchActualAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
+
+        uint256[] memory quotedAmounts = hooks.quoteRemoveLiquidity(sharesToRemove);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, minAmounts);
+
+        uint256 actualAmount0 = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider) - balance0Before;
+        uint256 actualAmount1 = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before;
+
+        assertEq(quotedAmounts[0], actualAmount0);
+        assertEq(quotedAmounts[1], actualAmount1);
+    }
+
+    function test_quoteRemoveLiquidity_FullWithdrawal_ShouldMatchActualAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+
+        uint256[] memory quotedAmounts = hooks.quoteRemoveLiquidity(lpBalance);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(lpBalance, minAmounts);
+
+        uint256 actualAmount0 = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider) - balance0Before;
+        uint256 actualAmount1 = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before;
+
+        assertEq(quotedAmounts[0], actualAmount0);
+        assertEq(quotedAmounts[1], actualAmount1);
+    }
+
+    function test_quoteRemoveLiquidity_AfterSwaps_ShouldMatchActualAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Execute swaps to change reserves
+        _executeExactInputSwap(true, _toTokenWei(currency0, 1000));
+        _executeExactInputSwap(false, _toTokenWei(currency1, 500));
+
+        uint256 lpBalance = hooks.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 4;
+
+        uint256[] memory quotedAmounts = hooks.quoteRemoveLiquidity(sharesToRemove);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+
+        uint256[] memory minAmounts = new uint256[](2);
+        vm.prank(liquidityProvider);
+        hooks.removeLiquidity(sharesToRemove, minAmounts);
+
+        uint256 actualAmount0 = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider) - balance0Before;
+        uint256 actualAmount1 = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before;
+
+        assertEq(quotedAmounts[0], actualAmount0);
+        assertEq(quotedAmounts[1], actualAmount1);
+    }
+
+    // ==========================================================================
+    // Quote Functions - Multi-Currency (hooks3)
+    // ==========================================================================
+
+    function test_hooks3_quoteAddLiquidity_ShouldMatchActualShares() public {
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+        amounts[2] = _toTokenWei(currency2, LIQUIDITY_AMOUNT);
+
+        (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks3.quoteAddLiquidity(amounts);
+
+        vm.prank(liquidityProvider);
+        hooks3.addLiquidity(amounts, 0);
+
+        uint256 actualShares = hooks3.balanceOf(liquidityProvider);
+
+        assertEq(quotedShares, actualShares);
+        assertEq(quotedActualAmounts[0], amounts[0]);
+        assertEq(quotedActualAmounts[1], amounts[1]);
+        assertEq(quotedActualAmounts[2], amounts[2]);
+    }
+
+    function test_hooks3_quoteRemoveLiquidity_ShouldMatchActualAmounts() public {
+        _addLiquidity3(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        uint256 lpBalance = hooks3.balanceOf(liquidityProvider);
+        uint256 sharesToRemove = lpBalance / 2;
+
+        uint256[] memory quotedAmounts = hooks3.quoteRemoveLiquidity(sharesToRemove);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
+        uint256 balance2Before = IERC20(Currency.unwrap(currency2)).balanceOf(liquidityProvider);
+
+        uint256[] memory minAmounts = new uint256[](3);
+        vm.prank(liquidityProvider);
+        hooks3.removeLiquidity(sharesToRemove, minAmounts);
+
+        uint256 actualAmount0 = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider) - balance0Before;
+        uint256 actualAmount1 = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider) - balance1Before;
+        uint256 actualAmount2 = IERC20(Currency.unwrap(currency2)).balanceOf(liquidityProvider) - balance2Before;
+
+        assertEq(quotedAmounts[0], actualAmount0);
+        assertEq(quotedAmounts[1], actualAmount1);
+        assertEq(quotedAmounts[2], actualAmount2);
+    }
 }

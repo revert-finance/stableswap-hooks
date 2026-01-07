@@ -213,28 +213,34 @@ StableSwapHooks hook = factory.deploy(
 ### Adding Liquidity
 
 ```solidity
-// Approve tokens first
-token0.approve(address(hook), amount0);
-token1.approve(address(hook), amount1);
-
 // Prepare amounts array
 uint256[] memory amounts = new uint256[](2);
 amounts[0] = amount0;
 amounts[1] = amount1;
 
+// Quote first to get expected shares and actual amounts
+(uint256 expectedShares, uint256[] memory actualAmounts) = hook.quoteAddLiquidity(amounts);
+
+// Approve only what will be used
+token0.approve(address(hook), actualAmounts[0]);
+token1.approve(address(hook), actualAmounts[1]);
+
 // Add liquidity with slippage protection
-hook.addLiquidity(amounts, minShares);
+hook.addLiquidity(amounts, expectedShares * 99 / 100); // 1% slippage
 ```
 
-> **Note:** Only proportional amounts are pulled from the user. Unused approval remains. Some tokens like USDT require resetting approval to 0 before approving again.
+> **Note:** Only proportional amounts are pulled from the user. Use `quoteAddLiquidity` to preview exact amounts. Some tokens like USDT require resetting approval to 0 before approving again.
 
 ### Removing Liquidity
 
 ```solidity
-// Prepare minimum amounts array
+// Quote first to get expected withdrawal amounts
+uint256[] memory expectedAmounts = hook.quoteRemoveLiquidity(shares);
+
+// Set minimum amounts with slippage tolerance
 uint256[] memory minAmounts = new uint256[](2);
-minAmounts[0] = minAmount0;
-minAmounts[1] = minAmount1;
+minAmounts[0] = expectedAmounts[0] * 99 / 100; // 1% slippage
+minAmounts[1] = expectedAmounts[1] * 99 / 100;
 
 // Burn LP shares and receive tokens proportionally
 hook.removeLiquidity(shares, minAmounts);
@@ -316,14 +322,16 @@ factory.unpause();
 
 ### View Functions
 
-| Function                                      | Description                          |
-| --------------------------------------------- | ------------------------------------ |
-| `getCurrencyIndex(Currency)`                  | Get index of a currency in the pool  |
-| `currencies(uint256)`                         | Get currency address at index        |
-| `reserves(uint256)`                           | Get current reserve for a currency   |
-| `rates(uint256)`                              | Get base scaling rate for a currency |
-| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency    |
-| `factory.isDeployedByFactory(address)`        | Check if hook was deployed by factory|
+| Function                                      | Description                                        |
+| --------------------------------------------- | -------------------------------------------------- |
+| `quoteAddLiquidity(uint256[])`                | Simulate deposit: returns shares and actual amounts|
+| `quoteRemoveLiquidity(uint256)`               | Simulate withdrawal: returns amounts per currency  |
+| `getCurrencyIndex(Currency)`                  | Get index of a currency in the pool                |
+| `currencies(uint256)`                         | Get currency address at index                      |
+| `reserves(uint256)`                           | Get current reserve for a currency                 |
+| `rates(uint256)`                              | Get base scaling rate for a currency               |
+| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency                  |
+| `factory.isDeployedByFactory(address)`        | Check if hook was deployed by factory              |
 
 ## Hook Permissions
 
