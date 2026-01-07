@@ -90,18 +90,18 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
     }
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
-        Currency[] memory nineCurrencies = new Currency[](9);
-        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](9);
-        for (uint160 i = 0; i < 9; i++) {
-            nineCurrencies[i] = Currency.wrap(address(uint160(i + 1)));
+        Currency[] memory fiveCurrencies = new Currency[](5);
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](5);
+        for (uint160 i = 0; i < 5; i++) {
+            fiveCurrencies[i] = Currency.wrap(address(uint160(i + 1)));
             rateOracles[i] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         }
 
         bytes memory code = type(StableSwapHooks).creationCode;
-        (, bytes32 salt) = factory.mineSalt(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+        (, bytes32 salt) = factory.mineSalt(fiveCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(nineCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        factory.deploy(fiveCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {

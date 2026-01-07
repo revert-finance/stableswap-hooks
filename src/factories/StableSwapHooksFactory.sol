@@ -100,12 +100,12 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _salt CREATE2 salt computed via mineSalt or off-chain using HookMiner
     /// @param _creationCode StableSwapHooks creation bytecode (validated against stored hash)
     function deploy(
-        Currency[] memory _currencies,
-        Base.RateOracleConfig[] memory _rateOracles,
+        Currency[] calldata _currencies,
+        Base.RateOracleConfig[] calldata _rateOracles,
         uint256 _lpFeePercentage,
         uint256 _baseAmp,
         bytes32 _salt,
-        bytes memory _creationCode
+        bytes calldata _creationCode
     ) external whenNotPaused returns (address deployedHook) {
         if (keccak256(_creationCode) != creationCodeHash) {
             revert InvalidCreationCode();
@@ -130,11 +130,11 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _baseAmp Initial amplification coefficient
     /// @param _creationCode StableSwapHooks creation bytecode
     function mineSalt(
-        Currency[] memory _currencies,
-        Base.RateOracleConfig[] memory _rateOracles,
+        Currency[] calldata _currencies,
+        Base.RateOracleConfig[] calldata _rateOracles,
         uint256 _lpFeePercentage,
         uint256 _baseAmp,
-        bytes memory _creationCode
+        bytes calldata _creationCode
     ) external view returns (address hookAddress, bytes32 salt) {
         bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
 
