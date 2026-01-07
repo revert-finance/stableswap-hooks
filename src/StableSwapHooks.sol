@@ -9,7 +9,6 @@ import {Actions} from "src/libraries/Actions.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 import {Amp} from "src/Amp.sol";
-import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";
 
 /// @notice Main entry point contract implementing Uniswap v4 hooks for a StableSwap AMM

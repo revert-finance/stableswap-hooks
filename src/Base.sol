@@ -81,9 +81,7 @@ abstract contract Base is BaseHook {
 
     /// @notice Restricts function access to the factory owner
     modifier onlyFactoryOwner() {
-        if (msg.sender != factory.owner()) {
-            revert OnlyFactoryOwner();
-        }
+        _checkFactoryOwner();
         _;
     }
 
@@ -207,5 +205,12 @@ abstract contract Base is BaseHook {
         _validatePoolId(_poolKey);
 
         return BaseHook.beforeInitialize.selector;
+    }
+
+    /// @dev Validates that msg.sender is the factory owner
+    function _checkFactoryOwner() private view {
+        if (msg.sender != factory.owner()) {
+            revert OnlyFactoryOwner();
+        }
     }
 }

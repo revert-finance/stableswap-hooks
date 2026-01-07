@@ -12,7 +12,6 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 import {Base} from "src/Base.sol";
-import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 /// @notice Factory for deploying StableSwapHooks contracts using CREATE2
 contract StableSwapHooksFactory is Ownable, Pausable {
