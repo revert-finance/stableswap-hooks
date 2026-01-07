@@ -107,7 +107,7 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         uint256 _baseAmp,
         bytes32 _salt,
         bytes memory _creationCode
-    ) external whenNotPaused returns (StableSwapHooks hook) {
+    ) external whenNotPaused returns (address deployedHook) {
         if (keccak256(_creationCode) != creationCodeHash) {
             revert InvalidCreationCode();
         }
@@ -116,10 +116,11 @@ contract StableSwapHooksFactory is Ownable, Pausable {
             _creationCode, abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp)
         );
 
-        hook = StableSwapHooks(Create2.deploy(0, _salt, bytecode));
-        isDeployedByFactory[address(hook)] = true;
+        deployedHook = Create2.deploy(0, _salt, bytecode);
 
-        emit StableSwapHooksDeployed(msg.sender, address(hook));
+        isDeployedByFactory[deployedHook] = true;
+
+        emit StableSwapHooksDeployed(msg.sender, deployedHook);
     }
 
     /// @notice Mines a CREATE2 salt that produces an address with the required hook permission flags

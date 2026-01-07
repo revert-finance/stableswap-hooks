@@ -88,7 +88,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        hooks = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        hooks = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
 
         vm.startPrank(defaultAdmin);
         hooks.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
@@ -110,7 +110,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        hooks3 = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        hooks3 = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
 
         vm.startPrank(defaultAdmin);
         hooks3.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);

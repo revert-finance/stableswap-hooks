@@ -54,7 +54,7 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        return factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        return StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
     }
 
     // ==========================================================================
@@ -232,7 +232,7 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         vm.expectEmit(true, true, false, false, address(factory));
         emit StableSwapHooksFactory.StableSwapHooksDeployed(address(this), expectedAddress);
 
-        StableSwapHooks hook = factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        StableSwapHooks hook = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
 
         assertEq(address(hook), expectedAddress);
         assertTrue(factory.isDeployedByFactory(address(hook)));
