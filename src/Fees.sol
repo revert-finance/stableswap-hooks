@@ -1,45 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
 import {Liquidity} from "src/Liquidity.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
 abstract contract Fees is Liquidity {
-    /// @notice Precision constant for fee calculations (1,000,000 = 100%)
-    uint256 public constant FEE_PRECISION = 1e6;
-
-    /// @notice Address that receives protocol fees
-    address public protocolFeeCollector;
+    /// @notice Fee denominator for percentage calculations (100% = 1e6)
+    uint256 public constant FEE_PRECISION = LPFeeLibrary.MAX_LP_FEE;
 
     /// @notice Protocol fee percentage (scaled by FEE_PRECISION)
     uint256 public protocolFeePercentage;
 
-    /// @notice Accumulated protocol fees for currencies
-    uint256[] public protocolFees;
-
     /// @notice Hook fee percentage (scaled by FEE_PRECISION)
     uint256 public hookFeePercentage;
 
+    /// @notice Accumulated protocol fees for currencies
+    uint256[] public protocolFees;
+
     /// @notice Accumulated hook fees for currencies
     uint256[] public hookFees;
-
-    /// @notice LP fee percentage (scaled by FEE_PRECISION)
-    uint256 public lpFeePercentage;
-
-    /// @notice Emitted when the protocol fee collector address is updated
-    event ProtocolFeeCollectorSet(address indexed _sender, address _protocolFeeCollector);
-
-    /// @notice Emitted when the protocol fee percentage is updated
-    event ProtocolFeePercentageSet(address indexed _sender, uint256 _protocolFeePercentage);
-
-    /// @notice Emitted when the hook fee percentage is updated
-    event HookFeePercentageSet(address indexed _sender, uint256 _hookFeePercentage);
-
-    /// @notice Emitted when the LP fee percentage is updated
-    event LpFeePercentageSet(address indexed _sender, uint256 _lpFeePercentage);
 
     /// @notice Emitted when protocol fees are withdrawn
     event ProtocolFeesWithdrawn(
@@ -47,80 +29,66 @@ abstract contract Fees is Liquidity {
     );
 
     /// @notice Emitted when hook fees are withdrawn
-    event HookFeesWithdrawn(address indexed _sender, address indexed _beneficiary, uint256[] _hookFees);
+    event HookFeesWithdrawn(address indexed _sender, address indexed _hookFeeCollector, uint256[] _hookFees);
+
+    /// @notice Emitted when protocol fee percentage is updated
+    event ProtocolFeePercentageSet(address indexed _sender, uint256 _feePercentage);
+
+    /// @notice Emitted when hook fee percentage is updated
+    event HookFeePercentageSet(address indexed _sender, uint256 _feePercentage);
 
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
 
-    /// @notice Error thrown when fee percentages sum exceeds FEE_PRECISION
+    /// @notice Error thrown when fee percentage is invalid
     error InvalidFeePercentage();
 
-    /// @notice Initializes the fee configuration
-    /// @dev Each fee setter validates that the sum of all fee percentages does not exceed FEE_PRECISION
-    /// @param _protocolFeeCollector Address that will receive protocol fees
-    /// @param _protocolFeePercentage Initial protocol fee percentage
-    /// @param _hookFeePercentage Initial hook fee percentage
-    /// @param _lpFeePercentage Initial LP fee percentage
-    constructor(
-        address _protocolFeeCollector,
-        uint256 _protocolFeePercentage,
-        uint256 _hookFeePercentage,
-        uint256 _lpFeePercentage
-    ) {
-        _setProtocolFeeCollector(_protocolFeeCollector);
-        _setProtocolFeePercentage(_protocolFeePercentage);
-        _setHookFeePercentage(_hookFeePercentage);
-        _setLpFeePercentage(_lpFeePercentage);
-
+    /// @dev Initializes fee accumulator arrays for each currency
+    constructor() {
         protocolFees = new uint256[](currenciesLength);
         hookFees = new uint256[](currenciesLength);
     }
 
-    /// @notice Updates the protocol fee collector address
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
-    /// @param _protocolFeeCollector New protocol fee collector address
-    function setProtocolFeeCollector(address _protocolFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setProtocolFeeCollector(_protocolFeeCollector);
+    /// @notice Sets the protocol fee percentage
+    /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
+    function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
+        uint256 totalFees = _feePercentage + hookFeePercentage + lpFeePercentage;
+
+        if (totalFees > FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
+        protocolFeePercentage = _feePercentage;
+
+        emit ProtocolFeePercentageSet(msg.sender, _feePercentage);
     }
 
-    /// @notice Updates the protocol fee percentage
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
-    /// @dev Reverts if total fee percentages exceed FEE_PRECISION
-    /// @param _protocolFeePercentage New protocol fee percentage
-    function setProtocolFeePercentage(uint256 _protocolFeePercentage) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setProtocolFeePercentage(_protocolFeePercentage);
-    }
+    /// @notice Sets the hook fee percentage
+    /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
+    function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
+        uint256 totalFees = protocolFeePercentage + _feePercentage + lpFeePercentage;
 
-    /// @notice Updates the hook fee percentage
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
-    /// @dev Reverts if total fee percentages exceed FEE_PRECISION
-    /// @param _hookFeePercentage New hook fee percentage
-    function setHookFeePercentage(uint256 _hookFeePercentage) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setHookFeePercentage(_hookFeePercentage);
-    }
+        if (totalFees > FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
 
-    /// @notice Updates the LP fee percentage
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
-    /// @dev Reverts if total fee percentages exceed FEE_PRECISION
-    /// @param _lpFeePercentage New LP fee percentage
-    function setLpFeePercentage(uint256 _lpFeePercentage) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setLpFeePercentage(_lpFeePercentage);
+        hookFeePercentage = _feePercentage;
+
+        emit HookFeePercentageSet(msg.sender, _feePercentage);
     }
 
     /// @notice Withdraws accumulated protocol fees to the protocol fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     function withdrawProtocolFees() external {
-        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES, _msgSender());
+        bytes memory data = abi.encode(Actions.WITHDRAW_PROTOCOL_FEES, msg.sender);
 
         poolManager.unlock(data);
     }
 
-    /// @notice Withdraws accumulated hook fees to a specified beneficiary
-    /// @dev Only callable by addresses with DEFAULT_ADMIN_ROLE
+    /// @notice Withdraws accumulated hook fees to the hook fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
-    /// @param _beneficiary Address that will receive the hook fees
-    function withdrawHookFees(address _beneficiary) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, _msgSender(), _beneficiary);
+    function withdrawHookFees() external {
+        bytes memory data = abi.encode(Actions.WITHDRAW_HOOK_FEES, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -129,7 +97,7 @@ abstract contract Fees is Liquidity {
     function _handleWithdrawProtocolFeesCallback(bytes calldata data) internal {
         (, address sender) = abi.decode(data, (uint256, address));
 
-        address _protocolFeeCollector = protocolFeeCollector;
+        address _protocolFeeCollector = factory.protocolFeeCollector();
         uint256[] memory _protocolFees = protocolFees;
 
         _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
@@ -143,80 +111,18 @@ abstract contract Fees is Liquidity {
 
     /// @dev Callback handler for hook fee withdrawals
     function _handleWithdrawHookFeesCallback(bytes calldata data) internal {
-        (, address sender, address _beneficiary) = abi.decode(data, (uint256, address, address));
+        (, address sender) = abi.decode(data, (uint256, address));
 
+        address _hookFeeCollector = factory.hookFeeCollector();
         uint256[] memory _hookFees = hookFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_beneficiary, _hookFees);
+        _handleWithdrawFeesPoolManagerAccounting(_hookFeeCollector, _hookFees);
 
         for (uint256 i = 0; i < currenciesLength; i++) {
             hookFees[i] = 0;
         }
 
-        emit HookFeesWithdrawn(sender, _beneficiary, _hookFees);
-    }
-
-    /// @dev Calculates LP, hook, and protocol fees from a given amount
-    function _getFees(uint256 _amount)
-        internal
-        view
-        returns (uint256 _lpFees, uint256 _hookFees, uint256 _protocolFees)
-    {
-        _lpFees = _amount * lpFeePercentage / FEE_PRECISION;
-        _hookFees = _amount * hookFeePercentage / FEE_PRECISION;
-        _protocolFees = _amount * protocolFeePercentage / FEE_PRECISION;
-    }
-
-    /// @dev Adds fees to the appropriate accumulators
-    function _addFees(uint256 _currencyIndex, uint256 _protocolFees, uint256 _hookFees) internal {
-        protocolFees[_currencyIndex] += _protocolFees;
-        hookFees[_currencyIndex] += _hookFees;
-    }
-
-    /// @dev Sets the protocol fee collector address
-    function _setProtocolFeeCollector(address _protocolFeeCollector) private {
-        protocolFeeCollector = _protocolFeeCollector;
-
-        emit ProtocolFeeCollectorSet(_msgSender(), _protocolFeeCollector);
-    }
-
-    /// @dev Sets the protocol fee percentage with validation
-    function _setProtocolFeePercentage(uint256 _protocolFeePercentage) private {
-        uint256 feePercentageSum = _protocolFeePercentage + hookFeePercentage + lpFeePercentage;
-
-        if (feePercentageSum > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        protocolFeePercentage = _protocolFeePercentage;
-
-        emit ProtocolFeePercentageSet(_msgSender(), _protocolFeePercentage);
-    }
-
-    /// @dev Sets the hook fee percentage with validation
-    function _setHookFeePercentage(uint256 _hookFeePercentage) private {
-        uint256 feePercentageSum = protocolFeePercentage + _hookFeePercentage + lpFeePercentage;
-
-        if (feePercentageSum > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        hookFeePercentage = _hookFeePercentage;
-
-        emit HookFeePercentageSet(_msgSender(), _hookFeePercentage);
-    }
-
-    /// @dev Sets the LP fee percentage with validation
-    function _setLpFeePercentage(uint256 _lpFeePercentage) private {
-        uint256 feePercentageSum = protocolFeePercentage + hookFeePercentage + _lpFeePercentage;
-
-        if (feePercentageSum > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        lpFeePercentage = _lpFeePercentage;
-
-        emit LpFeePercentageSet(_msgSender(), _lpFeePercentage);
+        emit HookFeesWithdrawn(sender, _hookFeeCollector, _hookFees);
     }
 
     /// @dev Handles pool manager accounting for fee withdrawals
@@ -231,5 +137,24 @@ abstract contract Fees is Liquidity {
                 poolManager.take(currencies[i], _beneficiary, _fees[i]);
             }
         }
+    }
+
+    /// @notice Calculates LP, hook, and protocol fees from a given amount
+    /// @param _amount The amount to calculate fees on
+    function _getFees(uint256 _amount)
+        internal
+        view
+        returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
+    {
+        lpFees =
+            _amount * lpFeePercentage / FEE_PRECISION;
+        hookFees_ = _amount * hookFeePercentage / FEE_PRECISION;
+        protocolFees_ = _amount * protocolFeePercentage / FEE_PRECISION;
+    }
+
+    /// @dev Adds fees to the appropriate accumulators
+    function _addFees(uint256 _currencyIndex, uint256 _protocolFees, uint256 _hookFees) internal {
+        protocolFees[_currencyIndex] += _protocolFees;
+        hookFees[_currencyIndex] += _hookFees;
     }
 }

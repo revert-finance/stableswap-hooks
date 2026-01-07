@@ -102,7 +102,7 @@ abstract contract Swap is Fees {
             ctx.scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], _getRate(i));
         }
 
-        ctx.amp = _currentAmp();
+        ctx.amp = getCurrentAmp();
         ctx.invariant = StableSwapMath.getInvariant(ctx.scaledReserves, ctx.amp);
     }
 

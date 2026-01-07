@@ -34,6 +34,8 @@ src/
 ├── Liquidity.sol            # LP token & liquidity management (ERC20)
 ├── Fees.sol                 # Three-tier fee collection & distribution
 ├── Amp.sol                  # Amplification coefficient management
+├── factories/
+│   └── StableSwapHooksFactory.sol  # CREATE2 factory for hook deployment
 └── libraries/
     ├── StableSwapMath.sol   # Core mathematical operations
     └── Actions.sol          # Action type identifiers
@@ -49,6 +51,10 @@ StableSwapHooks
                 └── Amp
                     └── Base
                         └── BaseHook (OpenZeppelin)
+
+StableSwapHooksFactory (Ownable, Pausable)
+    └── Deploys StableSwapHooks via CREATE2
+    └── Manages fee collectors
 ```
 
 ## Features
@@ -73,10 +79,14 @@ StableSwapHooks
 | Fee Type      | Recipient           | Description                                       |
 | ------------- | ------------------- | ------------------------------------------------- |
 | LP Fees       | Liquidity Providers | Accumulated in reserves, increases LP token value |
-| Hook Fees     | Hook Operator       | Withdrawable to admin-designated address          |
-| Protocol Fees | Protocol Treasury   | Withdrawable to configured collector address      |
+| Hook Fees     | Hook Fee Collector  | Withdrawable to factory-configured address        |
+| Protocol Fees | Protocol Treasury   | Withdrawable to factory-configured address        |
 
 All fees use `FEE_PRECISION = 1e6` (100% = 1,000,000). Total fees cannot exceed 100%.
+
+- **LP fee**: Set at deployment (immutable)
+- **Protocol/Hook fees**: Configurable by factory owner
+- **Fee collectors**: Managed on factory, shared across all hooks
 
 ### Amplification Coefficient
 
@@ -112,9 +122,26 @@ Each currency can have a custom rate oracle to define non-1:1 balance rates for 
 
 ## Usage
 
-### Deployment & Initialization
+### Factory Deployment
 
-The hook must be deployed to an address that encodes the correct permission flags. Use `HookMiner` to find a valid salt:
+First, deploy the factory:
+
+```solidity
+// Compute creation code hash off-chain or in deployment script
+bytes32 creationCodeHash = keccak256(type(StableSwapHooks).creationCode);
+
+StableSwapHooksFactory factory = new StableSwapHooksFactory(
+    poolManager,
+    owner,                  // Factory owner (admin)
+    protocolFeeCollector,   // Receives protocol fees
+    hookFeeCollector,       // Receives hook fees
+    creationCodeHash        // For bytecode validation
+);
+```
+
+### Hook Deployment
+
+Deploy hooks via the factory:
 
 ```solidity
 // 1. Prepare currencies (must be sorted by address in ascending uint160 order)
@@ -127,17 +154,31 @@ RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
 rateOracles[0] = RateOracleConfig(address(0), bytes4(0)); // Static rate
 rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // Static rate
 
-// 3. Deploy the hook with CREATE2 to a valid hook address
-StableSwapHooks hook = new StableSwapHooks{salt: salt}(
-    poolManager,
+// 3. Get creation code
+bytes memory creationCode = type(StableSwapHooks).creationCode;
+
+// 4. Mine a valid CREATE2 salt (off-chain via eth_call)
+(address hookAddress, bytes32 salt) = factory.mineSalt(
     currencies,
     rateOracles,
-    protocolFeeCollector,
-    protocolFeePercentage,   // e.g., 500 = 0.05%
-    hookFeePercentage,       // e.g., 1000 = 0.1%
-    lpFeePercentage,         // e.g., 3000 = 0.3%
-    amplificationCoefficient // e.g., 100
+    3000,  // 0.3% LP fee (immutable)
+    100,   // A = 100
+    creationCode
 );
+
+// 5. Deploy the hook
+StableSwapHooks hook = factory.deploy(
+    currencies,
+    rateOracles,
+    3000,  // 0.3% LP fee
+    100,   // A = 100
+    salt,
+    creationCode
+);
+
+// 6. Configure fees (optional, factory owner only)
+hook.setProtocolFeePercentage(500);  // 0.05%
+hook.setHookFeePercentage(1000);     // 0.1%
 
 // Note: All pairwise pools are automatically initialized by the constructor
 ```
@@ -156,15 +197,16 @@ rateOracles[0] = RateOracleConfig(
 );
 rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // WETH: static rate
 
-StableSwapHooks hook = new StableSwapHooks{salt: salt}(
-    poolManager,
+bytes memory creationCode = type(StableSwapHooks).creationCode;
+(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, 300, 100, creationCode);
+
+StableSwapHooks hook = factory.deploy(
     currencies,
     rateOracles,
-    protocolFeeCollector,
-    500,  // 0.05% protocol fee
-    1000, // 0.1% hook fee
-    300,  // 0.03% LP fee
-    100   // A = 100
+    300,   // 0.03% LP fee
+    100,   // A = 100
+    salt,
+    creationCode
 );
 ```
 
@@ -217,20 +259,28 @@ universalRouter.execute(
 
 ### Admin Functions
 
+Admin functions require being the factory owner:
+
 ```solidity
-// Fee management
-hook.setLpFeePercentage(3000);           // 0.3%
-hook.setHookFeePercentage(1000);         // 0.1%
-hook.setProtocolFeePercentage(500);      // 0.05%
-hook.setProtocolFeeCollector(treasury);
+// Fee percentage management (on hook, factory owner only)
+hook.setProtocolFeePercentage(500);   // 0.05%
+hook.setHookFeePercentage(1000);      // 0.1%
 
-// Withdraw accumulated fees
+// Fee collector management (on factory, factory owner only)
+factory.setProtocolFeeCollector(newProtocolCollector);
+factory.setHookFeeCollector(newHookCollector);
+
+// Withdraw accumulated fees (anyone can call, goes to configured collectors)
 hook.withdrawProtocolFees();
-hook.withdrawHookFees(beneficiary);
+hook.withdrawHookFees();
 
-// Amplification adjustment
+// Amplification adjustment (factory owner only)
 hook.startAmpRamp(newAmp, block.timestamp + 7 days);
 hook.stopAmpRamp();  // Emergency stop
+
+// Factory controls (factory owner only)
+factory.pause();    // Prevent new deployments
+factory.unpause();
 ```
 
 ## External Functions
@@ -241,19 +291,28 @@ hook.stopAmpRamp();  // Emergency stop
 | --------------------------------------------------------- | --------------------------------------------------- |
 | `addLiquidity(uint256[] _amounts, uint256 _minShares)`    | Deposit tokens proportionally and receive LP shares |
 | `removeLiquidity(uint256 _shares, uint256[] _minAmounts)` | Burn LP shares and withdraw proportional tokens     |
-| `withdrawProtocolFees()`                                  | Send accumulated protocol fees to collector address |
+| `withdrawProtocolFees()`                                  | Send accumulated protocol fees to collector         |
+| `withdrawHookFees()`                                      | Send accumulated hook fees to collector             |
 
-### Admin Functions (DEFAULT_ADMIN_ROLE)
+### Admin Functions (Factory Owner)
 
-| Function                            | Description                                   |
-| ----------------------------------- | --------------------------------------------- |
-| `setProtocolFeeCollector(address)`  | Update protocol fee recipient address         |
-| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6)           |
-| `setHookFeePercentage(uint256)`     | Update hook fee (scaled by 1e6)               |
-| `setLpFeePercentage(uint256)`       | Update LP fee (scaled by 1e6)                 |
-| `startAmpRamp(uint256, uint256)`    | Begin gradual A coefficient change            |
-| `stopAmpRamp()`                     | Emergency stop current A coefficient ramp     |
-| `withdrawHookFees(address)`         | Withdraw accumulated hook fees to beneficiary |
+#### On Hook
+
+| Function                            | Description                               |
+| ----------------------------------- | ----------------------------------------- |
+| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6)       |
+| `setHookFeePercentage(uint256)`     | Update hook fee (scaled by 1e6)           |
+| `startAmpRamp(uint256, uint256)`    | Begin gradual A coefficient change        |
+| `stopAmpRamp()`                     | Emergency stop current A coefficient ramp |
+
+#### On Factory
+
+| Function                           | Description                           |
+| ---------------------------------- | ------------------------------------- |
+| `setProtocolFeeCollector(address)` | Update protocol fee recipient address |
+| `setHookFeeCollector(address)`     | Update hook fee recipient address     |
+| `pause()`                          | Pause factory (prevent deployments)   |
+| `unpause()`                        | Unpause factory                       |
 
 ### View Functions
 
@@ -264,6 +323,7 @@ hook.stopAmpRamp();  // Emergency stop
 | `reserves(uint256)`                           | Get current reserve for a currency   |
 | `rates(uint256)`                              | Get base scaling rate for a currency |
 | `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency    |
+| `factory.isDeployedByFactory(address)`        | Check if hook was deployed by factory|
 
 ## Hook Permissions
 
@@ -311,7 +371,7 @@ forge snapshot
 - [@uniswap/v4-core](https://github.com/Uniswap/v4-core) - Uniswap v4 protocol
 - [@uniswap/v4-periphery](https://github.com/Uniswap/v4-periphery) - Router and utilities
 - [uniswap-hooks](https://github.com/OpenZeppelin/uniswap-hooks) - OpenZeppelin's BaseHook
-- [@openzeppelin/contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) - AccessControl, ERC20
+- [@openzeppelin/contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) - Ownable, Pausable, ERC20, Create2
 
 ## References
 

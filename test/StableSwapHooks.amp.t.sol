@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
 import {Amp} from "src/Amp.sol";
+import {Base} from "src/Base.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
@@ -66,7 +65,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         vm.warp(block.timestamp + 1 days);
 
         // Should be approximately halfway through the ramp from 100 up to 200 (in scaled values: 10000 to 20000)
-        uint256 currentAmp = hooks.currentAmp();
+        uint256 currentAmp = hooks.getCurrentAmp();
         assertApproxEqAbs(currentAmp, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
     }
 
@@ -80,7 +79,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Fast forward past ramping completion
         vm.warp(nextAmpTime + 1);
 
-        assertEq(hooks.currentAmp(), 200 * StableSwapMath.AMP_PRECISION);
+        assertEq(hooks.getCurrentAmp(), 200 * StableSwapMath.AMP_PRECISION);
     }
 
     function test_startAmpRamp_ShouldRevertWhenFutureAGreaterEqualThanMaxA() public {
@@ -114,7 +113,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Fast forward halfway through ramping
         vm.warp(block.timestamp + 1 days);
-        uint256 currentAmpBeforeStop = hooks.currentAmp();
+        uint256 currentAmpBeforeStop = hooks.getCurrentAmp();
 
         // Stop ramping
         vm.prank(defaultAdmin);
@@ -123,7 +122,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         hooks.stopAmpRamp();
 
         // Verify amp is frozen at current value
-        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
+        assertEq(hooks.getCurrentAmp(), currentAmpBeforeStop);
         assertEq(hooks.baseAmp(), currentAmpBeforeStop);
         assertEq(hooks.nextAmp(), currentAmpBeforeStop);
         assertEq(hooks.baseAmpTime(), block.timestamp);
@@ -131,7 +130,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
 
         // Warp further and verify amp doesn't change
         vm.warp(block.timestamp + 1 days);
-        assertEq(hooks.currentAmp(), currentAmpBeforeStop);
+        assertEq(hooks.getCurrentAmp(), currentAmpBeforeStop);
     }
 
     // ==========================================================================
@@ -236,7 +235,7 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
         // Warp halfway (current A should be ~150 scaled = 15000)
         vm.warp(block.timestamp + 1 days);
 
-        uint256 currentA = hooks.currentAmp();
+        uint256 currentA = hooks.getCurrentAmp();
         assertApproxEqAbs(currentA, 150 * StableSwapMath.AMP_PRECISION, StableSwapMath.AMP_PRECISION);
 
         // Wait for MIN_RAMP_TIME
@@ -258,26 +257,18 @@ contract StableSwapHooksAmpTest is StableSwapHooksBaseTest {
     // Access Control
     // ==========================================================================
 
-    function test_startAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
+    function test_startAmpRamp_ShouldRevertWhenCalledByNonFactoryOwner() public {
         uint256 nextAmp = 200;
         uint256 nextAmpTime = block.timestamp + 1 days + 1;
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.startAmpRamp(nextAmp, nextAmpTime);
     }
 
-    function test_stopAmpRamp_ShouldRevertWhenCalledByUnauthorizedUser() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, hooks.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_stopAmpRamp_ShouldRevertWhenCalledByNonFactoryOwner() public {
+        vm.expectRevert(Base.OnlyFactoryOwner.selector);
 
         vm.prank(unauthorizedUser);
         hooks.stopAmpRamp();

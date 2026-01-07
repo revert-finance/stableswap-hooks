@@ -9,14 +9,12 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {Base} from "src/Base.sol";
-import {StableSwapHooksHarness} from "test/testUtils/StableSwapHooksHarness.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
+import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -28,18 +26,17 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
     uint256 internal constant BASE_AMP = 100;
-    uint160 internal constant HOOK_FLAGS = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-        | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-        | Hooks.BEFORE_DONATE_FLAG;
 
-    StableSwapHooksHarness internal hooks;
-    StableSwapHooksHarness internal hooks3;
+    StableSwapHooksFactory internal factory;
+    StableSwapHooks internal hooks;
+    StableSwapHooks internal hooks3;
 
     address internal defaultAdmin;
     address internal unauthorizedUser;
     address internal liquidityProvider;
     address internal swapper;
     address internal protocolFeeCollector;
+    address internal hookFeeCollector;
 
     function setUp() public virtual override {
         super.setUp();
@@ -54,6 +51,15 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         swapper = makeAddr("swapper");
         unauthorizedUser = makeAddr("unauthorizedUser");
         protocolFeeCollector = makeAddr("protocolFeeCollector");
+        hookFeeCollector = makeAddr("hookFeeCollector");
+
+        factory = new StableSwapHooksFactory(
+            IPoolManager(poolManager),
+            defaultAdmin,
+            protocolFeeCollector,
+            hookFeeCollector,
+            keccak256(type(StableSwapHooks).creationCode)
+        );
 
         _deployHooks();
         _deployHooks3();
@@ -79,33 +85,15 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = HookMiner.find(
-            defaultAdmin,
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                currencies,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        vm.prank(defaultAdmin);
-        hooks = new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            currencies,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        hooks = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+
+        vm.startPrank(defaultAdmin);
+        hooks.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooks.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
+        vm.stopPrank();
     }
 
     function _deployHooks3() private {
@@ -119,33 +107,15 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[2] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        (, bytes32 salt) = HookMiner.find(
-            defaultAdmin,
-            HOOK_FLAGS,
-            type(StableSwapHooksHarness).creationCode,
-            abi.encode(
-                poolManager,
-                currencies,
-                rateOracles,
-                protocolFeeCollector,
-                BASE_PROTOCOL_FEE_PERCENTAGE,
-                BASE_HOOK_FEE_PERCENTAGE,
-                BASE_LP_FEE_PERCENTAGE,
-                BASE_AMP
-            )
-        );
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
 
-        vm.prank(defaultAdmin);
-        hooks3 = new StableSwapHooksHarness{salt: salt}(
-            IPoolManager(poolManager),
-            currencies,
-            rateOracles,
-            protocolFeeCollector,
-            BASE_PROTOCOL_FEE_PERCENTAGE,
-            BASE_HOOK_FEE_PERCENTAGE,
-            BASE_LP_FEE_PERCENTAGE,
-            BASE_AMP
-        );
+        hooks3 = StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+
+        vm.startPrank(defaultAdmin);
+        hooks3.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooks3.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
+        vm.stopPrank();
     }
 
     function _dealTokens() private {

@@ -32,6 +32,10 @@ StableSwapHooks (main entry point, IUnlockCallback)
             └── Fees (three-tier fee system: LP, Hook, Protocol)
                 └── Amp (amplification coefficient ramping)
                     └── Base (pool config, hook permissions, BaseHook)
+
+StableSwapHooksFactory (Ownable, Pausable)
+    └── Deploys hooks via CREATE2 with caller-provided bytecode
+    └── Manages fee collectors (protocolFeeCollector, hookFeeCollector)
 ```
 
 ### Key Source Files
@@ -43,6 +47,7 @@ StableSwapHooks (main entry point, IUnlockCallback)
 - `src/Amp.sol` - Amplification coefficient with time-based ramping
 - `src/Base.sol` - Pool initialization, hook permissions, rate oracle config
 - `src/libraries/StableSwapMath.sol` - Newton-Raphson invariant/reserve calculations
+- `src/factories/StableSwapHooksFactory.sol` - CREATE2 factory, fee collector management
 
 ### Testing Structure
 
@@ -67,21 +72,26 @@ A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i)
 ### Fee System
 
 Three-tier fees (all scaled by `FEE_PRECISION = 1e6`):
-- LP fees: Accumulated in reserves, increase LP token value
-- Hook fees: Withdrawable by admin
-- Protocol fees: Withdrawable to collector address
+- LP fees: Accumulated in reserves, increase LP token value (immutable, set at deployment)
+- Hook fees: Withdrawable to `factory.hookFeeCollector()` (percentage configurable)
+- Protocol fees: Withdrawable to `factory.protocolFeeCollector()` (percentage configurable)
+
+Admin functions on hooks use `onlyFactoryOwner` modifier (checks `factory.owner()`).
 
 ### Rate Oracles
 
 Currencies can have custom rate oracles for non-1:1 assets (e.g., wstETH/WETH). Configure via `RateOracleConfig(oracle, selector)` at deployment.
 
-### Hook Address
+### Hook Deployment
 
-Hook must be deployed to an address encoding correct permission flags. Use `HookMiner.find()` to discover valid CREATE2 salt.
+Hooks must be deployed via `StableSwapHooksFactory` to addresses encoding correct permission flags:
+1. Factory constructor takes `creationCodeHash` for bytecode validation
+2. `factory.mineSalt()` finds valid CREATE2 salt (call off-chain via `eth_call`)
+3. `factory.deploy()` deploys with caller-provided `creationCode` (validated against hash)
 
 ## Dependencies (via remappings)
 
 - `@uniswap/v4-core/` - Uniswap v4 protocol
 - `@uniswap/v4-periphery/` - Router and utilities
 - `uniswap-hooks/` - OpenZeppelin's BaseHook
-- `@openzeppelin/contracts/` - AccessControl, ERC20
+- `@openzeppelin/contracts/` - Ownable, Pausable, ERC20, Create2
