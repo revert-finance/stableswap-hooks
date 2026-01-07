@@ -114,6 +114,36 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertApproxEqRel(swapperBalance0After - swapperBalance0Before, expectedOutput, STABLESWAP_SLIPPAGE_TOLERANCE);
     }
 
+    /// @notice Verifies EXACT_IN rounding favors protocol, preventing rounding exploits
+    /// @dev Executes many micro-swaps and verifies pool reserves don't decrease
+    function test_swap_ExactInput_MicroSwaps_ShouldNotDrainPool() public {
+        uint256 initialReserve0 = hooks.reserves(0);
+        uint256 initialReserve1 = hooks.reserves(1);
+        uint256 initialTotalReserves = initialReserve0 + initialReserve1;
+
+        // Execute many micro EXACT_IN swaps
+        // Using small amounts to maximize rounding impact relative to swap size
+        uint256 microSwapAmount = 1; // 1 wei - maximum rounding impact
+        uint256 numSwaps = 100;
+
+        for (uint256 i = 0; i < numSwaps; ++i) {
+            // Alternate directions to avoid depleting one side
+            if (i % 2 == 0) {
+                _executeExactInputSwap(true, microSwapAmount);
+            } else {
+                _executeExactInputSwap(false, microSwapAmount);
+            }
+        }
+
+        uint256 finalReserve0 = hooks.reserves(0);
+        uint256 finalReserve1 = hooks.reserves(1);
+        uint256 finalTotalReserves = finalReserve0 + finalReserve1;
+
+        // With correct rounding (Floor for EXACT_IN output), total reserves should stay same or increase
+        // because users receive slightly less than mathematically exact amount
+        assertGe(finalTotalReserves, initialTotalReserves, "Pool reserves should not decrease from rounding");
+    }
+
     // ==========================================================================
     // Exact Output Swaps
     // ==========================================================================
@@ -687,5 +717,65 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         // Verify amounts
         assertEq(eventData.amountIn, actualAmountIn);
         assertEq(eventData.amountOut, amountOut);
+    }
+
+    // ==========================================================================
+    // Rounding Security (Balancer-style exploit prevention)
+    // ==========================================================================
+
+    /// @notice Verifies EXACT_OUT rounding favors protocol, preventing Balancer-style exploits
+    /// @dev The Balancer V2 exploit ($128M, Nov 2025) used EXACT_OUT micro-swaps where
+    ///      rounding errors favored the attacker. This test ensures our rounding is correct.
+    function test_swap_ExactOutput_MicroSwaps_ShouldNotDrainPool() public {
+        // Record initial pool state
+        uint256 initialReserve0 = hooks.reserves(0);
+        uint256 initialReserve1 = hooks.reserves(1);
+        uint256 initialTotalReserves = initialReserve0 + initialReserve1;
+
+        // Execute many micro EXACT_OUT swaps (simulating an attack)
+        // Using small amounts to maximize rounding impact relative to swap size
+        uint256 microSwapAmount = 1; // 1 wei - maximum rounding impact
+        uint256 numSwaps = 100;
+
+        for (uint256 i = 0; i < numSwaps; ++i) {
+            // Alternate directions to avoid depleting one side
+            if (i % 2 == 0) {
+                _executeExactOutputSwap(true, microSwapAmount);
+            } else {
+                _executeExactOutputSwap(false, microSwapAmount);
+            }
+        }
+
+        // Verify pool reserves haven't been drained
+        uint256 finalReserve0 = hooks.reserves(0);
+        uint256 finalReserve1 = hooks.reserves(1);
+        uint256 finalTotalReserves = finalReserve0 + finalReserve1;
+
+        // With correct rounding (Ceil for EXACT_OUT), total reserves should stay same or increase
+        // because users pay slightly more than mathematically exact amount
+        assertGe(finalTotalReserves, initialTotalReserves, "Pool reserves should not decrease from rounding");
+    }
+
+    /// @notice Verifies EXACT_OUT charges at least as much as EXACT_IN produces
+    /// @dev For equivalent swaps, EXACT_OUT input should be >= EXACT_IN input
+    function test_swap_ExactOutput_ShouldChargeAtLeastExactInAmount() public {
+        uint256 testAmount = _toTokenWei(currency0, 1000);
+
+        // First: EXACT_IN swap to see how much output we get
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        _executeExactInputSwap(true, testAmount);
+        uint256 exactInOutput = IERC20(Currency.unwrap(currency1)).balanceOf(swapper) - balance1Before;
+
+        // Reset by adding more liquidity (to get back to similar pool state)
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Second: EXACT_OUT swap requesting the same output amount
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        _executeExactOutputSwap(true, exactInOutput);
+        uint256 exactOutInput = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        // With Ceil rounding, EXACT_OUT should charge at least as much as EXACT_IN
+        // (they may differ due to pool state changes, but directionally correct)
+        assertGe(exactOutInput, testAmount - 1, "EXACT_OUT should charge at least EXACT_IN amount");
     }
 }

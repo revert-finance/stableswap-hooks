@@ -153,18 +153,32 @@ library StableSwapMath {
         revert ConvergenceNotReached();
     }
 
-    /// @dev Scales a token amount into 1e18 precision using the given rate.
+    /// @dev Scales a token amount into 1e18 precision using the given rate (rounds down).
     /// @param _amount Token-denominated amount.
     /// @param _rate Scaling factor for the token.
     function scaleTo(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
-        return _rate * _amount / RATE_PRECISION;
+        return Math.mulDiv(_amount, _rate, RATE_PRECISION);
     }
 
-    /// @dev Converts a 1e18-precision amount back to token units using the given rate.
+    /// @dev Scales a token amount into 1e18 precision using the given rate (rounds up).
+    /// @param _amount Token-denominated amount.
+    /// @param _rate Scaling factor for the token.
+    function scaleToUp(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return Math.mulDiv(_amount, _rate, RATE_PRECISION, Math.Rounding.Ceil);
+    }
+
+    /// @dev Converts a 1e18-precision amount back to token units (rounds down).
     /// @param _amount 1e18-scaled amount.
     /// @param _rate Scaling factor for the token.
     function descale(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
-        return _amount * RATE_PRECISION / _rate;
+        return Math.mulDiv(_amount, RATE_PRECISION, _rate);
+    }
+
+    /// @dev Converts a 1e18-precision amount back to token units (rounds up).
+    /// @param _amount 1e18-scaled amount.
+    /// @param _rate Scaling factor for the token.
+    function descaleUp(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return Math.mulDiv(_amount, RATE_PRECISION, _rate, Math.Rounding.Ceil);
     }
 
     /// @dev Returns the rate for a given currency.
