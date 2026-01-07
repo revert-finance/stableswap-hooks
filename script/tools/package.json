@@ -1,0 +1,23 @@
+{
+  "name": "stableswap-deployment-tools",
+  "version": "1.0.0",
+  "description": "CLI tools for StableSwap hook deployment and management",
+  "type": "module",
+  "bin": {
+    "stableswap-tools": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "viem": "^2.7.0",
+    "dotenv": "^16.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.16",
+    "typescript": "^5.3.3"
+  }
+}
