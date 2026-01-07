@@ -49,6 +49,34 @@ abstract contract Fees is Liquidity {
         hookFees = new uint256[](currenciesLength);
     }
 
+    /// @notice Sets the protocol fee percentage
+    /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
+    function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
+        uint256 totalFees = _feePercentage + hookFeePercentage + lpFeePercentage;
+
+        if (totalFees > FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
+        protocolFeePercentage = _feePercentage;
+
+        emit ProtocolFeePercentageSet(msg.sender, _feePercentage);
+    }
+
+    /// @notice Sets the hook fee percentage
+    /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
+    function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
+        uint256 totalFees = protocolFeePercentage + _feePercentage + lpFeePercentage;
+
+        if (totalFees > FEE_PRECISION) {
+            revert InvalidFeePercentage();
+        }
+
+        hookFeePercentage = _feePercentage;
+
+        emit HookFeePercentageSet(msg.sender, _feePercentage);
+    }
+
     /// @notice Withdraws accumulated protocol fees to the protocol fee collector
     /// @dev Triggers an unlock callback to handle the withdrawal through the pool manager
     function withdrawProtocolFees() external {
@@ -109,34 +137,6 @@ abstract contract Fees is Liquidity {
                 poolManager.take(currencies[i], _beneficiary, _fees[i]);
             }
         }
-    }
-
-    /// @notice Sets the protocol fee percentage
-    /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
-    function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = _feePercentage + hookFeePercentage + lpFeePercentage;
-
-        if (totalFees > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        protocolFeePercentage = _feePercentage;
-
-        emit ProtocolFeePercentageSet(msg.sender, _feePercentage);
-    }
-
-    /// @notice Sets the hook fee percentage
-    /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
-    function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = protocolFeePercentage + _feePercentage + lpFeePercentage;
-
-        if (totalFees > FEE_PRECISION) {
-            revert InvalidFeePercentage();
-        }
-
-        hookFeePercentage = _feePercentage;
-
-        emit HookFeePercentageSet(msg.sender, _feePercentage);
     }
 
     /// @notice Calculates LP, hook, and protocol fees from a given amount
