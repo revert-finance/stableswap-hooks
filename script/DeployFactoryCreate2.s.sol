@@ -20,6 +20,49 @@ contract DeployFactoryCreate2 is Script {
     /// @dev Same salt + same deployer = same address across chains
     bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 
+    /// @notice Get deployment configuration from environment variables and chain config
+    /// @return poolManager The PoolManager address
+    /// @return factoryOwner The owner of the factory
+    /// @return protocolFeeCollector The protocol fee collector address
+    /// @return hookFeeCollector The hook fee collector address
+    function _getDeploymentConfig()
+        internal
+        view
+        returns (address poolManager, address factoryOwner, address protocolFeeCollector, address hookFeeCollector)
+    {
+        // Get chain config
+        ChainConfig.Config memory config = ChainConfig.getConfig(block.chainid);
+
+        // Get PoolManager address (env var overrides chain config)
+        poolManager = vm.envOr("POOL_MANAGER", config.poolManager);
+
+        // Get other addresses from environment
+        factoryOwner = vm.envOr("FACTORY_OWNER", address(0));
+        protocolFeeCollector = vm.envOr("PROTOCOL_FEE_COLLECTOR", address(0));
+        hookFeeCollector = vm.envOr("HOOK_FEE_COLLECTOR", address(0));
+    }
+
+    /// @notice Prepare factory bytecode for CREATE2 deployment
+    /// @param poolManager The PoolManager address
+    /// @param factoryOwner The owner of the factory
+    /// @param protocolFeeCollector The protocol fee collector address
+    /// @param hookFeeCollector The hook fee collector address
+    /// @return factoryBytecode The complete bytecode for deployment
+    /// @return hooksCreationCodeHash The hash of the hooks creation code
+    function _prepareFactoryBytecode(
+        address poolManager,
+        address factoryOwner,
+        address protocolFeeCollector,
+        address hookFeeCollector
+    ) internal pure returns (bytes memory factoryBytecode, bytes32 hooksCreationCodeHash) {
+        hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
+
+        factoryBytecode = abi.encodePacked(
+            type(StableSwapHooksFactory).creationCode,
+            abi.encode(poolManager, factoryOwner, protocolFeeCollector, hookFeeCollector, hooksCreationCodeHash)
+        );
+    }
+
     /// @notice Main deployment function
     /// @dev Reads configuration from environment variables or CLI args:
     ///      - POOL_MANAGER: Address of PoolManager (optional if using known chain)
@@ -31,48 +74,43 @@ contract DeployFactoryCreate2 is Script {
         console2.log("Chain ID:", block.chainid);
         console2.log("Deployer:", msg.sender);
 
-        // Get chain config
+        // Get chain config for logging
         ChainConfig.Config memory config = ChainConfig.getConfig(block.chainid);
         console2.log("Chain:", config.name);
 
-        // Get PoolManager address
-        address poolManagerAddr = vm.envOr("POOL_MANAGER", config.poolManager);
+        // Get deployment configuration
+        (address poolManagerAddr, address factoryOwner, address protocolFeeCollector, address hookFeeCollector) =
+            _getDeploymentConfig();
+
         require(poolManagerAddr != address(0), "PoolManager address not configured");
+        require(factoryOwner != address(0), "Factory owner not configured");
+        require(protocolFeeCollector != address(0), "Protocol fee collector not configured");
+        require(hookFeeCollector != address(0), "Hook fee collector not configured");
+
         console2.log("PoolManager:", poolManagerAddr);
-
-        IPoolManager poolManager = IPoolManager(poolManagerAddr);
-
-        // Get configuration
-        address factoryOwner = vm.envAddress("FACTORY_OWNER");
-        address protocolFeeCollector = vm.envAddress("PROTOCOL_FEE_COLLECTOR");
-        address hookFeeCollector = vm.envAddress("HOOK_FEE_COLLECTOR");
-
         console2.log("Factory Owner:", factoryOwner);
         console2.log("Protocol Fee Collector:", protocolFeeCollector);
         console2.log("Hook Fee Collector:", hookFeeCollector);
 
-        // Calculate creation code hash for hooks
-        bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
+        // Prepare factory bytecode
+        (bytes memory factoryBytecode, bytes32 hooksCreationCodeHash) =
+            _prepareFactoryBytecode(poolManagerAddr, factoryOwner, protocolFeeCollector, hookFeeCollector);
+
         console2.log("Hooks Creation Code Hash:");
         console2.logBytes32(hooksCreationCodeHash);
-
-        // Prepare factory bytecode
-        bytes memory factoryBytecode = abi.encodePacked(
-            type(StableSwapHooksFactory).creationCode,
-            abi.encode(poolManager, factoryOwner, protocolFeeCollector, hookFeeCollector, hooksCreationCodeHash)
-        );
 
         // Predict address
         address predictedAddress = Create2.computeAddress(SALT, keccak256(factoryBytecode), msg.sender);
         console2.log("\nPredicted Factory Address:", predictedAddress);
-        console2.log("Salt:");
-        console2.logBytes32(SALT);
+        console2.log("Salt:", vm.toString(SALT));
 
         // Check if already deployed
         if (predictedAddress.code.length > 0) {
             console2.log("Factory already deployed at this address");
-            console2.log("If you want a new deployment, change the SALT in the script");
-            factory = StableSwapHooksFactory(predictedAddress);
+            console2.log(
+                "If you want a new deployment, change the SALT in the script or use another account/PRIVATE_KEY"
+            );
+            revert("Factory already deployed");
         } else {
             console2.log("\nDeploying...\n");
 
@@ -88,26 +126,19 @@ contract DeployFactoryCreate2 is Script {
 
         console2.log("\n=== Deployment Complete ===");
         console2.log("Factory Address:", address(factory));
-        console2.log("Hooks Creation Code Hash:");
-        console2.logBytes32(hooksCreationCodeHash);
         console2.log("\nThis address will be the SAME on all chains if deployed by the same account!");
-        console2.log("\nSave for hook deployments:");
+        console2.log("\nSave this address for hook deployments:");
         console2.log("FACTORY_ADDRESS=%s", address(factory));
     }
 
     /// @notice Compute the factory address without deploying
     /// @dev Useful for verifying addresses before deployment
     function computeAddress() external view returns (address) {
-        address poolManagerAddr = vm.envOr("POOL_MANAGER", address(0));
-        address factoryOwner = vm.envOr("FACTORY_OWNER", address(0));
-        address protocolFeeCollector = vm.envOr("PROTOCOL_FEE_COLLECTOR", address(0));
-        address hookFeeCollector = vm.envOr("HOOK_FEE_COLLECTOR", address(0));
-        bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
+        (address poolManagerAddr, address factoryOwner, address protocolFeeCollector, address hookFeeCollector) =
+            _getDeploymentConfig();
 
-        bytes memory factoryBytecode = abi.encodePacked(
-            type(StableSwapHooksFactory).creationCode,
-            abi.encode(poolManagerAddr, factoryOwner, protocolFeeCollector, hookFeeCollector, hooksCreationCodeHash)
-        );
+        (bytes memory factoryBytecode,) =
+            _prepareFactoryBytecode(poolManagerAddr, factoryOwner, protocolFeeCollector, hookFeeCollector);
 
         return Create2.computeAddress(SALT, keccak256(factoryBytecode), msg.sender);
     }
