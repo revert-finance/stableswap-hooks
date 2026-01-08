@@ -18,7 +18,7 @@ import {ChainConfig} from "./config/ChainConfig.sol";
 contract DeployFactoryCreate2 is Script {
     /// @notice Salt for CREATE2 deployment - change this to get different addresses
     /// @dev Same salt + same deployer = same address across chains
-    bytes32 public constant SALT = keccak256("StableSwapHooksFactory.v1");
+    bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 
     /// @notice Main deployment function
     /// @dev Reads configuration from environment variables or CLI args:
