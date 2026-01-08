@@ -54,8 +54,17 @@ StableSwapHooksFactory (Ownable, Pausable)
 - `test/testUtils/StableSwapHooksBaseTest.sol` - Base test class with helper methods
 - `test/testUtils/StableSwapHooksHarness.sol` - Test harness exposing internals
 - `test/testUtils/ExternalContractsDeployer.sol` - Deploys PoolManager, Universal Router, Permit2
+- `test/scenarios/` - Edge case and scenario tests
 - Tests use `hooks` (2-currency pool) and `hooks3` (3-currency pool) fixtures
 - Helper functions: `_addLiquidity()`, `_executeExactInputSwap()`, `_executeExactOutputSwap()`
+
+### Testing Conventions
+
+- Use `stdError` from `forge-std/StdError.sol` for Solidity panic errors:
+  - `stdError.divisionError` - division/modulo by zero (0x12)
+  - `stdError.arithmeticError` - overflow/underflow (0x11)
+  - `stdError.indexOOBError` - array index out of bounds (0x32)
+- Always expect specific errors in `vm.expectRevert()`, not just any revert
 
 ## Key Concepts
 
