@@ -124,6 +124,8 @@ Each currency can have a custom rate oracle to define non-1:1 balance rates for 
 
 ### Factory Deployment
 
+For detailed deployment instructions, see the [deployment guide](script/README.md).
+
 First, deploy the factory:
 
 ```solidity

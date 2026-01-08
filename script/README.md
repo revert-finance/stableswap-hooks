@@ -1,483 +1,206 @@
-# StableSwap Deployment Tools
+# StableSwap Factory Deployment
 
-Tooling for deploying and managing StableSwap hooks across multiple chains.
-
-## Overview
-
-- **Forge Scripts**: Solidity scripts for factory and hook deployment
-- **TypeScript CLI**: Utilities for bytecode validation and chain management
-- **Bash Wrappers**: User-friendly deployment scripts with multiple auth methods
-- **Multi-Chain Support**: Pre-configured for Uniswap v4 compatible chains
-
-## Prerequisites
-
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) (forge, cast)
-- [Node.js](https://nodejs.org/) v18+ (for CLI tools)
-- Account with ETH for gas on target chain
-- Access to RPC endpoints
+Deploy StableSwapHooksFactory with the **same address across all chains** using CREATE2.
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Setup Keystore
 
 ```bash
-# Install Forge dependencies
-forge install
-
-# Install CLI tools
-cd script/tools
-npm install
-npm run build
-cd ../..
+cast wallet import myaccount --interactive
 ```
 
-### 2. Configure Environment
+### 2. Deploy Factory
 
 ```bash
-cp .env.deployment.example .env
-# Edit .env with your configuration
+./script/deploy-factory.sh \
+  -c polygon \
+  --account myaccount \
+  --sender 0x... \
+  --rpc-url https://... \
+  --verify
 ```
 
-Example `.env`:
+### 3. Deploy on Multiple Chains
+
+Deploy with the **same account** to get the **same factory address** everywhere:
+
+```bash
+# Polygon
+./script/deploy-factory.sh -c polygon --account myaccount --sender 0xYourAddr --rpc-url https://polygon-rpc.com -v
+
+# Base
+./script/deploy-factory.sh -c base --account myaccount --sender 0xYourAddr --rpc-url https://base-rpc.com -v
+
+**Result**: Same factory address on all chains! 🎉
+
+## Configuration Options
+
+### Via Command Line
+
+```bash
+./script/deploy-factory.sh \
+  -c <chain> \
+  --account <keystore-name> \
+  --sender <address> \
+  --rpc-url <url> \
+  --pool-manager <address> \
+  --owner <address> \
+  --protocol-collector <address> \
+  --hook-collector <address> \
+  --verify
+```
+
+### Via .env File
+
+Create `.env` in the project root:
 
 ```bash
 # RPC URLs
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
-BASE_RPC_URL=https://mainnet.base.org
+POLYGON_RPC_URL=https://...
+BASE_RPC_URL=https://...
+ARBITRUM_RPC_URL=https://...
 
-# Factory Config
+# Factory Configuration
 POOL_MANAGER=0x...
 FACTORY_OWNER=0x...
 PROTOCOL_FEE_COLLECTOR=0x...
 HOOK_FEE_COLLECTOR=0x...
-
-# Hook Config
-FACTORY_ADDRESS=0x...
-CURRENCIES=0xTokenA,0xTokenB
-RATE_ORACLES=0x0,0x0
-RATE_ORACLE_SELECTORS=0x00000000,0x00000000
-LP_FEE_PERCENTAGE=300
-BASE_AMP=100
 ```
 
-### 3. Setup Keystore (Recommended)
-
-Create an encrypted keystore for secure deployments:
+Then deploy:
 
 ```bash
-# Create new keystore
-cast wallet import myaccount --interactive
-
-# List keystores
-cast wallet list
-
-# Use in deployment
-./script/deploy-factory.sh -c sepolia --account myaccount --sender 0xYourAddress
+./script/deploy-factory.sh -c polygon --account myaccount --sender 0xAddr -v
 ```
 
-### 4. Deploy
+## Arguments
 
-```bash
-# Deploy factory
-./script/deploy-factory.sh -c sepolia --account myaccount --sender 0xYourAddress -v
-
-# Deploy hook
-./script/deploy-hook.sh -c sepolia --account myaccount --sender 0xYourAddress -i
 ```
+Required:
+  -c, --chain <chain>              Chain ID or name
+  -a, --account <name>             Keystore account
+  -s, --sender <address>           Sender address
 
-## Authentication Methods
+Network:
+  -r, --rpc-url <url>              RPC URL (or <CHAIN>_RPC_URL in .env)
 
-### 1. Keystore (Recommended)
-
-Most secure method using encrypted keystores:
-
-```bash
-# Create keystore
-cast wallet import myaccount --interactive
-
-# Deploy with keystore
-./script/deploy-factory.sh -c sepolia \
-  --account myaccount \
-  --sender 0xYourAddress \
-  -v
-```
-
-### 2. Interactive
-
-Prompts for private key during deployment (not stored):
-
-```bash
-./script/deploy-factory.sh -c sepolia -v
-# Will prompt: "Enter private key:"
-```
-
-### 3. Hardware Wallet
-
-Use with Ledger/Trezor via forge:
-
-```bash
-forge script script/DeployFactory.s.sol:DeployFactory \
-  --rpc-url $SEPOLIA_RPC_URL \
-  --ledger \
-  --sender 0xYourAddress \
-  --broadcast
-```
-
-## CLI Tools
-
-### Installation
-
-```bash
-cd script/tools
-npm install
-npm run build
-```
-
-### Commands
-
-#### Calculate Creation Code Hash
-
-```bash
-npm run cli bytecode-hash
-```
-
-Required when deploying factory.
-
-#### List Supported Chains
-
-```bash
-npm run cli list-chains
-npm run cli list-chains --mainnet
-npm run cli list-chains --testnet
-```
-
-#### Validate Currency Addresses
-
-```bash
-npm run cli validate-currencies 0xTokenA 0xTokenB 0xTokenC
-```
-
-Currencies must be sorted in ascending order for Uniswap v4.
-
-#### Sort Currency Addresses
-
-```bash
-npm run cli sort-currencies 0xTokenC 0xTokenA 0xTokenB
-```
-
-Outputs correctly sorted addresses for `.env` file.
-
-#### Decode Hook Permissions
-
-```bash
-npm run cli hook-permissions 0xHookAddress
-```
-
-Shows which hook functions are enabled for an address.
-
-#### Generate .env Template
-
-```bash
-npm run cli generate-env --chain sepolia
-```
-
-## Deployment Scripts
-
-### Deploy Factory
-
-```bash
-./script/deploy-factory.sh -c <chain> [options]
+Configuration (can be in .env):
+  --pool-manager <address>         PoolManager address
+  --owner <address>                Factory owner
+  --protocol-collector <address>   Protocol fee collector
+  --hook-collector <address>       Hook fee collector
 
 Options:
-  -c, --chain <chain>        Chain ID or name (required)
-  -r, --rpc-url <url>        RPC URL (overrides .env)
-  -a, --account <name>       Forge keystore account name
-  -s, --sender <address>     Sender address (required with --account)
-  -v, --verify               Verify contract on block explorer
-  --simulate                 Simulate without broadcasting
+  -v, --verify                     Verify on block explorer
+  --simulate                       Dry run without broadcasting
 ```
 
-**Required Environment Variables:**
-- `POOL_MANAGER` (or use chain default)
-- `FACTORY_OWNER`
-- `PROTOCOL_FEE_COLLECTOR`
-- `HOOK_FEE_COLLECTOR`
-
-### Deploy Hook
-
-```bash
-./script/deploy-hook.sh -c <chain> [options]
-
-Options:
-  -c, --chain <chain>        Chain ID or name (required)
-  -r, --rpc-url <url>        RPC URL (overrides .env)
-  -a, --account <name>       Forge keystore account name
-  -s, --sender <address>     Sender address (required with --account)
-  -i, --initialize           Initialize pools after deployment
-  --simulate                 Simulate without broadcasting
-```
-
-**Required Environment Variables:**
-- `FACTORY_ADDRESS`
-- `CURRENCIES` (comma-separated, sorted ascending)
-- `RATE_ORACLES` (comma-separated)
-- `RATE_ORACLE_SELECTORS` (comma-separated)
-- `LP_FEE_PERCENTAGE`
-- `BASE_AMP`
 
 ## Supported Chains
 
-**Mainnets:**
-- Ethereum (1)
-- Arbitrum (42161)
-- Optimism (10)
-- Base (8453)
-- Polygon (137)
-- BSC (56)
-- Avalanche (43114)
-- Celo (42220)
+**Mainnets**: Ethereum (1), Arbitrum (42161), Optimism (10), Base (8453), Polygon (137), BSC (56), Avalanche (43114), Celo (42220)
 
-**Testnets:**
-- Sepolia (11155111)
-- Base Sepolia (84532)
-- Arbitrum Sepolia (421614)
-- Optimism Sepolia (11155420)
+**Testnets**: Sepolia (11155111), Base Sepolia (84532), Arbitrum Sepolia (421614), Optimism Sepolia (11155420)
 
-**Local:**
-- Anvil (31337)
+**Local**: Anvil (31337)
 
 ## Examples
 
-### Example 1: Factory Deployment
+### Deploy on Testnets
 
 ```bash
-# 1. Configure .env
-cat > .env << EOF
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
-POOL_MANAGER=0xSepoliaPoolManager
-FACTORY_OWNER=0xYourAddress
-PROTOCOL_FEE_COLLECTOR=0xYourAddress
-HOOK_FEE_COLLECTOR=0xYourAddress
-EOF
-
-# 2. Create keystore
-cast wallet import myaccount --interactive
-
-# 3. Deploy factory
-./script/deploy-factory.sh -c sepolia \
-  --account myaccount \
+# Sepolia
+./script/deploy-factory.sh \
+  -c sepolia \
+  --account testaccount \
   --sender 0xYourAddress \
+  --rpc-url https://sepolia.infura.io/v3/KEY \
+  --pool-manager 0xSepoliaPoolManager \
+  --owner 0xYourAddress \
+  --protocol-collector 0xYourAddress \
+  --hook-collector 0xYourAddress \
   -v
 ```
 
-### Example 2: Two-Currency Stablecoin Pool
+### Multi-Chain with .env
 
 ```bash
-# 1. Validate and sort currencies
-cd script/tools
-npm run cli sort-currencies 0xUSDC 0xUSDT
-cd ../..
+# .env
+SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/KEY
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+POOL_MANAGER=0xPoolManager
+FACTORY_OWNER=0xYourAddress
+PROTOCOL_FEE_COLLECTOR=0xYourAddress
+HOOK_FEE_COLLECTOR=0xYourAddress
 
-# 2. Update .env
-cat >> .env << EOF
-FACTORY_ADDRESS=0xYourFactoryAddress
-CURRENCIES=0xUSDC,0xUSDT
-RATE_ORACLES=0x0,0x0
-RATE_ORACLE_SELECTORS=0x00000000,0x00000000
-LP_FEE_PERCENTAGE=300
-BASE_AMP=100
-EOF
-
-# 3. Deploy hook with pool initialization
-./script/deploy-hook.sh -c sepolia \
-  --account myaccount \
-  --sender 0xYourAddress \
-  -i
+# Deploy on multiple chains
+./script/deploy-factory.sh -c sepolia --account myaccount --sender 0xAddr -v
+./script/deploy-factory.sh -c base-sepolia --account myaccount --sender 0xAddr -v
 ```
 
-### Example 3: Three-Currency LST Pool
+### Simulate Before Deploy
 
 ```bash
-# 1. Sort currencies
-cd script/tools
-npm run cli sort-currencies 0xWETH 0xstETH 0xwstETH
-cd ../..
+# Dry run
+./script/deploy-factory.sh -c polygon --account myaccount --sender 0xAddr --simulate
 
-# 2. Configure with rate oracle for wstETH
-cat >> .env << EOF
-CURRENCIES=0xWETH,0xstETH,0xwstETH
-RATE_ORACLES=0x0,0x0,0xWstETHOracle
-RATE_ORACLE_SELECTORS=0x00000000,0x00000000,0x12345678
-LP_FEE_PERCENTAGE=400
-BASE_AMP=50
-EOF
-
-# 3. Simulate first to verify
-./script/deploy-hook.sh -c ethereum \
-  --account myaccount \
-  --sender 0xYourAddress \
-  --simulate
-
-# 4. Deploy for real
-./script/deploy-hook.sh -c ethereum \
-  --account myaccount \
-  --sender 0xYourAddress
+# Review, then deploy
+./script/deploy-factory.sh -c polygon --account myaccount --sender 0xAddr -v
 ```
 
 ## Troubleshooting
 
-### "No RPC URL found"
+### Different addresses on different chains?
 
-Add RPC URL to `.env`:
-```bash
-<CHAIN_NAME>_RPC_URL=https://...
+Ensure:
+1. Same **sender address** on all chains
+2. Same **constructor parameters** (PoolManager, owner, collectors)
+3. Same **salt** in `DeployFactoryCreate2.s.sol`
+
+### Change the deployment salt
+
+Edit `script/DeployFactoryCreate2.s.sol`:
+
+```solidity
+bytes32 public constant SALT = keccak256("StableSwapHooksFactory.v2");
 ```
 
-Check configured chains:
+### Verify address before deploying
+
 ```bash
-cd script/tools && npm run cli list-chains
+forge script script/DeployFactoryCreate2.s.sol:DeployFactoryCreate2 \
+  --sig "computeAddress()" \
+  --rpc-url $RPC_URL
 ```
 
-### "Currencies are NOT sorted correctly"
+## Direct Forge Usage
 
-Use CLI to sort:
-```bash
-cd script/tools
-npm run cli sort-currencies 0xA 0xB 0xC
-```
-
-### "InvalidCreationCode" error
-
-Recalculate creation code hash:
-```bash
-cd script/tools
-npm run cli bytecode-hash
-```
-
-Deploy new factory with correct hash.
-
-### Hook address permissions incorrect
-
-The deployment script automatically mines a valid salt. If you see this error:
-1. Verify factory was deployed with correct creation code hash
-2. Check bytecode matches factory deployment
-
-Verify permissions:
-```bash
-cd script/tools
-npm run cli hook-permissions 0xHookAddress
-```
-
-### "Account not found"
-
-List available keystores:
-```bash
-cast wallet list
-```
-
-Create new keystore:
-```bash
-cast wallet import myaccount --interactive
-```
-
-## Advanced Usage
-
-### Direct Forge Script Usage
-
-For more control, call forge directly:
+Skip the bash wrapper and call forge directly:
 
 ```bash
-forge script script/DeployFactory.s.sol:DeployFactory \
-  --rpc-url $SEPOLIA_RPC_URL \
+forge script script/DeployFactoryCreate2.s.sol:DeployFactoryCreate2 \
+  --rpc-url https://polygon-rpc.com \
   --account myaccount \
   --sender 0xYourAddress \
   --broadcast \
   --verify
 ```
 
-### Custom Amplification Ramping
+## Security
 
-After deployment, the factory owner can ramp amplification:
+- **Keystore**: Use `cast wallet import` for encrypted key storage
+- **Test first**: Deploy on testnets before mainnet
+- **Multisig**: Use multisig address for factory owner in production
+- **Verify**: Always use `--verify` flag
 
-```bash
-cast send $HOOK_ADDRESS \
-  "rampAmp(uint256,uint256)" \
-  200 $(($(date +%s) + 86400)) \
-  --rpc-url $RPC_URL \
-  --account myaccount
+## Project Structure
+
 ```
-
-### Update Fee Percentages
-
-Factory owner can update fees:
-
-```bash
-# Protocol fee (10% of LP fees)
-cast send $HOOK_ADDRESS \
-  "setProtocolFeePercentage(uint256)" \
-  100000 \
-  --rpc-url $RPC_URL \
-  --account myaccount
-
-# Hook fee (20% of LP fees)
-cast send $HOOK_ADDRESS \
-  "setHookFeePercentage(uint256)" \
-  200000 \
-  --rpc-url $RPC_URL \
-  --account myaccount
+script/
+├── config/
+│   └── ChainConfig.sol          # Chain configurations
+├── DeployFactoryCreate2.s.sol   # CREATE2 deployment script
+├── deploy-factory.sh            # Bash wrapper
+└── README.md                    # This file
 ```
-
-## Security Best Practices
-
-1. **Never commit private keys** - Use keystore or interactive mode
-2. **Test on testnets first** - Deploy to Sepolia/Base Sepolia before mainnet
-3. **Simulate transactions** - Use `--simulate` flag to verify before broadcasting
-4. **Verify contracts** - Always use `-v` flag to verify on block explorers
-5. **Use multisig for production** - Set factory owner to a multisig address
-6. **Audit rate oracles** - Review custom oracle contracts before using
-
-## Adding New Chains
-
-To add support for a new chain:
-
-1. **Update `script/config/ChainConfig.sol`:**
-
-```solidity
-function _yourChain() private pure returns (Config memory) {
-    return Config({
-        chainId: YOUR_CHAIN_ID,
-        name: "your-chain",
-        poolManager: address(0),
-        testnet: false
-    });
-}
-
-// Add to getConfig():
-if (chainId == YOUR_CHAIN_ID) return _yourChain();
-
-// Add to isSupported():
-|| chainId == YOUR_CHAIN_ID
-```
-
-2. **Update `script/tools/src/types.ts`:**
-
-```typescript
-YOUR_CHAIN_ID: {
-  chainId: YOUR_CHAIN_ID,
-  name: "your-chain",
-  testnet: false
-},
-```
-
-3. **Add RPC URL to `.env`:**
-
-```bash
-YOUR_CHAIN_RPC_URL=https://...
-```
-
-## Additional Resources
-
-- [Uniswap v4 Documentation](https://docs.uniswap.org/contracts/v4/overview)
-- [Foundry Book](https://book.getfoundry.sh/)
-- [Cast Wallet Guide](https://book.getfoundry.sh/reference/cast/cast-wallet)
-- [Project README](../README.md)
