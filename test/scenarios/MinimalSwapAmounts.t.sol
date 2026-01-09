@@ -234,6 +234,29 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
         assertLe(endBalanceA, startBalanceA, "Roundtrip profit - potential exploit!");
     }
 
+    /// @notice FUZZ: Exact output swaps should require more input than output (fees charged)
+    function testFuzz_exactOutput_inputExceedsOutput(uint256 _amountOut) public {
+        // Bound to reasonable range: 1 wei to 50% of pool (can't get more than pool has)
+        _amountOut = bound(_amountOut, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS / 2);
+
+        uint256 balanceABefore = IERC20(Currency.unwrap(tokenA)).balanceOf(swapper);
+        uint256 balanceBBefore = IERC20(Currency.unwrap(tokenB)).balanceOf(swapper);
+
+        _executeExactOutputSwap(true, _amountOut);
+
+        uint256 balanceAAfter = IERC20(Currency.unwrap(tokenA)).balanceOf(swapper);
+        uint256 balanceBAfter = IERC20(Currency.unwrap(tokenB)).balanceOf(swapper);
+
+        uint256 amountIn = balanceABefore - balanceAAfter;
+        uint256 actualOut = balanceBAfter - balanceBBefore;
+
+        // Got what we asked for
+        assertEq(actualOut, _amountOut, "Didn't receive exact output amount");
+
+        // Input should exceed output (fees charged)
+        assertGt(amountIn, actualOut, "Input not greater than output - no fees charged!");
+    }
+
     /// @notice Dust amounts near fee threshold
     function test_dustAmounts_nearFeeThreshold() public {
         // With 0.03% LP fee, amounts below ~3333 wei should lose significant percentage to fees
