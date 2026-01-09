@@ -181,7 +181,11 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
         console.log("Imbalanced pool tiny swaps (100x 1 wei B->A):");
         console.log("  Token A gained:", endBalanceA - startBalanceA);
         console.log("  Token B spent: ", startBalanceB - endBalanceB);
-        // Net profit is 0 - 1:1 exchange, no exploitation possible
+
+        // Net result: spent at least as much as gained (no profit)
+        uint256 tokenAGained = endBalanceA - startBalanceA;
+        uint256 tokenBSpent = startBalanceB - endBalanceB;
+        assertGe(tokenBSpent, tokenAGained, "Attacker profited on imbalanced pool");
     }
 
     /// @notice SECURITY: Even with maximum imbalance, tiny swaps break even
@@ -212,13 +216,27 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
 
         console.log("Dust amount analysis:");
 
+        uint256 previousLossBps = type(uint256).max;
+
         for (uint256 i = 0; i < amounts.length; i++) {
             uint256 amountOut = _executeSwapAndGetOutput(true, amounts[i]);
             uint256 lossBps = amounts[i] > 0 ? (amounts[i] - amountOut) * 10000 / amounts[i] : 0;
 
             console.log("  Amount:", amounts[i], "Out:", amountOut);
             console.log("  Loss bps:", lossBps);
+
+            // Fees are always charged (output < input)
+            assertLt(amountOut, amounts[i], "No fee charged on dust amount");
+
+            // Larger amounts have proportionally lower fees (converges to LP fee rate)
+            assertLe(lossBps, previousLossBps, "Larger amount had higher effective fee");
+            previousLossBps = lossBps;
         }
+
+        // Largest amount should converge to ~3 bps (0.03% LP fee)
+        uint256 finalOut = _executeSwapAndGetOutput(true, amounts[4]);
+        uint256 finalLossBps = (amounts[4] - finalOut) * 10000 / amounts[4];
+        assertLe(finalLossBps, 10, "Large amount fee not converging to LP fee rate");
     }
 
     function _deployMockTokens() private {
