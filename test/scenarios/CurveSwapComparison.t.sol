@@ -204,8 +204,7 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
         inputs[0] = abi.encode(actions, params);
 
         // Calculate intrinsic gas (21000 base + calldata costs)
-        bytes memory fullCalldata =
-            abi.encodeCall(universalRouter.execute, (commands, inputs, block.timestamp + 100));
+        bytes memory fullCalldata = abi.encodeCall(universalRouter.execute, (commands, inputs, block.timestamp + 100));
         intrinsicGas = 21000 + _calldataCost(fullCalldata);
 
         vm.prank(swapper);
