@@ -206,8 +206,8 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
 
     /// @notice FUZZ: Output should never exceed input for any swap amount
     function testFuzz_outputNeverExceedsInput(uint256 _amountIn) public {
-        // Bound to reasonable range: 1 wei to 10% of pool
-        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS / 10);
+        // Bound from 1 wei to 2x pool size to cover extreme scenarios
+        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS * 2);
 
         uint256 amountOut = _executeSwapAndGetOutput(true, _amountIn);
 
@@ -216,8 +216,8 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
 
     /// @notice FUZZ: Roundtrip swaps should never profit
     function testFuzz_roundtripNeverProfits(uint256 _amountIn) public {
-        // Bound to reasonable range: 1 wei to 10% of pool
-        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS / 10);
+        // Bound from 1 wei to 2x pool size to cover extreme scenarios
+        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS * 2);
 
         uint256 startBalanceA = IERC20(Currency.unwrap(tokenA)).balanceOf(swapper);
 
