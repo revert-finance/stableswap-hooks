@@ -58,6 +58,98 @@ contract SwapSlippageProtectionTest is ExternalContractsDeployer {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
     }
 
+    function test_exactInput_slippageProtection_succeeds() public {
+        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
+        uint256 amountOutMinimum = _toTokenWei(currency1, SWAP_AMOUNT * 99 / 100);
+
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        _executeExactInputSwap(true, amountIn, amountOutMinimum);
+
+        uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        uint256 amountOut = balance1After - balance1Before;
+
+        assertGe(amountOut, amountOutMinimum);
+    }
+
+    function test_exactInput_slippageProtection_reverts() public {
+        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
+        uint256 unreasonableMinimum = _toTokenWei(currency1, SWAP_AMOUNT * 2);
+
+        PoolKey memory poolKey = _getPoolKey();
+
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(
+            IV4Router.ExactInputSingleParams({
+                poolKey: poolKey,
+                zeroForOne: true,
+                amountIn: uint128(amountIn),
+                amountOutMinimum: uint128(unreasonableMinimum),
+                hookData: bytes("")
+            })
+        );
+        params[1] = abi.encode(currency0, amountIn);
+        params[2] = abi.encode(currency1, unreasonableMinimum);
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(actions, params);
+
+        vm.prank(swapper);
+        vm.expectPartialRevert(IV4Router.V4TooLittleReceived.selector);
+        universalRouter.execute(commands, inputs, block.timestamp + 100);
+    }
+
+    function test_exactOutput_slippageProtection_succeeds() public {
+        uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
+        uint256 amountInMaximum = _toTokenWei(currency0, SWAP_AMOUNT * 101 / 100);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        _executeExactOutputSwap(true, amountOut, amountInMaximum);
+
+        uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+
+        assertEq(balance1After - balance1Before, amountOut);
+        assertLe(balance0Before - balance0After, amountInMaximum);
+    }
+
+    function test_exactOutput_slippageProtection_reverts() public {
+        uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
+        uint256 unreasonableMaximum = _toTokenWei(currency0, SWAP_AMOUNT / 2);
+
+        PoolKey memory poolKey = _getPoolKey();
+
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(
+            IV4Router.ExactOutputSingleParams({
+                poolKey: poolKey,
+                zeroForOne: true,
+                amountOut: uint128(amountOut),
+                amountInMaximum: uint128(unreasonableMaximum),
+                hookData: bytes("")
+            })
+        );
+        params[1] = abi.encode(currency0, unreasonableMaximum);
+        params[2] = abi.encode(currency1, amountOut);
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(actions, params);
+
+        vm.prank(swapper);
+        vm.expectPartialRevert(IV4Router.V4TooMuchRequested.selector);
+        universalRouter.execute(commands, inputs, block.timestamp + 100);
+    }
+
     function _deployHooks() private {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = currency0;
@@ -172,98 +264,6 @@ contract SwapSlippageProtectionTest is ExternalContractsDeployer {
         inputs[0] = abi.encode(actions, params);
 
         vm.prank(swapper);
-        universalRouter.execute(commands, inputs, block.timestamp + 100);
-    }
-
-    function test_exactInput_slippageProtection_succeeds() public {
-        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
-        uint256 amountOutMinimum = _toTokenWei(currency1, SWAP_AMOUNT * 99 / 100);
-
-        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-
-        _executeExactInputSwap(true, amountIn, amountOutMinimum);
-
-        uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-        uint256 amountOut = balance1After - balance1Before;
-
-        assertGe(amountOut, amountOutMinimum);
-    }
-
-    function test_exactInput_slippageProtection_reverts() public {
-        uint256 amountIn = _toTokenWei(currency0, SWAP_AMOUNT);
-        uint256 unreasonableMinimum = _toTokenWei(currency1, SWAP_AMOUNT * 2);
-
-        PoolKey memory poolKey = _getPoolKey();
-
-        bytes memory actions =
-            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
-
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactInputSingleParams({
-                poolKey: poolKey,
-                zeroForOne: true,
-                amountIn: uint128(amountIn),
-                amountOutMinimum: uint128(unreasonableMinimum),
-                hookData: bytes("")
-            })
-        );
-        params[1] = abi.encode(currency0, amountIn);
-        params[2] = abi.encode(currency1, unreasonableMinimum);
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-
-        vm.prank(swapper);
-        vm.expectPartialRevert(IV4Router.V4TooLittleReceived.selector);
-        universalRouter.execute(commands, inputs, block.timestamp + 100);
-    }
-
-    function test_exactOutput_slippageProtection_succeeds() public {
-        uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
-        uint256 amountInMaximum = _toTokenWei(currency0, SWAP_AMOUNT * 101 / 100);
-
-        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
-        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-
-        _executeExactOutputSwap(true, amountOut, amountInMaximum);
-
-        uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
-        uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-
-        assertEq(balance1After - balance1Before, amountOut);
-        assertLe(balance0Before - balance0After, amountInMaximum);
-    }
-
-    function test_exactOutput_slippageProtection_reverts() public {
-        uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
-        uint256 unreasonableMaximum = _toTokenWei(currency0, SWAP_AMOUNT / 2);
-
-        PoolKey memory poolKey = _getPoolKey();
-
-        bytes memory actions =
-            abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
-
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactOutputSingleParams({
-                poolKey: poolKey,
-                zeroForOne: true,
-                amountOut: uint128(amountOut),
-                amountInMaximum: uint128(unreasonableMaximum),
-                hookData: bytes("")
-            })
-        );
-        params[1] = abi.encode(currency0, unreasonableMaximum);
-        params[2] = abi.encode(currency1, amountOut);
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-
-        vm.prank(swapper);
-        vm.expectPartialRevert(IV4Router.V4TooMuchRequested.selector);
         universalRouter.execute(commands, inputs, block.timestamp + 100);
     }
 }

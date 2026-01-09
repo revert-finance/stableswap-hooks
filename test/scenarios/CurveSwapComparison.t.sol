@@ -77,6 +77,40 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
         _addImbalancedLiquidity();
     }
 
+    /// @notice Compare our swap output and gas with Curve's crv2pool
+    function test_curveSwapComparison_usdcToUsdt() public {
+        // Verify pool state matches Curve
+        uint256 reserve0 = hooks.reserves(0);
+        uint256 reserve1 = hooks.reserves(1);
+        assertEq(reserve0, USDC_RESERVE);
+        assertEq(reserve1, USDT_RESERVE);
+
+        // Record balances before swap
+        uint256 swapperBalance0Before = IERC20(Currency.unwrap(usdc)).balanceOf(swapper);
+        uint256 swapperBalance1Before = IERC20(Currency.unwrap(usdt)).balanceOf(swapper);
+
+        // Execute swap and measure gas
+        (uint256 execGas, uint256 intrinsicGas) = _executeExactInputSwap(true, SWAP_AMOUNT_IN);
+        uint256 fullTxGas = execGas + intrinsicGas;
+
+        // Calculate output
+        uint256 swapperBalance0After = IERC20(Currency.unwrap(usdc)).balanceOf(swapper);
+        uint256 swapperBalance1After = IERC20(Currency.unwrap(usdt)).balanceOf(swapper);
+
+        uint256 amountIn = swapperBalance0Before - swapperBalance0After;
+        uint256 amountOut = swapperBalance1After - swapperBalance1Before;
+
+        console.log("Curve Output:", CURVE_OUTPUT);
+        console.log("Our Output:  ", amountOut);
+        console.log("Output Diff: ", int256(amountOut) - int256(CURVE_OUTPUT));
+        console.log("Curve Gas:   ", CURVE_GAS);
+        console.log("Our Gas:     ", fullTxGas);
+        console.log("Gas Diff:    ", int256(fullTxGas) - int256(CURVE_GAS));
+        assertEq(amountIn, SWAP_AMOUNT_IN);
+        assertGt(amountOut, 0);
+        assertApproxEqRel(amountOut, CURVE_OUTPUT, 0.0005e18);
+    }
+
     function _deployHooks() private {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = usdc;
@@ -178,39 +212,5 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
         uint256 gasBefore = gasleft();
         universalRouter.execute(commands, inputs, block.timestamp + 100);
         gasUsed = gasBefore - gasleft();
-    }
-
-    /// @notice Compare our swap output and gas with Curve's crv2pool
-    function test_curveSwapComparison_usdcToUsdt() public {
-        // Verify pool state matches Curve
-        uint256 reserve0 = hooks.reserves(0);
-        uint256 reserve1 = hooks.reserves(1);
-        assertEq(reserve0, USDC_RESERVE);
-        assertEq(reserve1, USDT_RESERVE);
-
-        // Record balances before swap
-        uint256 swapperBalance0Before = IERC20(Currency.unwrap(usdc)).balanceOf(swapper);
-        uint256 swapperBalance1Before = IERC20(Currency.unwrap(usdt)).balanceOf(swapper);
-
-        // Execute swap and measure gas
-        (uint256 execGas, uint256 intrinsicGas) = _executeExactInputSwap(true, SWAP_AMOUNT_IN);
-        uint256 fullTxGas = execGas + intrinsicGas;
-
-        // Calculate output
-        uint256 swapperBalance0After = IERC20(Currency.unwrap(usdc)).balanceOf(swapper);
-        uint256 swapperBalance1After = IERC20(Currency.unwrap(usdt)).balanceOf(swapper);
-
-        uint256 amountIn = swapperBalance0Before - swapperBalance0After;
-        uint256 amountOut = swapperBalance1After - swapperBalance1Before;
-
-        console.log("Curve Output:", CURVE_OUTPUT);
-        console.log("Our Output:  ", amountOut);
-        console.log("Output Diff: ", int256(amountOut) - int256(CURVE_OUTPUT));
-        console.log("Curve Gas:   ", CURVE_GAS);
-        console.log("Our Gas:     ", fullTxGas);
-        console.log("Gas Diff:    ", int256(fullTxGas) - int256(CURVE_GAS));
-        assertEq(amountIn, SWAP_AMOUNT_IN);
-        assertGt(amountOut, 0);
-        assertApproxEqRel(amountOut, CURVE_OUTPUT, 0.0005e18);
     }
 }
