@@ -204,6 +204,36 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
         assertLe(amountOut, 1, "Extreme imbalance exploitation possible!");
     }
 
+    /// @notice FUZZ: Output should never exceed input for any swap amount
+    function testFuzz_outputNeverExceedsInput(uint256 _amountIn) public {
+        // Bound to reasonable range: 1 wei to 10% of pool
+        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS / 10);
+
+        uint256 amountOut = _executeSwapAndGetOutput(true, _amountIn);
+
+        assertLe(amountOut, _amountIn, "Output exceeded input - potential exploit!");
+    }
+
+    /// @notice FUZZ: Roundtrip swaps should never profit
+    function testFuzz_roundtripNeverProfits(uint256 _amountIn) public {
+        // Bound to reasonable range: 1 wei to 10% of pool
+        _amountIn = bound(_amountIn, 1, LIQUIDITY_AMOUNT * 10 ** TOKEN_DECIMALS / 10);
+
+        uint256 startBalanceA = IERC20(Currency.unwrap(tokenA)).balanceOf(swapper);
+
+        // A -> B
+        uint256 amountOutB = _executeSwapAndGetOutput(true, _amountIn);
+
+        // B -> A (swap back whatever we got)
+        if (amountOutB > 0) {
+            _executeSwapAndGetOutput(false, amountOutB);
+        }
+
+        uint256 endBalanceA = IERC20(Currency.unwrap(tokenA)).balanceOf(swapper);
+
+        assertLe(endBalanceA, startBalanceA, "Roundtrip profit - potential exploit!");
+    }
+
     /// @notice Dust amounts near fee threshold
     function test_dustAmounts_nearFeeThreshold() public {
         // With 0.03% LP fee, amounts below ~3333 wei should lose significant percentage to fees
