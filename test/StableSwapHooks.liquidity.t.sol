@@ -302,6 +302,25 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
     }
 
+    function test_addLiquidity_ShouldRevertWhenActualAmountsBelowMinAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Imbalanced deposit: token1 is limiting factor
+        // Will only use ~1000 of token0 (proportional to token1)
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 2000);
+        amounts[1] = _toTokenWei(currency1, 1000);
+
+        // Set minAmounts[0] higher than what will actually be used
+        uint256[] memory minAmounts = new uint256[](2);
+        minAmounts[0] = _toTokenWei(currency0, 1500); // More than proportional ~1000
+        minAmounts[1] = 0;
+
+        vm.expectRevert(Liquidity.InsufficientAmountsUsed.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, minAmounts, 0);
+    }
+
     function test_addLiquidity_ShouldRevertWhenBothAmountsZero_InitialDeposit() public {
         uint256[] memory amounts = new uint256[](2);
         uint256[] memory minAmounts = new uint256[](2);
