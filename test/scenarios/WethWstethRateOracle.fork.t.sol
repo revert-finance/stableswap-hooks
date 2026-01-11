@@ -287,8 +287,10 @@ contract WethWstethRateOracleTest is ExternalContractsDeployer {
         amounts[0] = _wstethAmount;
         amounts[1] = _wethAmount;
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _executeSwap(bool _zeroForOne, uint256 _amountIn) internal returns (uint256 amountOut) {

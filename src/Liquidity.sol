@@ -36,6 +36,9 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Error thrown when withdrawal amounts are below the minimum specified
     error InsufficientAmounts();
 
+    /// @notice Error thrown when actual amounts used are below the minimum specified
+    error InsufficientAmountsUsed();
+
     /// @notice Error thrown when attempting to modify liquidity via PoolManager directly
     error UseHookLiquidityModifiers(address _hookAddress);
 
@@ -66,9 +69,10 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @dev First deposit uses all amounts; subsequent deposits must be proportional to reserves
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
     /// @param _amounts Array of amounts for each currency (max amounts for subsequent deposits)
-    /// @param _minShares The minimum number of shares to receive (slippage protection)
-    function addLiquidity(uint256[] calldata _amounts, uint256 _minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minShares, msg.sender);
+    /// @param _minAmounts Array of minimum amounts that must be used (slippage protection for amounts)
+    /// @param _minShares The minimum number of shares to receive (slippage protection for LP tokens)
+    function addLiquidity(uint256[] calldata _amounts, uint256[] calldata _minAmounts, uint256 _minShares) external {
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minAmounts, _minShares, msg.sender);
 
         poolManager.unlock(data);
     }
@@ -116,8 +120,8 @@ abstract contract Liquidity is Amp, ERC20 {
 
     /// @dev Callback handler for adding liquidity
     function _handleAddLiquidityCallback(bytes calldata data) internal {
-        (, uint256[] memory amounts, uint256 minShares, address sender) =
-            abi.decode(data, (uint256, uint256[], uint256, address));
+        (, uint256[] memory amounts, uint256[] memory minAmounts, uint256 minShares, address sender) =
+            abi.decode(data, (uint256, uint256[], uint256[], uint256, address));
 
         bool isInitialDeposit = totalSupply() == 0;
 
@@ -125,6 +129,12 @@ abstract contract Liquidity is Amp, ERC20 {
 
         if (newShares < minShares) {
             revert InsufficientShares();
+        }
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            if (actualAmounts[i] < minAmounts[i]) {
+                revert InsufficientAmountsUsed();
+            }
         }
 
         if (isInitialDeposit) {

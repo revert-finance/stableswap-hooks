@@ -153,8 +153,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         amounts[0] = _toTokenWei(currency0, _amount0);
         amounts[1] = _toTokenWei(currency1, _amount1);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _addLiquidity3(uint256 _amount0, uint256 _amount1, uint256 _amount2) internal {
@@ -163,8 +165,10 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         amounts[1] = _toTokenWei(currency1, _amount1);
         amounts[2] = _toTokenWei(currency2, _amount2);
 
+        uint256[] memory minAmounts = new uint256[](3);
+
         vm.prank(liquidityProvider);
-        hooks3.addLiquidity(amounts, 0);
+        hooks3.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _executeExactInputSwap3(Currency _inputCurrency, Currency _outputCurrency, uint256 _amountIn) internal {

@@ -241,8 +241,10 @@ contract QuoterSlippageProtectionTest is ExternalContractsDeployer {
         amounts[0] = _toTokenWei(currency0, _amount0);
         amounts[1] = _toTokenWei(currency1, _amount1);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _getPoolKey() internal view returns (PoolKey memory) {

@@ -196,8 +196,10 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
             amounts[1] = _amountStETH;
         }
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooksWstETH.addLiquidity(amounts, 0);
+        hooksWstETH.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _executeSwapWstETH(bool _stETHToWstETH, uint256 _amountIn) internal {
