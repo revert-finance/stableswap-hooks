@@ -1,394 +1,281 @@
 # StableSwap Hooks
 
-A Uniswap v4 hook implementation that brings the [StableSwap (Curve)](https://curve.fi/) AMM design to the Uniswap v4 ecosystem. This enables efficient stablecoin trading with minimal slippage using the StableSwap invariant.
+## Description
+StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
 
-## Overview
+The StableSwap invariant blends constant-sum and constant-product behavior with an amplification coefficient (A): near balance it behaves closer to constant-sum for tighter pricing, and as the pool becomes imbalanced it shifts toward constant-product to preserve liquidity. The benefit is concentrated liquidity around the peg without relying on external oracles for pricing, which improves capital efficiency for LPs and reduces price impact for traders.
 
-Unlike Uniswap's constant-product formula (`x*y=k`), StableSwap uses a hybrid invariant that operates like constant-sum at equilibrium but transitions toward constant-product when imbalanced. This provides:
+## Liquidity
+Liquidity is pooled and represented by ERC20 LP tokens. The hook does not rely on Uniswap’s position manager or concentrated liquidity NFTs; it manages liquidity internally with Uniswap v2-style ERC20 LP tokens. Deposits and withdrawals are proportional across all pool assets; there is no range-based liquidity and no NFT positions.
 
-- **100-1000x lower slippage** for stablecoin pairs
-- **Efficient cross-market trading** without intermediaries or order books
-- **Composability** with the Uniswap v4 ecosystem
+### Add liquidity
+Add liquidity uses the hook’s internal accounting and mints ERC20 LP tokens.
 
-### The StableSwap Invariant
+The first deposit consumes the provided amounts as-is and permanently locks `MINIMUM_LIQUIDITY` to `DEAD_ADDRESS` to prevent dust attacks and protect the pool from manipulation at very low total supply.
 
-```
-A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i)
-```
+Subsequent deposits are taken proportionally to current reserves.
 
-Where:
-
-- `A` = Amplification coefficient (controls price curve steepness)
-- `n` = Number of tokens (2-4 supported)
-- `D` = Invariant value
-- `Σx_i` = Sum of reserves
-- `Πx_i` = Product of reserves
-
-## Architecture
-
-```
-src/
-├── StableSwapHooks.sol      # Main entry point & unlock callback handler
-├── Base.sol                 # Pool configuration & hook permissions
-├── Swap.sol                 # Swap execution using StableSwap math
-├── Liquidity.sol            # LP token & liquidity management (ERC20)
-├── Fees.sol                 # Three-tier fee collection & distribution
-├── Amp.sol                  # Amplification coefficient management
-├── factories/
-│   └── StableSwapHooksFactory.sol  # CREATE2 factory for hook deployment
-└── libraries/
-    ├── StableSwapMath.sol   # Core mathematical operations
-    └── Actions.sol          # Action type identifiers
-```
-
-### Contract Hierarchy
-
-```
-StableSwapHooks
-    └── Swap
-        └── Liquidity (ERC20)
-            └── Fees
-                └── Amp
-                    └── Base
-                        └── BaseHook (OpenZeppelin)
-
-StableSwapHooksFactory (Ownable, Pausable)
-    └── Deploys StableSwapHooks via CREATE2
-    └── Manages fee collectors
-```
-
-## Features
-
-### Swaps
-
-- Exact input and exact output modes
-- Bidirectional swaps (token0 ↔ token1)
-- Minimal slippage for similarly-priced assets
-- Fee deduction from output (exact input) or added to input (exact output)
-
-### Liquidity Management
-
-- Proportional deposits across all currencies
-- LP tokens (`SSLP`) representing pool shares
-- Slippage protection via `_minShares` (deposits) and `_minAmounts[]` (withdrawals)
-- Liquidity operations routed through the hook (direct PoolManager access blocked)
-- Only proportional amounts are pulled; excess approval is unused
-
-### Three-Tier Fee System
-
-| Fee Type      | Recipient           | Description                                       |
-| ------------- | ------------------- | ------------------------------------------------- |
-| LP Fees       | Liquidity Providers | Accumulated in reserves, increases LP token value |
-| Hook Fees     | Hook Fee Collector  | Withdrawable to factory-configured address        |
-| Protocol Fees | Protocol Treasury   | Withdrawable to factory-configured address        |
-
-All fees use `FEE_PRECISION = 1e6` (100% = 1,000,000). Total fees cannot exceed 100%.
-
-- **LP fee**: Set at deployment (immutable)
-- **Protocol/Hook fees**: Configurable by factory owner
-- **Fee collectors**: Managed on factory, shared across all hooks
-
-### Amplification Coefficient
-
-The `A` parameter controls pool behavior:
-
-- **Low A (1-10)**: More like constant-product (Uniswap-style)
-- **High A (100-1000)**: More like constant-sum (stablecoin-optimized)
-
-Safety mechanisms:
-
-- Changes must be ramped over minimum 1 day
-- Maximum 10x change per ramp
-- Linear interpolation for smooth transitions
-- Admin can stop ramp if needed
-
-> **Why ramping?** Instant `A` changes could be exploited via sandwich attacks or LP value extraction. Gradual ramping gives LPs time to react and withdraw if they disagree, prevents arbitrageable price discontinuities, and ensures predictable pool behavior at every block.
-
-### Multi-Currency Support
-
-The pool supports 2-4 currencies with automatic pairwise pool initialization:
-
-- All pairwise combinations are initialized on deployment
-- Currencies must be sorted in ascending order by address
-- Swaps between any two supported currencies use the StableSwap invariant
-
-### Dynamic Rate Oracles
-
-Each currency can have a custom rate oracle to define non-1:1 balance rates for LSTs like wstETH (e.g., 1 wstETH = ~1.22 WETH):
-
-- Configure via `RateOracleConfig(oracle, selector)` at deployment
-- Use `address(0)` for static rates
-- **wstETH example** (mainnet): oracle = [`0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0`](https://etherscan.io/token/0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0), selector = `0x035faf82` (`stEthPerToken()`)
-
-## Usage
-
-### Factory Deployment
-
-For detailed deployment instructions, see the [deployment guide](script/README.md).
-
-First, deploy the factory:
+Approve each pool currency to the hook, then use `quoteAddLiquidity` to fetch slippage protection values and pass them into `addLiquidity`.
 
 ```solidity
-// Compute creation code hash off-chain or in deployment script
-bytes32 creationCodeHash = keccak256(type(StableSwapHooks).creationCode);
-
-StableSwapHooksFactory factory = new StableSwapHooksFactory(
-    poolManager,
-    owner,                  // Factory owner (admin)
-    protocolFeeCollector,   // Receives protocol fees
-    hookFeeCollector,       // Receives hook fees
-    creationCodeHash        // For bytecode validation
-);
-```
-
-### Hook Deployment
-
-Deploy hooks via the factory:
-
-```solidity
-// 1. Prepare currencies (must be sorted by address in ascending uint160 order)
-Currency[] memory currencies = new Currency[](2);
-currencies[0] = currency0;
-currencies[1] = currency1;
-
-// 2. Configure rate oracles (use address(0) for static rates)
-RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
-rateOracles[0] = RateOracleConfig(address(0), bytes4(0)); // Static rate
-rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // Static rate
-
-// 3. Get creation code
-bytes memory creationCode = type(StableSwapHooks).creationCode;
-
-// 4. Mine a valid CREATE2 salt (off-chain via eth_call)
-(address hookAddress, bytes32 salt) = factory.mineSalt(
-    currencies,
-    rateOracles,
-    3000,  // 0.3% LP fee (immutable)
-    100,   // A = 100
-    creationCode
-);
-
-// 5. Deploy the hook
-StableSwapHooks hook = factory.deploy(
-    currencies,
-    rateOracles,
-    3000,  // 0.3% LP fee
-    100,   // A = 100
-    salt,
-    creationCode
-);
-
-// 6. Configure fees (optional, factory owner only)
-hook.setProtocolFeePercentage(500);  // 0.05%
-hook.setHookFeePercentage(1000);     // 0.1%
-
-// Note: All pairwise pools are automatically initialized by the constructor
-```
-
-**WETH/wstETH example** (mainnet):
-
-```solidity
-Currency[] memory currencies = new Currency[](2);
-currencies[0] = Currency.wrap(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0); // wstETH
-currencies[1] = Currency.wrap(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); // WETH
-
-RateOracleConfig[] memory rateOracles = new RateOracleConfig[](2);
-rateOracles[0] = RateOracleConfig(
-    0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0, // wstETH contract
-    0x035faf82                                  // stEthPerToken()
-);
-rateOracles[1] = RateOracleConfig(address(0), bytes4(0)); // WETH: static rate
-
-bytes memory creationCode = type(StableSwapHooks).creationCode;
-(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, 300, 100, creationCode);
-
-StableSwapHooks hook = factory.deploy(
-    currencies,
-    rateOracles,
-    300,   // 0.03% LP fee
-    100,   // A = 100
-    salt,
-    creationCode
-);
-```
-
-### Adding Liquidity
-
-```solidity
-// Prepare amounts array
 uint256[] memory amounts = new uint256[](2);
 amounts[0] = amount0;
 amounts[1] = amount1;
 
-// Quote first to get expected shares and actual amounts
-(uint256 expectedShares, uint256[] memory actualAmounts) = hook.quoteAddLiquidity(amounts);
+// Quote expected shares and actual amounts used by the pool.
+(uint256 expectedShares, uint256[] memory actualAmounts) = hooks.quoteAddLiquidity(amounts);
 
-// Approve only what will be used
-token0.approve(address(hook), actualAmounts[0]);
-token1.approve(address(hook), actualAmounts[1]);
+// Apply a slippage tolerance for minAmounts and minShares.
+uint256[] memory minAmounts = new uint256[](2);
+minAmounts[0] = actualAmounts[0] * 99 / 100; // 1% slippage
+minAmounts[1] = actualAmounts[1] * 99 / 100;
+uint256 minShares = expectedShares * 99 / 100;
 
-// Add liquidity with slippage protection
-hook.addLiquidity(amounts, expectedShares * 99 / 100); // 1% slippage
+hooks.addLiquidity(amounts, minAmounts, minShares);
 ```
 
-> **Note:** Only proportional amounts are pulled from the user. Use `quoteAddLiquidity` to preview exact amounts. Some tokens like USDT require resetting approval to 0 before approving again.
+### Remove liquidity
+Remove liquidity burns LP shares and returns proportional amounts of each currency.
 
-### Removing Liquidity
+Use `quoteRemoveLiquidity` to preview expected amounts, then pass minimums into `removeLiquidity` for slippage protection.
 
 ```solidity
-// Quote first to get expected withdrawal amounts
-uint256[] memory expectedAmounts = hook.quoteRemoveLiquidity(shares);
+uint256 shares = lpSharesToBurn;
 
-// Set minimum amounts with slippage tolerance
+uint256[] memory expectedAmounts = hooks.quoteRemoveLiquidity(shares);
+
 uint256[] memory minAmounts = new uint256[](2);
 minAmounts[0] = expectedAmounts[0] * 99 / 100; // 1% slippage
 minAmounts[1] = expectedAmounts[1] * 99 / 100;
 
-// Burn LP shares and receive tokens proportionally
-hook.removeLiquidity(shares, minAmounts);
+hooks.removeLiquidity(shares, minAmounts);
 ```
 
-### Swapping
+### Liquidity Token
+The hook itself is an ERC20 that tracks the balance of liquidity tokens and exposes the full ERC20 interface (transfer, approve, allowance, and related functions).
 
-Swaps are executed through the [Universal Router](https://docs.uniswap.org/contracts/universal-router/overview). The hook intercepts swaps via `beforeSwap` and applies StableSwap pricing.
+## Stable Swaps
+StableSwap replaces Uniswap v4's default AMM math with a StableSwap invariant. The hook overrides `beforeSwap` in `src/Swap.sol` to compute swap amounts using StableSwap math, then returns the delta to the pool manager so the swap settles with the hook's pricing.
+
+### Swapping via Universal Router
+Swaps should be executed through the v4 Universal Router (for example `@uniswap/v4-periphery`), using a `PoolKey` that includes the hook address and the LP fee encoded in `fee`.
+
+This keeps the hook compatible with existing v4 routing, batching, and settlement flows while preserving standard slippage controls. Slippage protection is enforced by the router's `amountOutMinimum` (exact input) or `amountInMaximum` (exact output) parameters.
+
+The action sequence uses `SWAP_EXACT_IN_SINGLE` to perform the swap, `SETTLE_ALL` to settle input currency, and `TAKE_ALL` to pull output currency.
+
+The example below shows an exact-input swap; exact-output swaps use `SWAP_EXACT_OUT_SINGLE` with `amountInMaximum`.
 
 ```solidity
-// Swap 1000 USDC for USDT with 0.1% slippage tolerance (pseudocode)
-universalRouter.execute(
-    V4_SWAP,
-    ExactInputSingleParams({
+// Build the pool key that routes swaps through this hook.
+PoolKey memory poolKey = PoolKey({
+    currency0: currency0,
+    currency1: currency1,
+    fee: uint24(lpFeePercentage),
+    tickSpacing: hooks.TICK_SPACING(),
+    hooks: IHooks(address(hooks))
+});
+
+// Compose the v4 swap actions.
+bytes memory actions =
+    abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+bytes[] memory params = new bytes[](3);
+// Exact input swap with slippage protection.
+params[0] = abi.encode(
+    IV4Router.ExactInputSingleParams({
         poolKey: poolKey,
         zeroForOne: true,
-        amountIn: 1000e6,
-        amountOutMinimum: 999e6
+        amountIn: uint128(amountIn),
+        amountOutMinimum: amountOutMin,
+        hookData: bytes("")
     })
 );
+// Settle input currency and take output currency.
+params[1] = abi.encode(poolKey.currency0, amountIn);
+params[2] = abi.encode(poolKey.currency1, 0);
+
+// Dispatch the swap through the Universal Router.
+bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+bytes[] memory inputs = new bytes[](1);
+inputs[0] = abi.encode(actions, params);
+
+universalRouter.execute(commands, inputs, block.timestamp + 100);
 ```
 
-### Admin Functions
-
-Admin functions require being the factory owner:
+### Quoting swaps
+Use the v4 quoter to estimate swap amounts before execution, then feed the quote into the router's slippage parameters.
 
 ```solidity
-// Fee percentage management (on hook, factory owner only)
-hook.setProtocolFeePercentage(500);   // 0.05%
-hook.setHookFeePercentage(1000);      // 0.1%
+IV4Quoter quoter = IV4Quoter(quoterAddress);
 
-// Fee collector management (on factory, factory owner only)
-factory.setProtocolFeeCollector(newProtocolCollector);
-factory.setHookFeeCollector(newHookCollector);
+// Exact input quote.
+(uint256 quotedAmountOut,) = quoter.quoteExactInputSingle(
+    IV4Quoter.QuoteExactSingleParams({
+        poolKey: poolKey,
+        zeroForOne: true,
+        exactAmount: uint128(amountIn),
+        hookData: bytes("")
+    })
+);
+uint256 amountOutMinimum = quotedAmountOut * 990000 / 1000000; // 1% slippage
 
-// Withdraw accumulated fees (anyone can call, goes to configured collectors)
-hook.withdrawProtocolFees();
-hook.withdrawHookFees();
-
-// Amplification adjustment (factory owner only)
-hook.startAmpRamp(newAmp, block.timestamp + 7 days);
-hook.stopAmpRamp();  // Emergency stop
-
-// Factory controls (factory owner only)
-factory.pause();    // Prevent new deployments
-factory.unpause();
+// Exact output quote.
+(uint256 quotedAmountIn,) = quoter.quoteExactOutputSingle(
+    IV4Quoter.QuoteExactSingleParams({
+        poolKey: poolKey,
+        zeroForOne: true,
+        exactAmount: uint128(amountOut),
+        hookData: bytes("")
+    })
+);
+uint256 amountInMaximum = quotedAmountIn * 1010000 / 1000000; // 1% slippage
 ```
 
-## External Functions
+### Fees
+Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECISION = 1e6`). For exact-input swaps, fees are deducted from the output; for exact-output swaps, fees are added to the input. LP fees remain in reserves (benefiting LPs), while hook and protocol fees accumulate and can be withdrawn by the factory admin via `withdrawHookFees()` and `withdrawProtocolFees()`.
 
-### User Functions
+## Factory
+The factory deploys StableSwap hooks via CREATE2, validates the hook bytecode against a known hash, and configures protocol and hook fee collectors for all pools created through it.
 
-| Function                                                  | Description                                         |
-| --------------------------------------------------------- | --------------------------------------------------- |
-| `addLiquidity(uint256[] _amounts, uint256 _minShares)`    | Deposit tokens proportionally and receive LP shares |
-| `removeLiquidity(uint256 _shares, uint256[] _minAmounts)` | Burn LP shares and withdraw proportional tokens     |
-| `withdrawProtocolFees()`                                  | Send accumulated protocol fees to collector         |
-| `withdrawHookFees()`                                      | Send accumulated hook fees to collector             |
+### Deploy the factory
+Deploy `StableSwapHooksFactory` via the CREATE2 script in `script/DeployFactoryCreate2.s.sol`. Configure `.env` with `RPC_URL`, `POOL_MANAGER`, `FACTORY_OWNER`, `PROTOCOL_FEE_COLLECTOR`, and `HOOK_FEE_COLLECTOR`, then run:
 
-### Admin Functions (Factory Owner)
+```bash
+forge script script/DeployFactoryCreate2.s.sol:DeployFactoryCreate2 \
+  --rpc-url $RPC_URL \
+  --account <ACCOUNT_NAME> \
+  --sender <ADDRESS> \
+  --broadcast \
+  --verify
+```
 
-#### On Hook
+Use the same sender address across chains to keep the factory address consistent.
 
-| Function                            | Description                               |
-| ----------------------------------- | ----------------------------------------- |
-| `setProtocolFeePercentage(uint256)` | Update protocol fee (scaled by 1e6)       |
-| `setHookFeePercentage(uint256)`     | Update hook fee (scaled by 1e6)           |
-| `startAmpRamp(uint256, uint256)`    | Begin gradual A coefficient change        |
-| `stopAmpRamp()`                     | Emergency stop current A coefficient ramp |
+### Deploy new pools (hooks)
+Use the factory to deploy a new hook (and initialize all pairwise pools):
+1. Prepare sorted `currencies[]` (2-4 assets) and matching `rateOracles[]`.
+2. Compute a CREATE2 salt with `factory.mineSalt(...)` (or off-chain `HookMiner`).
+3. Call `factory.deploy(...)` with the creation code and constructor params.
 
-#### On Factory
+`currencies[]` are the token addresses for the pool, and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
 
-| Function                           | Description                           |
-| ---------------------------------- | ------------------------------------- |
-| `setProtocolFeeCollector(address)` | Update protocol fee recipient address |
-| `setHookFeeCollector(address)`     | Update hook fee recipient address     |
-| `pause()`                          | Pause factory (prevent deployments)   |
-| `unpause()`                        | Unpause factory                       |
+`mineSalt(...)` and `deploy(...)` expect the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
 
-### View Functions
+```solidity
+Currency[] memory currencies = new Currency[](2);
+currencies[0] = usdc;
+currencies[1] = usdt;
 
-| Function                                      | Description                                        |
-| --------------------------------------------- | -------------------------------------------------- |
-| `quoteAddLiquidity(uint256[])`                | Simulate deposit: returns shares and actual amounts|
-| `quoteRemoveLiquidity(uint256)`               | Simulate withdrawal: returns amounts per currency  |
-| `getCurrencyIndex(Currency)`                  | Get index of a currency in the pool                |
-| `currencies(uint256)`                         | Get currency address at index                      |
-| `reserves(uint256)`                           | Get current reserve for a currency                 |
-| `rates(uint256)`                              | Get base scaling rate for a currency               |
-| `protocolFees(uint256)` / `hookFees(uint256)` | Get accumulated fees per currency                  |
-| `factory.isDeployedByFactory(address)`        | Check if hook was deployed by factory              |
+Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-## Hook Permissions
+bytes memory code = type(StableSwapHooks).creationCode;
+(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, lpFeePercentage, baseAmp, code);
 
-| Hook                  | Enabled | Purpose                            |
-| --------------------- | ------- | ---------------------------------- |
-| beforeInitialize      | Yes     | Validate pool configuration        |
-| beforeAddLiquidity    | Yes     | Block direct PoolManager liquidity |
-| beforeRemoveLiquidity | Yes     | Block direct PoolManager liquidity |
-| beforeSwap            | Yes     | Execute StableSwap pricing logic   |
-| beforeDonate          | Yes     | Block donations                    |
+StableSwapHooks hooks =
+    StableSwapHooks(factory.deploy(currencies, rateOracles, lpFeePercentage, baseAmp, salt, code));
+```
+
+WETH/wstETH example with a rate oracle:
+
+```solidity
+Currency[] memory currencies = new Currency[](2);
+currencies[0] = wsteth;
+currencies[1] = weth;
+
+Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+rateOracles[0] =
+    Base.RateOracleConfig({oracle: Currency.unwrap(wsteth), selector: IWstETH.stEthPerToken.selector});
+rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+bytes memory code = type(StableSwapHooks).creationCode;
+(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, lpFeePercentage, baseAmp, code);
+
+StableSwapHooks hooks =
+    StableSwapHooks(factory.deploy(currencies, rateOracles, lpFeePercentage, baseAmp, salt, code));
+```
+
+## Fees
+Protocol and hook fees are configured on the factory and applied by each hook alongside the LP fee. Fees accrue during swaps: LP fees stay in reserves, while hook and protocol fees accumulate per currency inside the hook until withdrawn.
+
+The factory admin controls fee percentages via `setProtocolFeePercentage` and `setHookFeePercentage` on each hook, and can withdraw accumulated balances using `withdrawProtocolFees()` and `withdrawHookFees()`. The protocol fee collector is intended to be Uniswap, and the hook fee collector is intended to be revert.
+
+### Fee percentages
+Set fee percentages on the hook (scaled by `FEE_PRECISION = 1e6`).
+
+```solidity
+hooks.setProtocolFeePercentage(5000); // 0.5%
+hooks.setHookFeePercentage(2000); // 0.2%
+```
+
+Example fee mix (LP fee set at deployment):
+
+```solidity
+// LP fee is set when deploying the hook (0.03% = 300).
+uint256 lpFeePercentage = 300;
+
+// Hook/protocol fees set post-deploy.
+hooks.setHookFeePercentage(200); // 0.02%
+hooks.setProtocolFeePercentage(100); // 0.01%
+```
+
+Swap example (exact input):
+
+```solidity
+// amountOut = 1,000,000 units (1 USDC with 6 decimals), FEE_PRECISION = 1e6
+// LP fee = 1,000,000 * 300 / 1e6 = 300 (stays in reserves)
+// Hook fee = 1,000,000 * 200 / 1e6 = 200 (accrues to hookFees)
+// Protocol fee = 1,000,000 * 100 / 1e6 = 100 (accrues to protocolFees)
+// Amount out after fees = 1,000,000 - (300 + 200 + 100) = 999,400.
+```
+
+### Fee withdrawal
+Withdraw accumulated fees to the configured collectors. Anyone can call these functions; funds are transferred to the fee collector addresses configured on the factory.
+
+```solidity
+hooks.withdrawProtocolFees();
+hooks.withdrawHookFees();
+```
+
+## Amplification
+The amplification coefficient (A) controls how tightly the pool prices around the 1:1 peg. Higher A reduces slippage near equilibrium, while lower A behaves closer to constant product. The factory owner can update A over time using ramping, via `startAmpRamp(nextAmp, nextAmpTime)` and `stopAmpRamp()` on the hook.
+
+### Ramping A
+Ramping updates A gradually to avoid abrupt changes in pricing and pool balances. Large, immediate shifts in A can be sandwiched between trades to exploit the sudden invariant change and extract value from LPs; ramping smooths the transition to reduce that attack surface. Only the factory owner can start a ramp, and the change must respect the minimum ramp duration and max change limits enforced by the hook.
+
+```solidity
+uint256 nextAmp = 200;
+uint256 nextAmpTime = block.timestamp + 2 days;
+
+hooks.startAmpRamp(nextAmp, nextAmpTime);
+```
+
+### Stopping a ramp
+Stopping a ramp freezes A at the current interpolated value. Only the factory owner can stop a ramp.
+
+```solidity
+hooks.stopAmpRamp();
+```
 
 ## Development
+### Project structure
+- `src/` core contracts (StableSwapHooks, factory, math, liquidity, fees, amp)
+- `script/` deployment scripts and chain configuration (`script/config/ChainConfig.sol`)
+- `test/` Forge tests and helpers
 
-### Prerequisites
-
-- [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Solidity 0.8.30+
-
-### Build
-
-```shell
+### Build and test
+```bash
 forge build
-```
-
-### Test
-
-```shell
 forge test
+forge test -vvv
+forge test --mt <test_name>
+forge test --mc <contract_name>
 ```
 
-### Format
-
-```shell
+### Formatting
+```bash
 forge fmt
+forge fmt --check
 ```
-
-### Gas Snapshots
-
-```shell
-forge snapshot
-```
-
-## Dependencies
-
-- [@uniswap/v4-core](https://github.com/Uniswap/v4-core) - Uniswap v4 protocol
-- [@uniswap/v4-periphery](https://github.com/Uniswap/v4-periphery) - Router and utilities
-- [uniswap-hooks](https://github.com/OpenZeppelin/uniswap-hooks) - OpenZeppelin's BaseHook
-- [@openzeppelin/contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) - Ownable, Pausable, ERC20, Create2
-
-## References
-
-- [StableSwap Whitepaper](https://curve.fi/files/stableswap-paper.pdf)
-- [Uniswap v4 Documentation](https://docs.uniswap.org/)
-- [Curve Finance](https://curve.fi/)
-
-## License
-
-See [LICENSE](LICENSE) for details.
