@@ -242,6 +242,8 @@ hooks.withdrawHookFees();
 ## Amplification
 The amplification coefficient (A) controls how tightly the pool prices around the 1:1 peg. Higher A reduces slippage near equilibrium, while lower A behaves closer to constant product. The factory owner can update A over time using ramping, via `startAmpRamp(nextAmp, nextAmpTime)` and `stopAmpRamp()` on the hook.
 
+For intuition: A ≈ 1 behaves close to constant product, A ≈ 10–100 is a middle ground, and A ≈ 1,000+ behaves close to constant sum. As a concrete reference, Curve’s USDC/USDT pool uses A = 10,000 (see `https://etherscan.io/address/0x4f493b7de8aac7d55f71853688b1f7c8f0243c85#readContract`). In practice you choose A based on how stable and correlated the assets are, and ramp between values to avoid abrupt changes.
+
 ### Ramping A
 Ramping updates A gradually to avoid abrupt changes in pricing and pool balances. Large, immediate shifts in A can be sandwiched between trades to exploit the sudden invariant change and extract value from LPs; ramping smooths the transition to reduce that attack surface. Only the factory owner can start a ramp, and the change must respect the minimum ramp duration and max change limits enforced by the hook.
 
