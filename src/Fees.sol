@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
 import {Liquidity} from "src/Liquidity.sol";
@@ -139,17 +140,16 @@ abstract contract Fees is Liquidity {
         }
     }
 
-    /// @notice Calculates LP, hook, and protocol fees from a given amount
+    /// @dev Calculates LP, hook, and protocol fees from a given amount
     /// @param _amount The amount to calculate fees on
     function _getFees(uint256 _amount)
         internal
         view
         returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
     {
-        lpFees =
-            _amount * lpFeePercentage / FEE_PRECISION;
-        hookFees_ = _amount * hookFeePercentage / FEE_PRECISION;
-        protocolFees_ = _amount * protocolFeePercentage / FEE_PRECISION;
+        lpFees = Math.mulDiv(_amount, lpFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
+        hookFees_ = Math.mulDiv(_amount, hookFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
+        protocolFees_ = Math.mulDiv(_amount, protocolFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
     }
 
     /// @dev Adds fees to the appropriate accumulators
