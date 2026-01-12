@@ -154,8 +154,10 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
         amounts[0] = USDC_RESERVE;
         amounts[1] = USDT_RESERVE;
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function _getPoolKey() internal view returns (PoolKey memory) {

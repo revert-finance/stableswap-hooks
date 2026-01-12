@@ -27,8 +27,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 lpBalance = hooks.balanceOf(liquidityProvider);
         uint256 deadBalance = hooks.balanceOf(DEAD_ADDRESS);
@@ -42,8 +44,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         assertEq(hooks.reserves(0), amounts[0]);
         assertEq(hooks.reserves(1), amounts[1]);
@@ -57,8 +61,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
@@ -72,8 +78,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 actualShares = hooks.balanceOf(liquidityProvider);
 
@@ -90,8 +98,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, 10_000);
         amounts[1] = _toTokenWei(currency1, 40_000);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 shares = hooks.balanceOf(liquidityProvider) + MINIMUM_LIQUIDITY;
 
@@ -116,8 +126,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 totalSupplyAfter = hooks.totalSupply();
         uint256 lpBalanceAfter = hooks.balanceOf(liquidityProvider);
@@ -136,8 +148,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 2);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 2);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         assertEq(hooks.reserves(0), reserves0Before + amounts[0]);
         assertEq(hooks.reserves(1), reserves1Before + amounts[1]);
@@ -152,8 +166,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 deadBalanceAfter = hooks.balanceOf(DEAD_ADDRESS);
 
@@ -174,9 +190,11 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         // With proportional deposits, single-sided deposits result in 0 shares
         // because minProportion = min(amount_i / reserve_i) = 0 when any amount is 0
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.expectRevert(Liquidity.InsufficientShares.selector);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 1);
+        hooks.addLiquidity(amounts, minAmounts, 1);
     }
 
     function test_addLiquidity_Proportional_ShouldOnlyTransferProportionalAmounts() public {
@@ -192,8 +210,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, 2000);
         amounts[1] = _toTokenWei(currency1, 1000);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 balance0After = IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
         uint256 balance1After = IERC20(Currency.unwrap(currency1)).balanceOf(liquidityProvider);
@@ -239,8 +259,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         vm.expectEmit(true, true, true, true, address(hooks));
         emit Liquidity.LiquidityAdded(liquidityProvider, expectedAmounts, expectedShares);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(maxAmounts, 0);
+        hooks.addLiquidity(maxAmounts, minAmounts, 0);
     }
 
     // ==========================================================================
@@ -255,9 +277,11 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 10);
         uint256 minShares = type(uint256).max;
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.expectRevert(Liquidity.InsufficientShares.selector);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, minShares);
+        hooks.addLiquidity(amounts, minAmounts, minShares);
     }
 
     function test_addLiquidity_ShouldSucceedWhenSharesAboveMinimum() public {
@@ -269,19 +293,41 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         // Use minShares of 1 to ensure we get at least some shares
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 1);
+        hooks.addLiquidity(amounts, minAmounts, 1);
 
         assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
     }
 
+    function test_addLiquidity_ShouldRevertWhenActualAmountsBelowMinAmounts() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        // Imbalanced deposit: token1 is limiting factor
+        // Will only use ~1000 of token0 (proportional to token1)
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 2000);
+        amounts[1] = _toTokenWei(currency1, 1000);
+
+        // Set minAmounts[0] higher than what will actually be used
+        uint256[] memory minAmounts = new uint256[](2);
+        minAmounts[0] = _toTokenWei(currency0, 1500); // More than proportional ~1000
+        minAmounts[1] = 0;
+
+        vm.expectRevert(Liquidity.InsufficientAmountsUsed.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity(amounts, minAmounts, 0);
+    }
+
     function test_addLiquidity_ShouldRevertWhenBothAmountsZero_InitialDeposit() public {
         uint256[] memory amounts = new uint256[](2);
+        uint256[] memory minAmounts = new uint256[](2);
 
         vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function test_addLiquidity_ShouldRevertWhenBelowMinimumLiquidity_InitialDeposit() public {
@@ -300,20 +346,23 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = 1;
         amounts[1] = 0;
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function test_addLiquidity_ShouldRevertWhenBothAmountsZero_SubsequentDeposit() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
         uint256[] memory amounts = new uint256[](2);
+        uint256[] memory minAmounts = new uint256[](2);
 
         // With zero amounts and minShares=1, it should revert with InsufficientShares
         vm.expectRevert(Liquidity.InsufficientShares.selector);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 1);
+        hooks.addLiquidity(amounts, minAmounts, 1);
     }
 
     // ==========================================================================
@@ -514,8 +563,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = reserves0Before / 2;
         amounts[1] = reserves1Before / 2;
 
+        uint256[] memory minAmounts2 = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts2, 0);
 
         assertGt(hooks.reserves(0), 0);
         assertGt(hooks.reserves(1), 0);
@@ -534,7 +585,8 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 2);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 2);
-        hooks.addLiquidity(amounts, 0);
+        uint256[] memory minAmounts = new uint256[](2);
+        hooks.addLiquidity(amounts, minAmounts, 0);
         vm.stopPrank();
 
         uint256 provider2Shares = hooks.balanceOf(provider2);
@@ -557,17 +609,19 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT / 10);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT / 10);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         assertGt(hooks.balanceOf(liquidityProvider), lpBalanceBefore);
 
         uint256 currentBalance = hooks.balanceOf(liquidityProvider);
 
-        uint256[] memory minAmounts = new uint256[](2);
+        uint256[] memory minAmountsRemove = new uint256[](2);
 
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(currentBalance / 2, minAmounts);
+        hooks.removeLiquidity(currentBalance / 2, minAmountsRemove);
 
         assertEq(hooks.balanceOf(liquidityProvider), currentBalance - currentBalance / 2);
     }
@@ -624,9 +678,11 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](1);
+
         vm.expectRevert();
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
     function test_removeLiquidity_ShouldRevertWhenWrongArrayLength() public {
@@ -673,8 +729,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
         amounts[2] = _toTokenWei(currency2, LIQUIDITY_AMOUNT);
 
+        uint256[] memory minAmounts = new uint256[](3);
+
         vm.prank(liquidityProvider);
-        hooks3.addLiquidity(amounts, 0);
+        hooks3.addLiquidity(amounts, minAmounts, 0);
 
         uint256 lpBalance = hooks3.balanceOf(liquidityProvider);
         uint256 deadBalance = hooks3.balanceOf(DEAD_ADDRESS);
@@ -693,10 +751,12 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[2] = _toTokenWei(currency2, LIQUIDITY_AMOUNT / 10);
         // amounts[0] = 0, amounts[1] = 0
 
+        uint256[] memory minAmounts = new uint256[](3);
+
         // With proportional deposits, single-sided deposits result in 0 shares
         vm.expectRevert(Liquidity.InsufficientShares.selector);
         vm.prank(liquidityProvider);
-        hooks3.addLiquidity(amounts, 1);
+        hooks3.addLiquidity(amounts, minAmounts, 1);
     }
 
     function test_hooks3_addLiquidity_Proportional_ShouldUseMinimumProportion() public {
@@ -714,8 +774,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 2000); // 2% of reserves
         amounts[2] = _toTokenWei(currency2, 1000); // 1% of reserves (limiting)
 
+        uint256[] memory minAmounts = new uint256[](3);
+
         vm.prank(liquidityProvider);
-        hooks3.addLiquidity(amounts, 0);
+        hooks3.addLiquidity(amounts, minAmounts, 0);
 
         // Verify shares were minted
         uint256 actualShares = hooks3.balanceOf(liquidityProvider) - lpBalanceBefore;
@@ -809,8 +871,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         amounts[0] = _toTokenWei(currency0, 2000);
         amounts[1] = _toTokenWei(currency1, 1000);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         // Since token1 is the limiting factor, deposits should be proportional to token1
         // Expected: reserves increase by amounts proportional to the smaller deposit ratio
@@ -840,8 +904,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
 
@@ -891,8 +957,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         uint256 sharesBefore = hooks.balanceOf(liquidityProvider);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 sharesAfter = hooks.balanceOf(liquidityProvider);
 
@@ -941,16 +1009,18 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256[] memory amounts2 = new uint256[](2);
         amounts2[0] = _toTokenWei(currency0, 1000);
         amounts2[1] = _toTokenWei(currency1, 1000);
+        uint256[] memory minAmounts2 = new uint256[](2);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts2, 0);
+        hooks.addLiquidity(amounts2, minAmounts2, 0);
         uint256 shares2 = hooks.balanceOf(liquidityProvider) - shares1;
 
         // Third deposit
         uint256[] memory amounts3 = new uint256[](2);
         amounts3[0] = _toTokenWei(currency0, 1000);
         amounts3[1] = _toTokenWei(currency1, 1000);
+        uint256[] memory minAmounts3 = new uint256[](2);
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts3, 0);
+        hooks.addLiquidity(amounts3, minAmounts3, 0);
         uint256 shares3 = hooks.balanceOf(liquidityProvider) - shares1 - shares2;
 
         // Each balanced deposit should mint roughly similar shares
@@ -1014,8 +1084,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         addAmounts[0] = _toTokenWei(currency0, 10_000);
         addAmounts[1] = _toTokenWei(currency1, 10_000);
 
+        uint256[] memory minAddAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(addAmounts, 0);
+        hooks.addLiquidity(addAmounts, minAddAmounts, 0);
 
         uint256 newShares = hooks.balanceOf(liquidityProvider) - (totalSupplyBefore - MINIMUM_LIQUIDITY);
 
@@ -1045,15 +1117,16 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
-        hooks.addLiquidity(amounts, 0);
+        uint256[] memory minAmounts = new uint256[](2);
+        hooks.addLiquidity(amounts, minAmounts, 0);
         vm.stopPrank();
 
         // First LP removes all their shares
         uint256 lpShares = hooks.balanceOf(liquidityProvider);
-        uint256[] memory minAmounts = new uint256[](2);
+        uint256[] memory minAmountsRemove = new uint256[](2);
 
         vm.prank(liquidityProvider);
-        hooks.removeLiquidity(lpShares, minAmounts);
+        hooks.removeLiquidity(lpShares, minAmountsRemove);
 
         // First LP should have 0 shares
         assertEq(hooks.balanceOf(liquidityProvider), 0);
@@ -1074,8 +1147,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 actualShares = hooks.balanceOf(liquidityProvider);
 
@@ -1095,8 +1170,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 actualShares = hooks.balanceOf(liquidityProvider) - lpBalanceBefore;
 
@@ -1119,8 +1196,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks.quoteAddLiquidity(amounts);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.prank(liquidityProvider);
-        hooks.addLiquidity(amounts, 0);
+        hooks.addLiquidity(amounts, minAmounts, 0);
 
         uint256 actualShares = hooks.balanceOf(liquidityProvider) - lpBalanceBefore;
         uint256 actualAmount0 = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(liquidityProvider);
@@ -1225,8 +1304,10 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
 
         (uint256 quotedShares, uint256[] memory quotedActualAmounts) = hooks3.quoteAddLiquidity(amounts);
 
+        uint256[] memory minAmounts = new uint256[](3);
+
         vm.prank(liquidityProvider);
-        hooks3.addLiquidity(amounts, 0);
+        hooks3.addLiquidity(amounts, minAmounts, 0);
 
         uint256 actualShares = hooks3.balanceOf(liquidityProvider);
 

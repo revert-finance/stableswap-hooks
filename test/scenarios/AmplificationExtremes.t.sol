@@ -207,10 +207,12 @@ contract AmplificationExtremesTest is ExternalContractsDeployer {
         amounts[0] = _toTokenWei(usdc, _amount0);
         amounts[1] = _toTokenWei(usdt, _amount1);
 
+        uint256[] memory minAmounts = new uint256[](2);
+
         vm.startPrank(liquidityProvider);
         IERC20(Currency.unwrap(usdc)).forceApprove(address(_hooks), type(uint256).max);
         IERC20(Currency.unwrap(usdt)).forceApprove(address(_hooks), type(uint256).max);
-        _hooks.addLiquidity(amounts, 0);
+        _hooks.addLiquidity(amounts, minAmounts, 0);
         vm.stopPrank();
     }
 
