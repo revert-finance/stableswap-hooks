@@ -2,22 +2,22 @@
 pragma solidity 0.8.30;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+import {CREATE3} from "solady/utils/CREATE3.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {ChainConfig} from "./config/ChainConfig.sol";
 
-/// @notice Script to deploy StableSwapHooksFactory using CREATE2 for deterministic addresses
+/// @notice Script to deploy StableSwapHooksFactory using CREATE3 for deterministic addresses
 /// @dev Usage:
-///   forge script script/DeployFactoryCreate2.s.sol:DeployFactoryCreate2 \
+///   forge script script/DeployFactoryCreate3.s.sol:DeployFactoryCreate3 \
 ///     --rpc-url <RPC_URL> \
 ///     --account <ACCOUNT_NAME> \
-///     --sender <ADDRESS> \
 ///     --broadcast --verify
-contract DeployFactoryCreate2 is Script {
-    /// @notice Salt for CREATE2 deployment - change this to get different addresses
+contract DeployFactoryCreate3 is Script {
+    /// @notice Salt for CREATE3 deployment - change this to get different addresses
     /// @dev Same salt + same deployer = same address across chains
+    /// @dev With CREATE3, address is independent of bytecode (unlike CREATE2)
     bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 
     /// @notice Get deployment configuration from environment variables and chain config
@@ -42,22 +42,22 @@ contract DeployFactoryCreate2 is Script {
         hookFeeCollector = vm.envOr("HOOK_FEE_COLLECTOR", address(0));
     }
 
-    /// @notice Prepare factory bytecode for CREATE2 deployment
+    /// @notice Prepare factory bytecode for CREATE3 deployment
     /// @param poolManager The PoolManager address
     /// @param factoryOwner The owner of the factory
     /// @param protocolFeeCollector The protocol fee collector address
     /// @param hookFeeCollector The hook fee collector address
-    /// @return factoryBytecode The complete bytecode for deployment
+    /// @return initCode The complete initialization code for deployment
     /// @return hooksCreationCodeHash The hash of the hooks creation code
     function _prepareFactoryBytecode(
         address poolManager,
         address factoryOwner,
         address protocolFeeCollector,
         address hookFeeCollector
-    ) internal pure returns (bytes memory factoryBytecode, bytes32 hooksCreationCodeHash) {
+    ) internal pure returns (bytes memory initCode, bytes32 hooksCreationCodeHash) {
         hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
 
-        factoryBytecode = abi.encodePacked(
+        initCode = abi.encodePacked(
             type(StableSwapHooksFactory).creationCode,
             abi.encode(poolManager, factoryOwner, protocolFeeCollector, hookFeeCollector, hooksCreationCodeHash)
         );
@@ -70,7 +70,7 @@ contract DeployFactoryCreate2 is Script {
     ///      - PROTOCOL_FEE_COLLECTOR: Address for protocol fees
     ///      - HOOK_FEE_COLLECTOR: Address for hook fees
     function run() external returns (StableSwapHooksFactory factory) {
-        console2.log("=== StableSwapHooksFactory CREATE2 Deployment ===");
+        console2.log("=== StableSwapHooksFactory CREATE3 Deployment ===");
         console2.log("Chain ID:", block.chainid);
         console2.log("Deployer:", msg.sender);
 
@@ -93,53 +93,30 @@ contract DeployFactoryCreate2 is Script {
         console2.log("Hook Fee Collector:", hookFeeCollector);
 
         // Prepare factory bytecode
-        (bytes memory factoryBytecode, bytes32 hooksCreationCodeHash) =
+        (bytes memory initCode, bytes32 hooksCreationCodeHash) =
             _prepareFactoryBytecode(poolManagerAddr, factoryOwner, protocolFeeCollector, hookFeeCollector);
 
         console2.log("Hooks Creation Code Hash:");
         console2.logBytes32(hooksCreationCodeHash);
 
-        // Predict address
-        address predictedAddress = Create2.computeAddress(SALT, keccak256(factoryBytecode), msg.sender);
-        console2.log("\nPredicted Factory Address:", predictedAddress);
+        console2.log("\nDeploying...\n");
+
+        // Start broadcast for actual deployment
+        vm.startBroadcast();
+
+        console2.log("Broadcaster:", msg.sender);
         console2.log("Salt:", vm.toString(SALT));
 
-        // Check if already deployed
-        if (predictedAddress.code.length > 0) {
-            console2.log("Factory already deployed at this address");
-            console2.log(
-                "If you want a new deployment, change the SALT in the script or use another account/PRIVATE_KEY"
-            );
-            revert("Factory already deployed");
-        } else {
-            console2.log("\nDeploying...\n");
+        // Deploy using CREATE3 with 0 value
+        factory = StableSwapHooksFactory(CREATE3.deployDeterministic(0, initCode, SALT));
 
-            vm.startBroadcast();
-
-            // Deploy using CREATE2
-            factory = StableSwapHooksFactory(Create2.deploy(0, SALT, factoryBytecode));
-
-            vm.stopBroadcast();
-
-            require(address(factory) == predictedAddress, "Address mismatch!");
-        }
+        vm.stopBroadcast();
 
         console2.log("\n=== Deployment Complete ===");
         console2.log("Factory Address:", address(factory));
         console2.log("\nThis address will be the SAME on all chains if deployed by the same account!");
+        console2.log("CREATE3 makes the address independent of constructor arguments and bytecode.");
         console2.log("\nSave this address for hook deployments:");
         console2.log("FACTORY_ADDRESS=%s", address(factory));
-    }
-
-    /// @notice Compute the factory address without deploying
-    /// @dev Useful for verifying addresses before deployment
-    function computeAddress() external view returns (address) {
-        (address poolManagerAddr, address factoryOwner, address protocolFeeCollector, address hookFeeCollector) =
-            _getDeploymentConfig();
-
-        (bytes memory factoryBytecode,) =
-            _prepareFactoryBytecode(poolManagerAddr, factoryOwner, protocolFeeCollector, hookFeeCollector);
-
-        return Create2.computeAddress(SALT, keccak256(factoryBytecode), msg.sender);
     }
 }
