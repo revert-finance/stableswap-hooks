@@ -15,6 +15,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {stdError} from "forge-std/StdError.sol";
@@ -30,7 +31,7 @@ contract FullReserveSwapTest is ExternalContractsDeployer {
     uint256 internal constant AMP = 100;
     uint256 internal constant LIQUIDITY_AMOUNT = 1_000_000;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
 
     address internal admin;
@@ -48,7 +49,7 @@ contract FullReserveSwapTest is ExternalContractsDeployer {
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             admin,
             makeAddr("protocolFeeCollector"),

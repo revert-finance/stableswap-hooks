@@ -156,12 +156,12 @@ Use the same sender address across chains to keep the factory address consistent
 ### Deploy new pools (hooks)
 Use the factory to deploy a new hook (and initialize all pairwise pools):
 1. Prepare sorted `currencies[]` (2-4 assets) and matching `rateOracles[]`.
-2. Compute a CREATE2 salt with `factory.mineSalt(...)` (or off-chain `HookMiner`).
+2. Compute a CREATE2 salt off-chain using `HookMiner.find()` from `@uniswap/v4-periphery`.
 3. Call `factory.deploy(...)` with the creation code and constructor params.
 
 `currencies[]` are the token addresses for the pool, and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
 
-`mineSalt(...)` and `deploy(...)` expect the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
+`deploy(...)` expects the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
 
 ```solidity
 Currency[] memory currencies = new Currency[](2);
@@ -173,7 +173,8 @@ rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)}
 rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
 bytes memory code = type(StableSwapHooks).creationCode;
-(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, lpFeePercentage, baseAmp, code);
+bytes memory constructorArgs = abi.encode(poolManager, currencies, rateOracles, lpFeePercentage, baseAmp);
+(, bytes32 salt) = HookMiner.find(address(factory), factory.HOOK_FLAGS(), code, constructorArgs);
 
 StableSwapHooks hooks =
     StableSwapHooks(factory.deploy(currencies, rateOracles, lpFeePercentage, baseAmp, salt, code));
@@ -192,7 +193,8 @@ rateOracles[0] =
 rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
 bytes memory code = type(StableSwapHooks).creationCode;
-(, bytes32 salt) = factory.mineSalt(currencies, rateOracles, lpFeePercentage, baseAmp, code);
+bytes memory constructorArgs = abi.encode(poolManager, currencies, rateOracles, lpFeePercentage, baseAmp);
+(, bytes32 salt) = HookMiner.find(address(factory), factory.HOOK_FLAGS(), code, constructorArgs);
 
 StableSwapHooks hooks =
     StableSwapHooks(factory.deploy(currencies, rateOracles, lpFeePercentage, baseAmp, salt, code));

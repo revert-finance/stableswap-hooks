@@ -9,8 +9,6 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
-
 import {Base} from "src/Base.sol";
 
 /// @notice Factory for deploying StableSwapHooks contracts using CREATE2
@@ -97,7 +95,7 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @param _rateOracles Array of rate oracle configurations for each currency
     /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
-    /// @param _salt CREATE2 salt computed via mineSalt or off-chain using HookMiner
+    /// @param _salt CREATE2 salt computed off-chain using HookMiner
     /// @param _creationCode StableSwapHooks creation bytecode (validated against stored hash)
     function deploy(
         Currency[] calldata _currencies,
@@ -120,25 +118,6 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         isDeployedByFactory[deployedHook] = true;
 
         emit StableSwapHooksDeployed(msg.sender, deployedHook);
-    }
-
-    /// @notice Mines a CREATE2 salt that produces an address with the required hook permission flags
-    /// @dev Intended for off-chain use via eth_call. Reverts if no valid salt found.
-    /// @param _currencies Array of currencies for the pool
-    /// @param _rateOracles Array of rate oracle configurations for each currency
-    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
-    /// @param _baseAmp Initial amplification coefficient
-    /// @param _creationCode StableSwapHooks creation bytecode
-    function mineSalt(
-        Currency[] calldata _currencies,
-        Base.RateOracleConfig[] calldata _rateOracles,
-        uint256 _lpFeePercentage,
-        uint256 _baseAmp,
-        bytes calldata _creationCode
-    ) external view returns (address hookAddress, bytes32 salt) {
-        bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
-
-        (hookAddress, salt) = HookMiner.find(address(this), HOOK_FLAGS, _creationCode, constructorArgs);
     }
 
     /// @dev Internal setter for protocol fee collector
