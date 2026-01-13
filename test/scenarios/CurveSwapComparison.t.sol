@@ -15,6 +15,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {console} from "forge-std/console.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
@@ -42,7 +43,7 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
     Currency internal usdc;
     Currency internal usdt;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
 
     address internal admin;
@@ -64,7 +65,7 @@ contract CurveSwapComparisonTest is ExternalContractsDeployer {
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             admin,
             makeAddr("protocolFeeCollector"),

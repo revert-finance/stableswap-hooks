@@ -15,6 +15,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -27,7 +28,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
     uint256 internal constant BASE_AMP = 100;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
     StableSwapHooks internal hooks3;
 
@@ -53,7 +54,7 @@ abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
         protocolFeeCollector = makeAddr("protocolFeeCollector");
         hookFeeCollector = makeAddr("hookFeeCollector");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             defaultAdmin,
             protocolFeeCollector,

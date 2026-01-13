@@ -14,6 +14,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {console} from "forge-std/console.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
@@ -33,7 +34,7 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
     Currency internal tokenA;
     Currency internal tokenB;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
 
     address internal liquidityProvider;
@@ -51,7 +52,7 @@ contract MinimalSwapAmountsTest is ExternalContractsDeployer {
 
         _deployMockTokens();
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             makeAddr("admin"),
             makeAddr("protocolFeeCollector"),

@@ -10,6 +10,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 
 contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
@@ -18,7 +19,7 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
     uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
     uint256 internal constant BASE_AMP = 100;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
 
     address internal owner;
     address internal unauthorizedUser;
@@ -33,7 +34,7 @@ contract StableSwapHooksFactoryTest is ExternalContractsDeployer {
         protocolFeeCollector = makeAddr("protocolFeeCollector");
         hookFeeCollector = makeAddr("hookFeeCollector");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             owner,
             protocolFeeCollector,

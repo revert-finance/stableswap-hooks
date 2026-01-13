@@ -15,6 +15,7 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -27,7 +28,7 @@ contract SwapSlippageProtectionTest is ExternalContractsDeployer {
     uint256 internal constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 internal constant SWAP_AMOUNT = 1000;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
 
     address internal admin;
@@ -45,7 +46,7 @@ contract SwapSlippageProtectionTest is ExternalContractsDeployer {
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             admin,
             makeAddr("protocolFeeCollector"),

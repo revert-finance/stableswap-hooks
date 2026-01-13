@@ -17,6 +17,7 @@ import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -30,7 +31,7 @@ contract QuoterSlippageProtectionTest is ExternalContractsDeployer {
     uint256 internal constant SWAP_AMOUNT = 1000;
     uint256 internal constant LARGE_SWAP_AMOUNT = 400_000;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
     V4Quoter internal quoter;
 
@@ -51,7 +52,7 @@ contract QuoterSlippageProtectionTest is ExternalContractsDeployer {
         swapper = makeAddr("swapper");
         frontrunner = makeAddr("frontrunner");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             admin,
             makeAddr("protocolFeeCollector"),

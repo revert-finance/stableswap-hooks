@@ -19,8 +19,6 @@ forge fmt --check     # Check formatting (used in CI)
 forge snapshot        # Generate gas snapshots
 ```
 
-**Note:** Fork tests (`*.fork.t.sol`) are excluded in CI: `forge test --no-match-path "*.fork.t.sol"`
-
 ## Architecture
 
 ### Contract Hierarchy (inheritance flows upward)
@@ -52,7 +50,7 @@ StableSwapHooksFactory (Ownable, Pausable)
 ### Testing Structure
 
 - `test/testUtils/StableSwapHooksBaseTest.sol` - Base test class with helper methods
-- `test/testUtils/StableSwapHooksHarness.sol` - Test harness exposing internals
+- `test/testUtils/StableSwapHooksFactoryHarness.sol` - Factory harness with `mineSalt()` for tests
 - `test/testUtils/ExternalContractsDeployer.sol` - Deploys PoolManager, Universal Router, Permit2
 - `test/scenarios/` - Edge case and scenario tests
 - Tests use `hooks` (2-currency pool) and `hooks3` (3-currency pool) fixtures
@@ -95,7 +93,7 @@ Currencies can have custom rate oracles for non-1:1 assets (e.g., wstETH/WETH). 
 
 Hooks must be deployed via `StableSwapHooksFactory` to addresses encoding correct permission flags:
 1. Factory constructor takes `creationCodeHash` for bytecode validation
-2. `factory.mineSalt()` finds valid CREATE2 salt (call off-chain via `eth_call`)
+2. Use `HookMiner.find()` from `@uniswap/v4-periphery` to compute valid CREATE2 salt off-chain
 3. `factory.deploy()` deploys with caller-provided `creationCode` (validated against hash)
 
 ## Dependencies (via remappings)

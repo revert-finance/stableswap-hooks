@@ -19,6 +19,7 @@ import {MockWstETH} from "lib/uniswap-hooks/lib/v4-periphery/test/mocks/MockWstE
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 
@@ -51,7 +52,7 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
     uint256 internal constant STABLESWAP_SLIPPAGE_TOLERANCE = 0.01e18; // 1% tolerance for rate-adjusted swaps
     uint256 internal constant EXCHANGE_RATE = 11e17; // 1.1e18 - MockWstETH exchange rate
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooksWstETH;
 
     Currency internal stETH;
@@ -75,7 +76,7 @@ contract StableSwapHooksRateOracleTest is ExternalContractsDeployer {
         hookFeeCollector = makeAddr("hookFeeCollector");
 
         // Deploy factory
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             defaultAdmin,
             protocolFeeCollector,

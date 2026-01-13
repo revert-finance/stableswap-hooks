@@ -15,6 +15,7 @@ import {IWstETH} from "lib/uniswap-hooks/lib/v4-periphery/src/interfaces/externa
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
+import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {console} from "forge-std/console.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
@@ -33,7 +34,7 @@ contract WethWstethRateOracleTest is ExternalContractsDeployer {
     uint256 internal constant LIQUIDITY_AMOUNT = 1000 ether;
     uint256 internal constant SWAP_AMOUNT = 1 ether;
 
-    StableSwapHooksFactory internal factory;
+    StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;
 
     Currency internal wsteth;
@@ -62,7 +63,7 @@ contract WethWstethRateOracleTest is ExternalContractsDeployer {
         liquidityProvider = makeAddr("liquidityProvider");
         swapper = makeAddr("swapper");
 
-        factory = new StableSwapHooksFactory(
+        factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
             admin,
             makeAddr("protocolFeeCollector"),
