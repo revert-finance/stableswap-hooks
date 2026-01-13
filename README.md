@@ -142,11 +142,12 @@ The factory deploys StableSwap hooks via CREATE2, validates the hook bytecode ag
 Deploy `StableSwapHooksFactory` via the CREATE2 script in `script/DeployFactoryCreate2.s.sol`. Configure `.env` with `RPC_URL`, `POOL_MANAGER`, `FACTORY_OWNER`, `PROTOCOL_FEE_COLLECTOR`, and `HOOK_FEE_COLLECTOR`, then run:
 
 ```bash
-forge script script/DeployFactoryCreate2.s.sol:DeployFactoryCreate2 \
+forge script script/DeployFactoryCreate3.s.sol:DeployFactoryCreate3 \
   --rpc-url $RPC_URL \
   --account <ACCOUNT_NAME> \
   --sender <ADDRESS> \
   --broadcast \
+  --etherscan-api-key $ETHERSCAN_API_KEY
   --verify
 ```
 
