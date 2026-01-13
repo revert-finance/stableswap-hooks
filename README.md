@@ -139,19 +139,25 @@ Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECIS
 The factory deploys StableSwap hooks via CREATE2, validates the hook bytecode against a known hash, and configures protocol and hook fee collectors for all pools created through it.
 
 ### Deploy the factory
-Deploy `StableSwapHooksFactory` via the CREATE2 script in `script/DeployFactoryCreate2.s.sol`. Configure `.env` with `RPC_URL`, `POOL_MANAGER`, `FACTORY_OWNER`, `PROTOCOL_FEE_COLLECTOR`, and `HOOK_FEE_COLLECTOR`, then run:
+Deploy `StableSwapHooksFactory` via the CREATE3 script in `script/DeployStableSwapHooksFactory.s.sol`. Pass the owner and fee collector addresses to the script, then run:
 
 ```bash
-forge script script/DeployFactoryCreate3.s.sol:DeployFactoryCreate3 \
+forge script script/DeployStableSwapHooksFactory.s.sol \
+  $FACTORY_OWNER \
+  $PROTOCOL_FEE_COLLECTOR \
+  $HOOK_FEE_COLLECTOR \
   --rpc-url $RPC_URL \
-  --account <ACCOUNT_NAME> \
-  --sender <ADDRESS> \
+  --private-key $PRIVATE_KEY \
   --broadcast \
+  --verify \
   --etherscan-api-key $ETHERSCAN_API_KEY
-  --verify
 ```
 
+If you don't want to use a private key from env, you can configure the deploying account using other `forge script` options (for example `--account` or `--ledger`); see https://book.getfoundry.sh/reference/forge/forge-script.
+
 Use the same sender address across chains to keep the factory address consistent.
+
+CREATE3 addresses depend on the deployer and salt; if you need to redeploy, you must change one of them, which changes the factory address. To keep addresses consistent across chains, redeploy everywhere using the new deployer or salt.
 
 ### Deploy new pools (hooks)
 Use the factory to deploy a new hook (and initialize all pairwise pools):
