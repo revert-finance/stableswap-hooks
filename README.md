@@ -1,5 +1,30 @@
 # StableSwap Hooks
 
+## Table of Contents
+- [Description](#description)
+- [Liquidity](#liquidity)
+  - [Add liquidity](#add-liquidity)
+  - [Remove liquidity](#remove-liquidity)
+  - [Liquidity Token](#liquidity-token)
+- [Stable Swaps](#stable-swaps)
+  - [Swapping via Universal Router](#swapping-via-universal-router)
+  - [Quoting swaps](#quoting-swaps)
+  - [Fees](#fees)
+- [Factory](#factory)
+  - [Deploy the factory](#deploy-the-factory)
+  - [Deploy new pools (hooks)](#deploy-new-pools-hooks)
+  - [Off-chain salt mining](#off-chain-salt-mining)
+- [Fees](#fees-1)
+  - [Fee percentages](#fee-percentages)
+  - [Fee withdrawal](#fee-withdrawal)
+- [Amplification](#amplification)
+  - [Ramping A](#ramping-a)
+  - [Stopping a ramp](#stopping-a-ramp)
+- [Development](#development)
+  - [Project structure](#project-structure)
+  - [Build and test](#build-and-test)
+  - [Formatting](#formatting)
+
 ## Description
 StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
 
@@ -156,12 +181,12 @@ Use the same sender address across chains to keep the factory address consistent
 ### Deploy new pools (hooks)
 Use the factory to deploy a new hook (and initialize all pairwise pools):
 1. Prepare sorted `currencies[]` (2-4 assets) and matching `rateOracles[]`.
-2. Compute a CREATE2 salt off-chain using `HookMiner.find()` from `@uniswap/v4-periphery`.
+2. Compute a CREATE2 salt off-chain (see [Off-chain salt mining](#off-chain-salt-mining) below).
 3. Call `factory.deploy(...)` with the creation code and constructor params.
 
 `currencies[]` are the token addresses for the pool, and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
 
-`deploy(...)` expects the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
+`deploy(...)` expects the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode.object at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
 
 ```solidity
 Currency[] memory currencies = new Currency[](2);
@@ -199,6 +224,21 @@ bytes memory constructorArgs = abi.encode(poolManager, currencies, rateOracles, 
 StableSwapHooks hooks =
     StableSwapHooks(factory.deploy(currencies, rateOracles, lpFeePercentage, baseAmp, salt, code));
 ```
+
+### Off-chain salt mining
+Salt mining must be performed off-chain because the iterative search is computationally intensive and would consume all available gas if attempted on-chain.
+
+The `script/hookMiner.demo.js` file demonstrates how to mine a valid salt using the same algorithm as `HookMiner.sol`. The demo uses ethers.js, but any library providing a keccak256 function will work. Use this as a reference to integrate salt mining into your dApp, enabling users to deploy their own pools. The mining process can take several seconds depending on how quickly a valid salt is found. Consider running it server-side as an API endpoint, or client-side in a Web Worker to avoid blocking the main thread.
+
+To run the demo locally, you need [Deno](https://deno.land/) and compiled contracts (`forge build`):
+```bash
+deno run --allow-env=WS_NO_BUFFER_UTIL --allow-read=out/StableSwapHooks.sol/StableSwapHooks.json script/hookMiner.demo.js
+```
+
+To adapt the script for your deployment, update the following constants:
+- `FACTORY_ADDRESS`: The deployed `StableSwapHooksFactory` address
+- `POOL_MANAGER`: The Uniswap v4 PoolManager address for your target chain
+- Token addresses and constructor parameters (`LP_FEE_PERCENTAGE`, `BASE_AMP`, rate oracles)
 
 ## Fees
 Protocol and hook fees are configured on the factory and applied by each hook alongside the LP fee. Fees accrue during swaps: LP fees stay in reserves, while hook and protocol fees accumulate per currency inside the hook until withdrawn.

@@ -93,8 +93,21 @@ Currencies can have custom rate oracles for non-1:1 assets (e.g., wstETH/WETH). 
 
 Hooks must be deployed via `StableSwapHooksFactory` to addresses encoding correct permission flags:
 1. Factory constructor takes `creationCodeHash` for bytecode validation
-2. Use `HookMiner.find()` from `@uniswap/v4-periphery` to compute valid CREATE2 salt off-chain
+2. Compute valid CREATE2 salt off-chain (required due to gas constraints)
 3. `factory.deploy()` deploys with caller-provided `creationCode` (validated against hash)
+
+### Off-chain Salt Mining
+
+Salt mining is computationally intensive and must be done off-chain. Reference implementations:
+- `script/hookMiner.demo.js` - JavaScript implementation using ethers.js (any keccak256 library works)
+- `lib/uniswap-hooks/lib/v4-periphery/src/utils/HookMiner.sol` - Solidity reference
+
+Run the JS demo (requires Deno and `forge build`):
+```shell
+deno run --allow-env=WS_NO_BUFFER_UTIL --allow-read=out/StableSwapHooks.sol/StableSwapHooks.json script/hookMiner.demo.js
+```
+
+For dApp integration, run mining server-side or in a Web Worker to avoid blocking the main thread.
 
 ## Dependencies (via remappings)
 
