@@ -181,7 +181,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         assertFalse(permissions.afterInitialize);
         assertTrue(permissions.beforeAddLiquidity);
         assertFalse(permissions.afterAddLiquidity);
-        assertTrue(permissions.beforeRemoveLiquidity);
+        assertFalse(permissions.beforeRemoveLiquidity);
         assertFalse(permissions.afterRemoveLiquidity);
         assertTrue(permissions.beforeSwap);
         assertFalse(permissions.afterSwap);

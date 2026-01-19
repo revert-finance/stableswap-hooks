@@ -98,16 +98,6 @@ abstract contract Liquidity is Amp, ERC20 {
         revert UseHookLiquidityModifiers(address(this));
     }
 
-    /// @dev Hook called before liquidity is removed via PoolManager, always reverts
-    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
-        internal
-        view
-        override
-        returns (bytes4)
-    {
-        revert UseHookLiquidityModifiers(address(this));
-    }
-
     /// @dev Hook called before tokens are donated to the pool, always reverts
     function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         internal

@@ -15,8 +15,7 @@ import {Base} from "src/Base.sol";
 contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Hook permission flags required for StableSwapHooks
     uint160 public constant HOOK_FLAGS = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-        | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-        | Hooks.BEFORE_DONATE_FLAG;
+        | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.BEFORE_DONATE_FLAG;
 
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;

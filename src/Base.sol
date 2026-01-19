@@ -151,17 +151,16 @@ abstract contract Base is BaseHook {
     /// @dev Enabled hooks:
     /// 1. beforeInitialize - validates pool is managed by this hook
     /// 2. beforeAddLiquidity - blocks direct liquidity additions via PoolManager
-    /// 3. beforeRemoveLiquidity - blocks direct liquidity removals via PoolManager
-    /// 4. beforeSwap - executes StableSwap logic instead of default AMM
-    /// 5. beforeDonate - blocks donations to the pool
-    /// 6. beforeSwapReturnDelta - allows hook to specify swap amounts
+    /// 3. beforeSwap - executes StableSwap logic instead of default AMM
+    /// 4. beforeDonate - blocks donations to the pool
+    /// 5. beforeSwapReturnDelta - allows hook to specify swap amounts
     function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
         permissions = Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
+            beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: false,
