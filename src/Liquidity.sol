@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 
 import {Amp} from "src/Amp.sol";
 import {Actions} from "src/libraries/Actions.sol";
@@ -45,6 +46,12 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Error thrown when initial liquidity is below minimum
     error InsufficientInitialLiquidity();
 
+    /// @notice Error thrown when ETH is sent but currency0 is not native
+    error InvalidNativeTransfer();
+
+    /// @notice Error thrown when insufficient native amount is sent
+    error InsufficientNativeAmount();
+
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
     /// @notice Quote the result of adding liquidity to the pool
@@ -68,11 +75,25 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Add liquidity to the pool
     /// @dev First deposit uses all amounts; subsequent deposits must be proportional to reserves
     /// @dev Triggers an unlock callback to handle the deposit through the pool manager
+    /// @dev For native ETH pools (currency0 is native), send ETH with the call. Excess ETH is refunded.
     /// @param _amounts Array of amounts for each currency (max amounts for subsequent deposits)
     /// @param _minAmounts Array of minimum amounts that must be used (slippage protection for amounts)
     /// @param _minShares The minimum number of shares to receive (slippage protection for LP tokens)
-    function addLiquidity(uint256[] calldata _amounts, uint256[] calldata _minAmounts, uint256 _minShares) external {
-        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minAmounts, _minShares, msg.sender);
+    function addLiquidity(uint256[] calldata _amounts, uint256[] calldata _minAmounts, uint256 _minShares)
+        external
+        payable
+    {
+        bool isNativePool = currencies[0].isAddressZero();
+
+        if (msg.value > 0 && !isNativePool) {
+            revert InvalidNativeTransfer();
+        }
+
+        if (isNativePool && msg.value < _amounts[0]) {
+            revert InsufficientNativeAmount();
+        }
+
+        bytes memory data = abi.encode(Actions.ADD_LIQUIDITY, _amounts, _minAmounts, _minShares, msg.sender, msg.value);
 
         poolManager.unlock(data);
     }
@@ -120,8 +141,8 @@ abstract contract Liquidity is Amp, ERC20 {
 
     /// @dev Callback handler for adding liquidity
     function _handleAddLiquidityCallback(bytes calldata data) internal {
-        (, uint256[] memory amounts, uint256[] memory minAmounts, uint256 minShares, address sender) =
-            abi.decode(data, (uint256, uint256[], uint256[], uint256, address));
+        (, uint256[] memory amounts, uint256[] memory minAmounts, uint256 minShares, address sender, uint256 value) =
+            abi.decode(data, (uint256, uint256[], uint256[], uint256, address, uint256));
 
         bool isInitialDeposit = totalSupply() == 0;
 
@@ -141,11 +162,23 @@ abstract contract Liquidity is Amp, ERC20 {
             _mint(DEAD_ADDRESS, MINIMUM_LIQUIDITY);
         }
 
+        // Calculate refund before external calls (Checks-Effects-Interactions pattern)
+        uint256 ethRefund;
+        if (currencies[0].isAddressZero() && value > actualAmounts[0]) {
+            ethRefund = value - actualAmounts[0];
+        }
+
         for (uint256 i = 0; i < currenciesLength; ++i) {
             Currency currency = currencies[i];
-            poolManager.sync(currency);
-            IERC20(Currency.unwrap(currency)).safeTransferFrom(sender, address(poolManager), actualAmounts[i]);
-            poolManager.settle();
+
+            if (currency.isAddressZero()) {
+                poolManager.settle{value: actualAmounts[i]}();
+            } else {
+                poolManager.sync(currency);
+                IERC20(Currency.unwrap(currency)).safeTransferFrom(sender, address(poolManager), actualAmounts[i]);
+                poolManager.settle();
+            }
+
             poolManager.mint(address(this), currency.toId(), actualAmounts[i]);
             reserves[i] += actualAmounts[i];
         }
@@ -153,6 +186,11 @@ abstract contract Liquidity is Amp, ERC20 {
         _mint(sender, newShares);
 
         emit LiquidityAdded(sender, actualAmounts, newShares);
+
+        // Refund excess ETH last (Checks-Effects-Interactions pattern)
+        if (ethRefund > 0) {
+            Address.sendValue(payable(sender), ethRefund);
+        }
     }
 
     /// @dev Callback handler for removing liquidity

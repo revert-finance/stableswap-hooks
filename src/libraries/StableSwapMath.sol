@@ -168,8 +168,12 @@ library StableSwapMath {
     }
 
     /// @dev Returns the rate for a given currency.
+    /// @dev Native ETH (address(0)) is treated as having 18 decimals.
     /// @param _currency The currency to get the rate for.
     function getRate(Currency _currency) internal view returns (uint256) {
+        if (_currency.isAddressZero()) {
+            return 1e18; // Native ETH has 18 decimals, so rate = 10^(36-18) = 1e18
+        }
         return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
     }
 
