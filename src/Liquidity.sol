@@ -234,8 +234,7 @@ abstract contract Liquidity is Amp, ERC20 {
             shares = minProportion;
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
-                actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
+                actualAmounts[i] = Math.mulDiv(shares, reserves[i], currentTotalSupply, Math.Rounding.Ceil);
             }
         }
     }
