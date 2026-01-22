@@ -21,7 +21,11 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     }
 
     function _totalFeePercentage() private pure returns (uint256) {
-        return BASE_LP_FEE_PERCENTAGE + BASE_HOOK_FEE_PERCENTAGE + BASE_PROTOCOL_FEE_PERCENTAGE;
+        return BASE_POOL_FEE_PERCENTAGE;
+    }
+
+    function _lpFeePercentage() private pure returns (uint256) {
+        return BASE_POOL_FEE_PERCENTAGE - BASE_HOOK_FEE_PERCENTAGE - BASE_PROTOCOL_FEE_PERCENTAGE;
     }
 
     function _feePrecision() private view returns (uint256) {
@@ -64,7 +68,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     function _assertFeeRatios(StableSwapEventData memory _eventData) private pure {
         // Calculate expected fees from total (more accurate than multiplying lpFees)
         uint256 totalFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
-        uint256 expectedLpFees = totalFees * BASE_LP_FEE_PERCENTAGE / _totalFeePercentage();
+        uint256 expectedLpFees = totalFees * _lpFeePercentage() / _totalFeePercentage();
         uint256 expectedHookFees = totalFees * BASE_HOOK_FEE_PERCENTAGE / _totalFeePercentage();
         uint256 expectedProtocolFees = totalFees * BASE_PROTOCOL_FEE_PERCENTAGE / _totalFeePercentage();
 

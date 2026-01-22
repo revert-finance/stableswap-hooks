@@ -69,10 +69,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         bytes memory code = type(StableSwapHooks).creationCode;
-        (, bytes32 salt) = factory.mineSalt(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+        (, bytes32 salt) = factory.mineSalt(unsortedCurrencies, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.CurrenciesNotSorted.selector);
-        factory.deploy(unsortedCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        factory.deploy(unsortedCurrencies, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenTooFewCurrencies() public {
@@ -83,10 +83,10 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         bytes memory code = type(StableSwapHooks).creationCode;
-        (, bytes32 salt) = factory.mineSalt(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+        (, bytes32 salt) = factory.mineSalt(singleCurrency, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(singleCurrency, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        factory.deploy(singleCurrency, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
     function test_initialize_ShouldRevertWhenTooManyCurrencies() public {
@@ -98,13 +98,13 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         }
 
         bytes memory code = type(StableSwapHooks).creationCode;
-        (, bytes32 salt) = factory.mineSalt(fiveCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+        (, bytes32 salt) = factory.mineSalt(fiveCurrencies, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, code);
 
         vm.expectRevert(Base.InvalidCurrenciesLength.selector);
-        factory.deploy(fiveCurrencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code);
+        factory.deploy(fiveCurrencies, rateOracles, BASE_POOL_FEE_PERCENTAGE, BASE_AMP, salt, code);
     }
 
-    function test_initialize_ShouldRevertWhenLpFeePercentageExceedsPrecision() public {
+    function test_initialize_ShouldRevertWhenPoolFeePercentageExceedsMax() public {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = currency0;
         currencies[1] = currency1;
@@ -113,12 +113,12 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        uint256 invalidFee = hooks.FEE_PRECISION() + 1;
+        uint256 invalidFee = hooks.MAX_POOL_FEE() + 1;
 
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP, code);
 
-        vm.expectRevert(abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, invalidFee));
+        vm.expectRevert(Base.PoolFeeExceedsMax.selector);
         factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt, code);
     }
 
@@ -256,7 +256,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         PoolKey memory poolKey01 = PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: uint24(BASE_LP_FEE_PERCENTAGE),
+            fee: uint24(BASE_POOL_FEE_PERCENTAGE),
             tickSpacing: hooks3.TICK_SPACING(),
             hooks: IHooks(address(hooks3))
         });
@@ -264,7 +264,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         PoolKey memory poolKey02 = PoolKey({
             currency0: currency0,
             currency1: currency2,
-            fee: uint24(BASE_LP_FEE_PERCENTAGE),
+            fee: uint24(BASE_POOL_FEE_PERCENTAGE),
             tickSpacing: hooks3.TICK_SPACING(),
             hooks: IHooks(address(hooks3))
         });
@@ -272,7 +272,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         PoolKey memory poolKey12 = PoolKey({
             currency0: currency1,
             currency1: currency2,
-            fee: uint24(BASE_LP_FEE_PERCENTAGE),
+            fee: uint24(BASE_POOL_FEE_PERCENTAGE),
             tickSpacing: hooks3.TICK_SPACING(),
             hooks: IHooks(address(hooks3))
         });

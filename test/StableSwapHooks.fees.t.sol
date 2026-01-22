@@ -19,7 +19,9 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     // ==========================================================================
 
     function test_setProtocolFeePercentage_ShouldSucceedWhenCalledByFactoryOwner() public {
-        uint256 newPercentage = 500;
+        // poolFeePercentage = 600, hookFeePercentage = 200
+        // Max protocolFee = 600 - 200 = 400
+        uint256 newPercentage = 400;
 
         vm.prank(defaultAdmin);
         vm.expectEmit(address(hooks));
@@ -35,15 +37,19 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setProtocolFeePercentage(500);
     }
 
-    function test_setProtocolFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
-        uint256 invalidPercentage = hooks.FEE_PRECISION();
+    function test_setProtocolFeePercentage_ShouldRevertWhenFeeExceedsPoolFee() public {
+        // poolFeePercentage = 600, hookFeePercentage = 200
+        // Setting protocolFee to 401 would make hookFee + protocolFee = 601 > 600
+        uint256 invalidPercentage = hooks.poolFeePercentage() - hooks.hookFeePercentage() + 1;
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Fees.FeeExceedsPoolFee.selector);
         vm.prank(defaultAdmin);
         hooks.setProtocolFeePercentage(invalidPercentage);
     }
 
     function test_setHookFeePercentage_ShouldSucceedWhenCalledByFactoryOwner() public {
+        // poolFeePercentage = 600, protocolFeePercentage = 100
+        // Max hookFee = 600 - 100 = 500
         uint256 newPercentage = 500;
 
         vm.prank(defaultAdmin);
@@ -60,10 +66,12 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setHookFeePercentage(500);
     }
 
-    function test_setHookFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
-        uint256 invalidPercentage = hooks.FEE_PRECISION();
+    function test_setHookFeePercentage_ShouldRevertWhenFeeExceedsPoolFee() public {
+        // poolFeePercentage = 600, protocolFeePercentage = 100
+        // Setting hookFee to 501 would make hookFee + protocolFee = 601 > 600
+        uint256 invalidPercentage = hooks.poolFeePercentage() - hooks.protocolFeePercentage() + 1;
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Fees.FeeExceedsPoolFee.selector);
         vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(invalidPercentage);
     }

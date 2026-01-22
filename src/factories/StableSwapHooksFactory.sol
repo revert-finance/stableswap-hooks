@@ -93,14 +93,14 @@ contract StableSwapHooksFactory is Ownable, Pausable {
     /// @notice Deploys a new StableSwapHooks contract using CREATE2
     /// @param _currencies Array of currencies for the pool (must be sorted ascending)
     /// @param _rateOracles Array of rate oracle configurations for each currency
-    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
+    /// @param _poolFeePercentage Total pool fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
     /// @param _salt CREATE2 salt computed off-chain using HookMiner
     /// @param _creationCode StableSwapHooks creation bytecode (validated against stored hash)
     function deploy(
         Currency[] calldata _currencies,
         Base.RateOracleConfig[] calldata _rateOracles,
-        uint256 _lpFeePercentage,
+        uint256 _poolFeePercentage,
         uint256 _baseAmp,
         bytes32 _salt,
         bytes calldata _creationCode
@@ -110,7 +110,7 @@ contract StableSwapHooksFactory is Ownable, Pausable {
         }
 
         bytes memory bytecode = abi.encodePacked(
-            _creationCode, abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp)
+            _creationCode, abi.encode(poolManager, _currencies, _rateOracles, _poolFeePercentage, _baseAmp)
         );
 
         deployedHook = Create2.deploy(0, _salt, bytecode);

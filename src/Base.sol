@@ -33,8 +33,12 @@ abstract contract Base is BaseHook {
     /// @notice Maximum number of currencies allowed in the pool
     uint256 public constant MAX_CURRENCIES = 4;
 
-    /// @notice LP fee percentage (scaled by FEE_PRECISION)
-    uint256 public immutable lpFeePercentage;
+    /// @notice Maximum pool fee percentage (50% = 500000, scaled by FEE_PRECISION)
+    uint256 public constant MAX_POOL_FEE = 500000;
+
+    /// @notice Total pool fee percentage (scaled by FEE_PRECISION)
+    /// @dev LP fees are computed as: poolFeePercentage - hookFeePercentage - protocolFeePercentage
+    uint256 public immutable poolFeePercentage;
 
     /// @notice The factory that deployed this hook
     IStableSwapHooksFactory public immutable factory;
@@ -79,6 +83,9 @@ abstract contract Base is BaseHook {
     /// @notice Error thrown when caller is not the factory owner
     error OnlyFactoryOwner();
 
+    /// @notice Error thrown when pool fee percentage exceeds MAX_POOL_FEE
+    error PoolFeeExceedsMax();
+
     /// @notice Restricts function access to the factory owner
     modifier onlyFactoryOwner() {
         _checkFactoryOwner();
@@ -89,18 +96,22 @@ abstract contract Base is BaseHook {
     /// @dev Initializes all pairwise pools for the provided currencies.
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _factory The factory that deployed this hook
-    /// @param _lpFeePercentage The LP fee percentage encoded in the pool key fee field
+    /// @param _poolFeePercentage Total pool fee percentage (LP + hook + protocol fees)
     /// @param _currencies Array of currencies to create pools for, must be sorted in ascending order by address
     /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
     constructor(
         IPoolManager _poolManager,
         IStableSwapHooksFactory _factory,
-        uint256 _lpFeePercentage,
+        uint256 _poolFeePercentage,
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
+        if (_poolFeePercentage > MAX_POOL_FEE) {
+            revert PoolFeeExceedsMax();
+        }
+
         factory = _factory;
-        lpFeePercentage = _lpFeePercentage;
+        poolFeePercentage = _poolFeePercentage;
         currencies = _currencies;
         currenciesLength = _currencies.length;
 
@@ -128,7 +139,7 @@ abstract contract Base is BaseHook {
                 PoolKey memory poolKey = PoolKey({
                     currency0: _currencies[i],
                     currency1: _currencies[j],
-                    fee: SafeCast.toUint24(_lpFeePercentage),
+                    fee: SafeCast.toUint24(_poolFeePercentage),
                     tickSpacing: TICK_SPACING,
                     hooks: IHooks(address(this))
                 });

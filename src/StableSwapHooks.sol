@@ -21,16 +21,16 @@ contract StableSwapHooks is IUnlockCallback, Swap {
     /// @param _poolManager The Uniswap v4 PoolManager contract
     /// @param _currencies Array of currencies to create pools for (all pairwise combinations will be initialized)
     /// @param _rateOracles Array of rate oracle configurations for each currency (use address(0) for static rate)
-    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION), stored in PoolKey.fee
+    /// @param _poolFeePercentage Total pool fee percentage (scaled by FEE_PRECISION), stored in PoolKey.fee
     /// @param _baseAmp Initial amplification coefficient
     constructor(
         IPoolManager _poolManager,
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles,
-        uint256 _lpFeePercentage,
+        uint256 _poolFeePercentage,
         uint256 _baseAmp
     )
-        Base(_poolManager, IStableSwapHooksFactory(msg.sender), _lpFeePercentage, _currencies, _rateOracles)
+        Base(_poolManager, IStableSwapHooksFactory(msg.sender), _poolFeePercentage, _currencies, _rateOracles)
         Amp(_baseAmp)
     {}
 

@@ -23,17 +23,17 @@ contract StableSwapHooksFactoryHarness is StableSwapHooksFactory {
     /// @dev For testing only. Consumes too much gas for production eth_call usage.
     /// @param _currencies Array of currencies for the pool
     /// @param _rateOracles Array of rate oracle configurations for each currency
-    /// @param _lpFeePercentage LP fee percentage (scaled by FEE_PRECISION)
+    /// @param _poolFeePercentage Total pool fee percentage (scaled by FEE_PRECISION)
     /// @param _baseAmp Initial amplification coefficient
     /// @param _creationCode StableSwapHooks creation bytecode
     function mineSalt(
         Currency[] calldata _currencies,
         Base.RateOracleConfig[] calldata _rateOracles,
-        uint256 _lpFeePercentage,
+        uint256 _poolFeePercentage,
         uint256 _baseAmp,
         bytes calldata _creationCode
     ) external view returns (address hookAddress, bytes32 salt) {
-        bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _lpFeePercentage, _baseAmp);
+        bytes memory constructorArgs = abi.encode(poolManager, _currencies, _rateOracles, _poolFeePercentage, _baseAmp);
 
         (hookAddress, salt) = HookMiner.find(address(this), HOOK_FLAGS, _creationCode, constructorArgs);
     }

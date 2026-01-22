@@ -41,8 +41,8 @@ abstract contract Fees is Liquidity {
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
 
-    /// @notice Error thrown when fee percentage is invalid
-    error InvalidFeePercentage();
+    /// @notice Error thrown when fee percentage exceeds available pool fee budget
+    error FeeExceedsPoolFee();
 
     /// @dev Initializes fee accumulator arrays for each currency
     constructor() {
@@ -50,13 +50,17 @@ abstract contract Fees is Liquidity {
         hookFees = new uint256[](currenciesLength);
     }
 
+    /// @notice Returns the LP fee percentage (computed as poolFeePercentage - hookFeePercentage - protocolFeePercentage)
+    /// @dev LP fees are the residual after hook and protocol fees are deducted from the total pool fee
+    function lpFeePercentage() public view returns (uint256) {
+        return poolFeePercentage - hookFeePercentage - protocolFeePercentage;
+    }
+
     /// @notice Sets the protocol fee percentage
     /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = _feePercentage + hookFeePercentage + lpFeePercentage;
-
-        if (totalFees > FEE_PRECISION) {
-            revert InvalidFeePercentage();
+        if (_feePercentage + hookFeePercentage > poolFeePercentage) {
+            revert FeeExceedsPoolFee();
         }
 
         protocolFeePercentage = _feePercentage;
@@ -67,10 +71,8 @@ abstract contract Fees is Liquidity {
     /// @notice Sets the hook fee percentage
     /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = protocolFeePercentage + _feePercentage + lpFeePercentage;
-
-        if (totalFees > FEE_PRECISION) {
-            revert InvalidFeePercentage();
+        if (protocolFeePercentage + _feePercentage > poolFeePercentage) {
+            revert FeeExceedsPoolFee();
         }
 
         hookFeePercentage = _feePercentage;
@@ -147,7 +149,7 @@ abstract contract Fees is Liquidity {
         view
         returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
     {
-        lpFees = Math.mulDiv(_amount, lpFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
+        lpFees = Math.mulDiv(_amount, lpFeePercentage(), FEE_PRECISION, Math.Rounding.Ceil);
         hookFees_ = Math.mulDiv(_amount, hookFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
         protocolFees_ = Math.mulDiv(_amount, protocolFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
     }
