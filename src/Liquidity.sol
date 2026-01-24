@@ -49,6 +49,9 @@ abstract contract Liquidity is Amp, ERC20 {
     /// @notice Error thrown when msg.value doesn't match the native ETH amount in _amounts
     error AmountValueMismatch();
 
+    /// @notice Error thrown when ETH is sent to a pool that doesn't support native ETH
+    error UnexpectedValue();
+
     constructor() ERC20("StableSwap LP Token", "SSLP") {}
 
     /// @notice Quote the result of adding liquidity to the pool
@@ -130,8 +133,12 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256[] memory amounts, uint256[] memory minAmounts, uint256 minShares, address sender, uint256 value) =
             abi.decode(data, (uint256, uint256[], uint256[], uint256, address, uint256));
 
-        if (currencies[0].isAddressZero() && amounts[0] != value) {
-            revert AmountValueMismatch();
+        if (currencies[0].isAddressZero()) {
+            if (amounts[0] != value) {
+                revert AmountValueMismatch();
+            }
+        } else if (value != 0) {
+            revert UnexpectedValue();
         }
 
         bool isInitialDeposit = totalSupply() == 0;

@@ -353,6 +353,19 @@ contract StableSwapHooksLiquidityTest is StableSwapHooksBaseTest {
         hooks.addLiquidity(amounts, minAmounts, 0);
     }
 
+    function test_addLiquidity_ShouldRevertWhenEthSentToErc20OnlyPool() public {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
+        amounts[1] = _toTokenWei(currency1, LIQUIDITY_AMOUNT);
+
+        uint256[] memory minAmounts = new uint256[](2);
+
+        vm.deal(liquidityProvider, 1 ether);
+        vm.expectRevert(Liquidity.UnexpectedValue.selector);
+        vm.prank(liquidityProvider);
+        hooks.addLiquidity{value: 1 ether}(amounts, minAmounts, 0);
+    }
+
     function test_addLiquidity_ShouldRevertWhenBothAmountsZero_SubsequentDeposit() public {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
 
