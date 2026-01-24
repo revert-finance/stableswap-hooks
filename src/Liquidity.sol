@@ -130,16 +130,8 @@ abstract contract Liquidity is Amp, ERC20 {
         (, uint256[] memory amounts, uint256[] memory minAmounts, uint256 minShares, address sender, uint256 value) =
             abi.decode(data, (uint256, uint256[], uint256[], uint256, address, uint256));
 
-        for (uint256 i = 0; i < currenciesLength; ++i) {
-            Currency currency = currencies[i];
-
-            if (currency.isAddressZero()) {
-                if (amounts[i] != value) {
-                    revert AmountValueMismatch();
-                }
-
-                break;
-            }
+        if (currencies[0].isAddressZero() && amounts[0] != value) {
+            revert AmountValueMismatch();
         }
 
         bool isInitialDeposit = totalSupply() == 0;
@@ -165,11 +157,7 @@ abstract contract Liquidity is Amp, ERC20 {
 
             if (currency.isAddressZero()) {
                 uint256 refund = amounts[i] - actualAmounts[i];
-
-                if (refund > 0) {
-                    Address.sendValue(payable(sender), refund);
-                }
-
+                if (refund > 0) Address.sendValue(payable(sender), refund);
                 poolManager.settle{value: actualAmounts[i]}();
             } else {
                 poolManager.sync(currency);
