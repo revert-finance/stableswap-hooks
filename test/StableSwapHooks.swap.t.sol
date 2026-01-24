@@ -20,20 +20,17 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
     }
 
-    function _totalFeePercentage() private pure returns (uint256) {
-        return BASE_LP_FEE_PERCENTAGE + BASE_HOOK_FEE_PERCENTAGE + BASE_PROTOCOL_FEE_PERCENTAGE;
-    }
-
     function _feePrecision() private view returns (uint256) {
         return hooks.FEE_PRECISION();
     }
 
+    // Total fees = LP fee percentage (hook/protocol are portions of LP fees, not additional)
     function _addFeesToAmount(uint256 amount) private view returns (uint256) {
-        return amount + (amount * _totalFeePercentage() / _feePrecision());
+        return amount + (amount * BASE_LP_FEE_PERCENTAGE / _feePrecision());
     }
 
     function _subtractFeesFromAmount(uint256 amount) private view returns (uint256) {
-        return amount - (amount * _totalFeePercentage() / _feePrecision());
+        return amount - (amount * BASE_LP_FEE_PERCENTAGE / _feePrecision());
     }
 
     struct StableSwapEventData {
@@ -62,14 +59,15 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
     }
 
     function _assertFeeRatios(StableSwapEventData memory _eventData) private pure {
-        // Calculate expected fees from total (more accurate than multiplying lpFees)
-        uint256 totalFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
-        uint256 expectedLpFees = totalFees * BASE_LP_FEE_PERCENTAGE / _totalFeePercentage();
-        uint256 expectedHookFees = totalFees * BASE_HOOK_FEE_PERCENTAGE / _totalFeePercentage();
-        uint256 expectedProtocolFees = totalFees * BASE_PROTOCOL_FEE_PERCENTAGE / _totalFeePercentage();
+        // With new fee mechanism: hook/protocol are % of gross LP fees
+        // totalFees (gross LP) = lpFees (net) + hookFees + protocolFees
+        uint256 grossLpFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
+        uint256 expectedHookFees = grossLpFees * BASE_HOOK_FEE_PERCENTAGE / 1e6;
+        uint256 expectedProtocolFees = grossLpFees * BASE_PROTOCOL_FEE_PERCENTAGE / 1e6;
+        uint256 expectedNetLpFees = grossLpFees - expectedHookFees - expectedProtocolFees;
 
         // Allow small rounding differences
-        assertApproxEqAbs(_eventData.lpFees, expectedLpFees, 2);
+        assertApproxEqAbs(_eventData.lpFees, expectedNetLpFees, 2);
         assertApproxEqAbs(_eventData.hookFees, expectedHookFees, 2);
         assertApproxEqAbs(_eventData.protocolFees, expectedProtocolFees, 2);
     }
