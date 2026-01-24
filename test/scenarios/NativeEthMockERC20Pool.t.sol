@@ -458,6 +458,82 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
     }
 
     // ==========================================================================
+    // Tests - Fee Withdrawal with Native ETH
+    // ==========================================================================
+
+    function test_withdrawProtocolFees_withNativeEth() public {
+        // Set up protocol fees
+        uint256 protocolFeePercentage = 1000; // 0.1%
+        vm.prank(admin);
+        hooks.setProtocolFeePercentage(protocolFeePercentage);
+
+        // Do swaps to accumulate fees
+        uint256 swapAmount = 100 ether;
+        vm.deal(swapper, swapAmount);
+        _executeExactInputSwap(true, swapAmount); // ETH -> Token
+
+        // Check protocol fees accumulated
+        uint256 protocolFeeEth = hooks.protocolFees(0);
+        uint256 protocolFeeToken = hooks.protocolFees(1);
+        assertGt(protocolFeeEth + protocolFeeToken, 0, "Should have accumulated fees");
+
+        // Get protocol fee collector
+        address protocolFeeCollector = factory.protocolFeeCollector();
+        uint256 collectorEthBefore = protocolFeeCollector.balance;
+        uint256 collectorTokenBefore = token.balanceOf(protocolFeeCollector);
+
+        // Withdraw protocol fees
+        hooks.withdrawProtocolFees();
+
+        // Verify ETH was received
+        uint256 collectorEthAfter = protocolFeeCollector.balance;
+        uint256 collectorTokenAfter = token.balanceOf(protocolFeeCollector);
+
+        assertEq(collectorEthAfter - collectorEthBefore, protocolFeeEth, "Should receive ETH fees");
+        assertEq(collectorTokenAfter - collectorTokenBefore, protocolFeeToken, "Should receive token fees");
+
+        // Verify fees were cleared
+        assertEq(hooks.protocolFees(0), 0, "ETH protocol fees should be cleared");
+        assertEq(hooks.protocolFees(1), 0, "Token protocol fees should be cleared");
+    }
+
+    function test_withdrawHookFees_withNativeEth() public {
+        // Set up hook fees
+        uint256 hookFeePercentage = 1000; // 0.1%
+        vm.prank(admin);
+        hooks.setHookFeePercentage(hookFeePercentage);
+
+        // Do swaps to accumulate fees
+        uint256 swapAmount = 100 ether;
+        vm.deal(swapper, swapAmount);
+        _executeExactInputSwap(true, swapAmount); // ETH -> Token
+
+        // Check hook fees accumulated
+        uint256 hookFeeEth = hooks.hookFees(0);
+        uint256 hookFeeToken = hooks.hookFees(1);
+        assertGt(hookFeeEth + hookFeeToken, 0, "Should have accumulated fees");
+
+        // Get hook fee collector
+        address hookFeeCollector = factory.hookFeeCollector();
+        uint256 collectorEthBefore = hookFeeCollector.balance;
+        uint256 collectorTokenBefore = token.balanceOf(hookFeeCollector);
+
+        // Withdraw hook fees
+        hooks.withdrawHookFees();
+
+        // Verify ETH was received
+        uint256 collectorEthAfter = hookFeeCollector.balance;
+        uint256 collectorTokenAfter = token.balanceOf(hookFeeCollector);
+
+        assertEq(collectorEthAfter - collectorEthBefore, hookFeeEth, "Should receive ETH fees");
+        assertEq(collectorTokenAfter - collectorTokenBefore, hookFeeToken, "Should receive token fees");
+
+        // Verify fees were cleared
+        assertEq(hooks.hookFees(0), 0, "ETH hook fees should be cleared");
+        assertEq(hooks.hookFees(1), 0, "Token hook fees should be cleared");
+    }
+
+    // ==========================================================================
     // Internal Helpers
     // ==========================================================================
 
