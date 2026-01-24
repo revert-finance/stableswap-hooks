@@ -20,8 +20,7 @@ import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeploye
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
 
-/// @notice Fuzz tests for Native ETH + MockERC20 pool
-/// @dev Tests adding/removing liquidity and exact in/out swaps with native ETH
+/// @notice Tests for Native ETH + MockERC20 pool
 contract NativeEthMockERC20Test is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
@@ -138,6 +137,22 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
         } else {
             assertEq(actualEthSpent, ethAmount, "Should use all ETH when ETH <= token");
         }
+    }
+
+    /// @notice Verifies reentrancy is blocked during ETH refund
+    /// @dev Flow: attack() -> addLiquidity() -> refund via sendValue() -> receive() -> addLiquidity() -> REVERTS
+    /// The PoolManager lock prevents nested unlock() calls, reverting with AlreadyUnlocked
+    function test_addLiquidity_reentrancyProtected() public {
+        ReentrancyAttacker attacker = new ReentrancyAttacker(hooks, token);
+
+        // Use more ETH than tokens to trigger a refund
+        uint256 ethAmount = 100 ether;
+        uint256 tokenAmount = 50 ether;
+        vm.deal(address(attacker), ethAmount);
+        token.mint(address(attacker), tokenAmount);
+
+        vm.expectRevert(IPoolManager.AlreadyUnlocked.selector);
+        attacker.attack(ethAmount, tokenAmount);
     }
 
     // ==========================================================================
@@ -707,5 +722,32 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
             return _account.balance;
         }
         return IERC20(Currency.unwrap(_currency)).balanceOf(_account);
+    }
+}
+
+/// @notice Malicious contract that attempts reentrancy during ETH refund
+/// @dev When ETH is refunded via Address.sendValue(), receive() triggers and attempts to re-enter addLiquidity()
+contract ReentrancyAttacker {
+    StableSwapHooks private hooks;
+
+    constructor(StableSwapHooks _hooks, MockERC20 _token) {
+        hooks = _hooks;
+        _token.approve(address(_hooks), type(uint256).max);
+    }
+
+    /// @notice Entry point - calls addLiquidity with more ETH than tokens to trigger refund
+    function attack(uint256 _ethAmount, uint256 _tokenAmount) external {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _ethAmount;
+        amounts[1] = _tokenAmount;
+        hooks.addLiquidity{value: _ethAmount}(amounts, new uint256[](2), 0);
+    }
+
+    /// @notice Called when receiving ETH refund - attempts reentrancy
+    receive() external payable {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = msg.value;
+        amounts[1] = msg.value;
+        hooks.addLiquidity{value: msg.value}(amounts, new uint256[](2), 0);
     }
 }
