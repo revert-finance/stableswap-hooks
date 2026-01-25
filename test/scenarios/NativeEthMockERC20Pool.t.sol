@@ -9,8 +9,11 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
+import {V4Quoter} from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
+import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 
 import {Base} from "src/Base.sol";
 import {Liquidity} from "src/Liquidity.sol";
@@ -307,13 +310,24 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
     // ==========================================================================
 
     function testFuzz_exactOutputSwap_ethToToken(uint96 _amountOut) public {
-        // Bound to reasonable output (0.001 to 50 tokens - must be available in pool)
-        uint256 amountOut = bound(uint256(_amountOut), 0.001 ether, 50 ether);
+        uint256 maxAmountOut = hooks.reserves(1) - 1;
+        uint256 amountOut = bound(uint256(_amountOut), 1, maxAmountOut);
+
+        V4Quoter quoter = new V4Quoter(IPoolManager(poolManager));
+
+        (uint256 quotedAmountIn,) = quoter.quoteExactOutputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: _getPoolKey(), zeroForOne: true, exactAmount: uint128(amountOut), hookData: bytes("")
+            })
+        );
+        uint256 amountInMaximum = quotedAmountIn * 3;
+
+        vm.deal(swapper, amountInMaximum);
 
         uint256 ethBefore = swapper.balance;
         uint256 tokenBefore = token.balanceOf(swapper);
 
-        _executeExactOutputSwap(true, amountOut);
+        _executeExactOutputSwap(true, amountOut, amountInMaximum);
 
         uint256 ethAfter = swapper.balance;
         uint256 tokenAfter = token.balanceOf(swapper);
@@ -321,8 +335,9 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
         // Should receive exact token amount
         assertEq(tokenAfter - tokenBefore, amountOut, "Should receive exact token amount");
 
-        // Should spend some ETH
-        assertGt(ethBefore - ethAfter, 0, "Should spend ETH");
+        // Should only spend quoted ETH amount and refund extra
+        assertEq(ethBefore - ethAfter, quotedAmountIn, "Should spend quoted ETH amount");
+        assertGt(amountInMaximum, quotedAmountIn, "Should send more ETH than needed");
     }
 
     function testFuzz_exactOutputSwap_tokenToEth(uint96 _amountOut) public {
@@ -332,7 +347,7 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
         uint256 ethBefore = swapper.balance;
         uint256 tokenBefore = token.balanceOf(swapper);
 
-        _executeExactOutputSwap(false, amountOut);
+        _executeExactOutputSwap(false, amountOut, 0);
 
         uint256 ethAfter = swapper.balance;
         uint256 tokenAfter = token.balanceOf(swapper);
@@ -623,11 +638,13 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
         });
     }
 
-    function _executeExactInputSwap(bool _zeroForOne, uint256 _amountIn) internal {
+    function _executeExactInputSwap(bool _zeroForOne, uint256 _amountIn) internal returns (uint256 amountOut) {
         PoolKey memory poolKey = _getPoolKey();
 
         Currency inputCurrency = _zeroForOne ? poolKey.currency0 : poolKey.currency1;
         Currency outputCurrency = _zeroForOne ? poolKey.currency1 : poolKey.currency0;
+
+        uint256 outputBefore = _getBalance(outputCurrency, swapper);
 
         bytes memory actions =
             abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
@@ -653,32 +670,17 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
 
         vm.prank(swapper);
         universalRouter.execute{value: value}(commands, inputs, block.timestamp + 100);
+
+        amountOut = _getBalance(outputCurrency, swapper) - outputBefore;
     }
 
-    function _executeExactInputSwapWithReturn(bool _zeroForOne, uint256 _amountIn)
-        internal
-        returns (uint256 amountOut)
-    {
-        PoolKey memory poolKey = _getPoolKey();
-
-        Currency outputCurrency = _zeroForOne ? poolKey.currency1 : poolKey.currency0;
-
-        uint256 outputBefore = _getBalance(outputCurrency, swapper);
-
-        _executeExactInputSwap(_zeroForOne, _amountIn);
-
-        uint256 outputAfter = _getBalance(outputCurrency, swapper);
-        amountOut = outputAfter - outputBefore;
-    }
-
-    function _executeExactOutputSwap(bool _zeroForOne, uint256 _amountOut) internal {
+    function _executeExactOutputSwap(bool _zeroForOne, uint256 _amountOut, uint256 _amountInMaximum) internal {
         PoolKey memory poolKey = _getPoolKey();
 
         Currency inputCurrency = _zeroForOne ? poolKey.currency0 : poolKey.currency1;
         Currency outputCurrency = _zeroForOne ? poolKey.currency1 : poolKey.currency0;
 
-        // For native ETH input, use a reasonable max (3x expected)
-        uint256 maxInput = _zeroForOne ? _amountOut * 3 : type(uint128).max;
+        uint256 maxInput = _amountInMaximum > 0 ? _amountInMaximum : (_zeroForOne ? _amountOut * 3 : type(uint128).max);
 
         bytes memory actions =
             abi.encodePacked(uint8(Actions.SWAP_EXACT_OUT_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
