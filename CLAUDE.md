@@ -79,9 +79,9 @@ A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i)
 ### Fee System
 
 Three-tier fees (all scaled by `FEE_PRECISION = 1e6`):
-- LP fees: Accumulated in reserves, increase LP token value (immutable, set at deployment)
-- Hook fees: Withdrawable to `factory.hookFeeCollector()` (percentage configurable)
-- Protocol fees: Withdrawable to `factory.protocolFeeCollector()` (percentage configurable)
+- LP fees: Gross LP fee is set at deployment; net LP fee stays in reserves and is floored to 1 wei for non-zero swaps.
+- Hook fees: Percentage of the gross LP fee, withdrawable to `factory.hookFeeCollector()` (percentage configurable)
+- Protocol fees: Percentage of the gross LP fee, withdrawable to `factory.protocolFeeCollector()` (percentage configurable)
 
 Admin functions on hooks use `onlyFactoryOwner` modifier (checks `factory.owner()`).
 
