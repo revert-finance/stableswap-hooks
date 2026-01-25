@@ -148,8 +148,8 @@ abstract contract Fees is Liquidity {
         returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
     {
         lpFees = Math.mulDiv(_amount, lpFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
-        hookFees_ = Math.mulDiv(lpFees, hookFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
-        protocolFees_ = Math.mulDiv(lpFees, protocolFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
+        hookFees_ = Math.mulDiv(lpFees, hookFeePercentage, FEE_PRECISION);
+        protocolFees_ = Math.mulDiv(lpFees, protocolFeePercentage, FEE_PRECISION);
 
         lpFees -= hookFees_ + protocolFees_;
     }
