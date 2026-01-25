@@ -158,7 +158,7 @@ uint256 amountInMaximum = quotedAmountIn * 1010000 / 1000000; // 1% slippage
 ```
 
 ### Fees
-Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECISION = 1e6`). For exact-input swaps, fees are deducted from the output; for exact-output swaps, fees are added to the input. Hook and protocol fees are taken as percentages of the gross LP fee, and the remaining LP fee stays in reserves (benefiting LPs). The LP fee is floored to a minimum of 1 wei when the swap amount is non-zero. Hook and protocol fees accumulate and can be withdrawn via `withdrawHookFees()` and `withdrawProtocolFees()`.
+Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECISION = 1e6`). For exact-input swaps, fees are deducted from the output; for exact-output swaps, fees are added to the input. Hook and protocol fees are taken as percentages of the gross LP fee, and the remaining LP fee stays in reserves (benefiting LPs). Hook and protocol fees accumulate and can be withdrawn via `withdrawHookFees()` and `withdrawProtocolFees()`.
 
 ## Factory
 The factory deploys StableSwap hooks via CREATE2, validates the hook bytecode against a known hash, and configures protocol and hook fee collectors for all pools created through it.
@@ -277,7 +277,7 @@ Swap example (exact input):
 // Gross LP fee = 1,000,000 * 500 / 1e6 = 500
 // Hook fee = 500 * 200000 / 1e6 = 100 (accrues to hookFees)
 // Protocol fee = 500 * 100000 / 1e6 = 50 (accrues to protocolFees)
-// Net LP fee = max(500 - 100 - 50, 1) = 350 (stays in reserves)
+// Net LP fee = 500 - 100 - 50 = 350 (stays in reserves)
 // Amount out after fees = 1,000,000 - 500 = 999,500.
 ```
 
