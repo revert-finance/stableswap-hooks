@@ -58,18 +58,15 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         revert("StableSwap event not found");
     }
 
-    function _assertFeeRatios(StableSwapEventData memory _eventData) private pure {
-        // With new fee mechanism: hook/protocol are % of gross LP fees
-        // totalFees (gross LP) = lpFees (net) + hookFees + protocolFees
+    function _assertFeeRatios(StableSwapEventData memory _eventData) private view {
         uint256 grossLpFees = _eventData.lpFees + _eventData.hookFees + _eventData.protocolFees;
-        uint256 expectedHookFees = grossLpFees * BASE_HOOK_FEE_PERCENTAGE / 1e6;
-        uint256 expectedProtocolFees = grossLpFees * BASE_PROTOCOL_FEE_PERCENTAGE / 1e6;
+        uint256 expectedHookFees = grossLpFees * BASE_HOOK_FEE_PERCENTAGE / _feePrecision();
+        uint256 expectedProtocolFees = grossLpFees * BASE_PROTOCOL_FEE_PERCENTAGE / _feePrecision();
         uint256 expectedNetLpFees = grossLpFees - expectedHookFees - expectedProtocolFees;
 
-        // Allow small rounding differences
-        assertApproxEqAbs(_eventData.lpFees, expectedNetLpFees, 2);
-        assertApproxEqAbs(_eventData.hookFees, expectedHookFees, 2);
-        assertApproxEqAbs(_eventData.protocolFees, expectedProtocolFees, 2);
+        assertEq(_eventData.lpFees, expectedNetLpFees);
+        assertEq(_eventData.hookFees, expectedHookFees);
+        assertEq(_eventData.protocolFees, expectedProtocolFees);
     }
 
     // ==========================================================================
