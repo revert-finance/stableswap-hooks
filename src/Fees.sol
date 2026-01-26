@@ -101,11 +101,11 @@ abstract contract Fees is Liquidity {
         address _protocolFeeCollector = factory.protocolFeeCollector();
         uint256[] memory _protocolFees = protocolFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
-
         for (uint256 i = 0; i < currenciesLength; i++) {
             protocolFees[i] = 0;
         }
+
+        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
 
         emit ProtocolFeesWithdrawn(sender, _protocolFeeCollector, _protocolFees);
     }
@@ -117,11 +117,11 @@ abstract contract Fees is Liquidity {
         address _hookFeeCollector = factory.hookFeeCollector();
         uint256[] memory _hookFees = hookFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_hookFeeCollector, _hookFees);
-
         for (uint256 i = 0; i < currenciesLength; i++) {
             hookFees[i] = 0;
         }
+
+        _handleWithdrawFeesPoolManagerAccounting(_hookFeeCollector, _hookFees);
 
         emit HookFeesWithdrawn(sender, _hookFeeCollector, _hookFees);
     }
