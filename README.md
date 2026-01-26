@@ -59,6 +59,8 @@ uint256 minShares = expectedShares * 99 / 100;
 hooks.addLiquidity(amounts, minAmounts, minShares);
 ```
 
+For pools with native ETH, pass the ETH amount as `msg.value` and set the corresponding `amounts[]` entry to the same value: `hooks.addLiquidity{value: ethAmount}(amounts, ...)`. Excess ETH from proportional deposits is refunded automatically.
+
 ### Remove liquidity
 Remove liquidity burns LP shares and returns proportional amounts of each currency.
 
@@ -128,6 +130,8 @@ inputs[0] = abi.encode(actions, params);
 universalRouter.execute(commands, inputs, block.timestamp + 100);
 ```
 
+For native ETH swaps, pass ETH via `{value: amountIn}`. For exact-output swaps, send more ETH than needed (`amountInMaximum`) and add a `Commands.SWEEP` command after `V4_SWAP` to return unused ETH. See `test/scenarios/NativeEthMockERC20Pool.t.sol` for reference.
+
 ### Quoting swaps
 Use the v4 quoter to estimate swap amounts before execution, then feed the quote into the router's slippage parameters.
 
@@ -190,7 +194,7 @@ Use the factory to deploy a new hook (and initialize all pairwise pools):
 2. Compute a CREATE2 salt off-chain (see [Off-chain salt mining](#off-chain-salt-mining) below).
 3. Call `factory.deploy(...)` with the creation code and constructor params.
 
-`currencies[]` are the token addresses for the pool, and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
+`currencies[]` are the token addresses for the pool (native ETH is supported via `address(0)`), and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
 
 `deploy(...)` expects the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode.object at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
 
