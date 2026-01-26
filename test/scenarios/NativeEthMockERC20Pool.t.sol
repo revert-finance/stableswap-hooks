@@ -112,6 +112,43 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
     // Tests - ETH Refund on Add Liquidity
     // ==========================================================================
 
+    function test_addLiquidity_noRefundWhenActualEqualsAmount() public {
+        uint256[] memory quotedAmounts = _makeAmounts(15 ether, 15 ether);
+        (, uint256[] memory expectedActualAmounts) = hooks.quoteAddLiquidity(quotedAmounts);
+
+        uint256 ethAmount = expectedActualAmounts[0];
+        uint256 tokenAmount = expectedActualAmounts[1];
+
+        uint256 ethBefore = liquidityProvider.balance;
+
+        _addLiquidity(ethAmount, tokenAmount);
+
+        uint256 ethAfter = liquidityProvider.balance;
+        uint256 actualEthSpent = ethBefore - ethAfter;
+
+        assertEq(actualEthSpent, ethAmount, "No refund when actual == amount");
+    }
+
+    function test_addLiquidity_refundsWhenActualLessThanAmount() public {
+        uint256 ethAmount = 20 ether;
+        uint256 tokenAmount = 10 ether;
+
+        uint256[] memory amounts = _makeAmounts(ethAmount, tokenAmount);
+        (, uint256[] memory expectedActualAmounts) = hooks.quoteAddLiquidity(amounts);
+
+        assertLt(expectedActualAmounts[0], ethAmount, "Expected refund path");
+
+        uint256 ethBefore = liquidityProvider.balance;
+
+        _addLiquidity(ethAmount, tokenAmount);
+
+        uint256 ethAfter = liquidityProvider.balance;
+        uint256 actualEthSpent = ethBefore - ethAfter;
+
+        assertEq(actualEthSpent, expectedActualAmounts[0], "Spend only actual ETH");
+        assertLt(actualEthSpent, ethAmount, "Refund excess ETH");
+    }
+
     function testFuzz_addLiquidity_refundsExcessEth(uint96 _ethAmount, uint96 _tokenAmount) public {
         uint256 ethAmount = bound(uint256(_ethAmount), 10 ether, 1000 ether);
         uint256 tokenAmount = bound(uint256(_tokenAmount), 10 ether, 1000 ether);
