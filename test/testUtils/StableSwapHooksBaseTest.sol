@@ -22,9 +22,9 @@ import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 abstract contract StableSwapHooksBaseTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
-    uint256 internal constant BASE_PROTOCOL_FEE_PERCENTAGE = 100;
-    uint256 internal constant BASE_HOOK_FEE_PERCENTAGE = 200;
-    uint256 internal constant BASE_LP_FEE_PERCENTAGE = 300;
+    uint256 internal constant BASE_PROTOCOL_FEE_PERCENTAGE = 100000; // 10% of LP fees
+    uint256 internal constant BASE_HOOK_FEE_PERCENTAGE = 200000; // 20% of LP fees
+    uint256 internal constant BASE_LP_FEE_PERCENTAGE = 500; // 0.05% of swap amount
     uint160 internal constant BASE_SQRT_PRICE_X96 = 1 << 96;
     uint256 internal constant BASE_AMP = 100;
 
