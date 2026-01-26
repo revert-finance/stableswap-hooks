@@ -26,8 +26,8 @@ forge snapshot        # Generate gas snapshots
 ```
 StableSwapHooks (main entry point, IUnlockCallback)
     └── Swap (beforeSwap hook, StableSwap pricing)
-        └── Liquidity (ERC20 LP tokens, add/remove liquidity)
-            └── Fees (three-tier fee system: LP, Hook, Protocol)
+        └── Fees (three-tier fee system: LP, Hook, Protocol)
+            └── Liquidity (ERC20 LP tokens, add/remove liquidity)
                 └── Amp (amplification coefficient ramping)
                     └── Base (pool config, hook permissions, BaseHook)
 
