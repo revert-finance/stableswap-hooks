@@ -243,19 +243,10 @@ abstract contract Liquidity is Amp, ERC20 {
                 actualAmounts[i] = _amounts[i];
             }
         } else {
-            uint256[] memory cachedRates = new uint256[](currenciesLength);
-            uint256[] memory scaledReserves = new uint256[](currenciesLength);
-
-            for (uint256 i = 0; i < currenciesLength; ++i) {
-                cachedRates[i] = _getRate(i);
-                scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], cachedRates[i]);
-            }
-
             uint256 minProportion = type(uint256).max;
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledAmount = StableSwapMath.scaleTo(_amounts[i], cachedRates[i]);
-                uint256 proportion = Math.mulDiv(scaledAmount, currentTotalSupply, scaledReserves[i]);
+                uint256 proportion = Math.mulDiv(_amounts[i], currentTotalSupply, reserves[i]);
 
                 if (proportion < minProportion) {
                     minProportion = proportion;
@@ -265,8 +256,7 @@ abstract contract Liquidity is Amp, ERC20 {
             shares = minProportion;
 
             for (uint256 i = 0; i < currenciesLength; ++i) {
-                uint256 scaledAmount = (minProportion * scaledReserves[i]) / currentTotalSupply;
-                actualAmounts[i] = StableSwapMath.descale(scaledAmount, cachedRates[i]);
+                actualAmounts[i] = Math.mulDiv(shares, reserves[i], currentTotalSupply, Math.Rounding.Ceil);
             }
         }
     }
