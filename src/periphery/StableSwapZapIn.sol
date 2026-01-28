@@ -33,12 +33,22 @@ interface IStableSwapHooks {
         returns (uint256 shares, uint256[] memory actualAmounts);
 }
 
-/// @notice Represents a single swap operation
+/// @notice Swap input for zapIn execution (minimal struct for gas efficiency)
 /// @param tokenInIndex Index of the input token in the pool's currencies array
 /// @param tokenOutIndex Index of the output token in the pool's currencies array
 /// @param amountIn Amount of input token to swap
-/// @param expectedAmountOut Expected amount of output token (for quote purposes)
-struct Swap {
+struct SwapInput {
+    uint256 tokenInIndex;
+    uint256 tokenOutIndex;
+    uint256 amountIn;
+}
+
+/// @notice Swap output from quoteZapIn (includes expected output for off-chain use)
+/// @param tokenInIndex Index of the input token in the pool's currencies array
+/// @param tokenOutIndex Index of the output token in the pool's currencies array
+/// @param amountIn Amount of input token to swap
+/// @param expectedAmountOut Expected amount of output token (for quote/display purposes)
+struct SwapOutput {
     uint256 tokenInIndex;
     uint256 tokenOutIndex;
     uint256 amountIn;
@@ -102,7 +112,7 @@ contract StableSwapZapIn is IUnlockCallback {
     function quoteZapIn(address _hooks, uint256[] calldata _amounts, uint256 _maxIterations)
         public
         view
-        returns (uint256 shares, uint256[] memory resultingAmounts, Swap[] memory swaps)
+        returns (uint256 shares, uint256[] memory resultingAmounts, SwapOutput[] memory swaps)
     {
         IStableSwapHooks hooks = IStableSwapHooks(_hooks);
         uint256 len = hooks.currenciesLength();
@@ -119,7 +129,7 @@ contract StableSwapZapIn is IUnlockCallback {
             for (uint256 i = 0; i < len; ++i) {
                 resultingAmounts[i] = _amounts[i];
             }
-            return (shares, resultingAmounts, new Swap[](0));
+            return (shares, resultingAmounts, new SwapOutput[](0));
         }
 
         // Calculate optimal swaps accounting for price impact
@@ -141,9 +151,11 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Reentrancy protection is provided by PoolManager's lock mechanism
     /// @param _hooks The StableSwapHooks contract address
     /// @param _amounts Array of input amounts for each currency
-    /// @param _swaps Pre-calculated swaps from quoteZapIn
+    /// @param _swaps Pre-calculated swaps from quoteZapIn (use tokenInIndex, tokenOutIndex, amountIn fields)
     /// @param _minShares Minimum LP shares to receive (slippage protection)
-    function zapIn(address _hooks, uint256[] calldata _amounts, Swap[] calldata _swaps, uint256 _minShares) external {
+    function zapIn(address _hooks, uint256[] calldata _amounts, SwapInput[] calldata _swaps, uint256 _minShares)
+        external
+    {
         if (_hooks == address(0)) revert ZeroAddress();
 
         IStableSwapHooks hooks = IStableSwapHooks(_hooks);
@@ -195,7 +207,7 @@ contract StableSwapZapIn is IUnlockCallback {
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
 
-        (IStableSwapHooks hooks, Swap[] memory swaps) = abi.decode(data, (IStableSwapHooks, Swap[]));
+        (IStableSwapHooks hooks, SwapInput[] memory swaps) = abi.decode(data, (IStableSwapHooks, SwapInput[]));
 
         uint256 len = hooks.currenciesLength();
 
@@ -213,7 +225,7 @@ contract StableSwapZapIn is IUnlockCallback {
 
         // Execute all swaps and accumulate deltas
         for (uint256 i = 0; i < swaps.length; ++i) {
-            Swap memory swap = swaps[i];
+            SwapInput memory swap = swaps[i];
 
             Currency currencyIn = currencies[swap.tokenInIndex];
             Currency currencyOut = currencies[swap.tokenOutIndex];
@@ -338,7 +350,7 @@ contract StableSwapZapIn is IUnlockCallback {
     function _calculateOptimalSwaps(IStableSwapHooks _hooks, uint256[] calldata _amounts, uint256 _maxIterations)
         internal
         view
-        returns (Swap[] memory swaps)
+        returns (SwapOutput[] memory swaps)
     {
         uint256 len = _hooks.currenciesLength();
 
@@ -359,11 +371,11 @@ contract StableSwapZapIn is IUnlockCallback {
 
         // If no iterations requested, return empty swaps
         if (_maxIterations == 0) {
-            return new Swap[](0);
+            return new SwapOutput[](0);
         }
 
         // Temporary array to collect swaps
-        Swap[] memory tempSwaps = new Swap[](_maxIterations);
+        SwapOutput[] memory tempSwaps = new SwapOutput[](_maxIterations);
         uint256 swapCount = 0;
 
         // Iteratively balance pairs until no significant imbalance remains
@@ -378,7 +390,7 @@ contract StableSwapZapIn is IUnlockCallback {
             // Calculate and apply swap for this pair
             (uint256 swapAmount, uint256 expectedOutput) = _applyPairSwap(ctx, excessIdx, deficitIdx);
             if (swapAmount > 0) {
-                tempSwaps[swapCount] = Swap({
+                tempSwaps[swapCount] = SwapOutput({
                     tokenInIndex: excessIdx,
                     tokenOutIndex: deficitIdx,
                     amountIn: swapAmount,
@@ -389,7 +401,7 @@ contract StableSwapZapIn is IUnlockCallback {
         }
 
         // Copy to correctly sized array
-        swaps = new Swap[](swapCount);
+        swaps = new SwapOutput[](swapCount);
         for (uint256 i = 0; i < swapCount; ++i) {
             swaps[i] = tempSwaps[i];
         }

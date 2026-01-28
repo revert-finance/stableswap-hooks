@@ -10,7 +10,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
-import {StableSwapZapIn, Swap} from "src/periphery/StableSwapZapIn.sol";
+import {StableSwapZapIn, SwapOutput, SwapInput} from "src/periphery/StableSwapZapIn.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
 
@@ -98,6 +98,19 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         vm.prank(liquidityProvider);
         hooks4.addLiquidity(amounts, minAmounts, 0);
+    }
+
+    /// @dev Convert SwapOutput[] to SwapInput[] for zapIn execution
+    function _toSwapInputs(SwapOutput[] memory _swaps) internal pure returns (SwapInput[] memory) {
+        SwapInput[] memory inputs = new SwapInput[](_swaps.length);
+        for (uint256 i = 0; i < _swaps.length; ++i) {
+            inputs[i] = SwapInput({
+                tokenInIndex: _swaps[i].tokenInIndex,
+                tokenOutIndex: _swaps[i].tokenOutIndex,
+                amountIn: _swaps[i].amountIn
+            });
+        }
+        return inputs;
     }
 
     /// @dev Helper to assert that at least 99.9% of provided tokens were used (leftover < 0.1%)
@@ -203,7 +216,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Quote first
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
         assertGt(quotedShares, 0, "Quoted shares should be > 0");
         // For balanced deposit, no swaps needed
         assertEq(swaps.length, 0, "No swap needed for balanced deposit");
@@ -213,7 +226,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         // Execute zap with pre-calculated swaps
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks.balanceOf(zapUser);
@@ -233,7 +246,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = 0;
 
         // Quote first - should indicate a swap is needed
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
         assertGt(quotedShares, 0, "Quoted shares should be > 0");
         assertGt(swaps.length, 0, "Should have swaps");
         assertEq(swaps[0].tokenInIndex, 0, "Should swap from token0");
@@ -244,7 +257,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         // Execute zap with pre-calculated swaps
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks.balanceOf(zapUser);
@@ -264,14 +277,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 200);
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore2();
 
         // Execute zap with pre-calculated swaps
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks.balanceOf(zapUser);
@@ -291,14 +304,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore2();
 
         // Execute zap with pre-calculated swaps
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks.balanceOf(zapUser);
@@ -317,14 +330,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 1000);
 
         // Quote to get swaps (should be empty for initial deposit)
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore2();
 
         // Execute zap as initial deposit
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks.balanceOf(zapUser);
@@ -344,12 +357,12 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Quote to get expected shares and swaps
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Set minShares higher than possible - should revert
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.SlippageExceeded.selector);
-        zapIn.zapIn(address(hooks), amounts, swaps, quotedShares * 2);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), quotedShares * 2);
     }
 
     function test_zapIn_2tokens_revertNoTokens() public {
@@ -359,11 +372,11 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[0] = 0;
         amounts[1] = 0;
 
-        Swap[] memory swaps = new Swap[](0);
+        SwapOutput[] memory swaps = new SwapOutput[](0);
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.NoTokensProvided.selector);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
     }
 
     function test_zapIn_2tokens_revertArrayLengthMismatch() public {
@@ -374,11 +387,11 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
         amounts[2] = 100;
 
-        Swap[] memory swaps = new Swap[](0);
+        SwapOutput[] memory swaps = new SwapOutput[](0);
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.ArrayLengthMismatch.selector);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
     }
 
     function test_zapIn_2tokens_revertInvalidSwapIndex_outOfBounds() public {
@@ -389,8 +402,8 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Create swap with out-of-bounds index
-        Swap[] memory swaps = new Swap[](1);
-        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 5, amountIn: 100, expectedAmountOut: 100});
+        SwapInput[] memory swaps = new SwapInput[](1);
+        swaps[0] = SwapInput({tokenInIndex: 0, tokenOutIndex: 5, amountIn: 100});
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidSwapIndex.selector);
@@ -405,8 +418,8 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Create swap with same in/out index
-        Swap[] memory swaps = new Swap[](1);
-        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 0, amountIn: 100, expectedAmountOut: 100});
+        SwapInput[] memory swaps = new SwapInput[](1);
+        swaps[0] = SwapInput({tokenInIndex: 0, tokenOutIndex: 0, amountIn: 100});
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidSwapIndex.selector);
@@ -418,7 +431,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[0] = 100;
         amounts[1] = 100;
 
-        Swap[] memory swaps = new Swap[](0);
+        SwapInput[] memory swaps = new SwapInput[](0);
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.ZeroAddress.selector);
@@ -438,14 +451,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[2] = _toTokenWei(currency2, 100);
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore3();
 
         // Execute zap
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks3), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks3), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks3.balanceOf(zapUser);
@@ -466,14 +479,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[2] = 0;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore3();
 
         // Execute zap - should swap to get other tokens
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks3), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks3), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks3.balanceOf(zapUser);
@@ -494,14 +507,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[2] = 0;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore3();
 
         // Execute zap - should swap to get token2
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks3), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks3), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks3.balanceOf(zapUser);
@@ -522,14 +535,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[2] = _toTokenWei(currency2, 50);
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore3();
 
         // Execute zap
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks3), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks3), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks3.balanceOf(zapUser);
@@ -553,14 +566,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[3] = 100 * 1e18;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore4();
 
         // Execute zap
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks4), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks4), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks4.balanceOf(zapUser);
@@ -582,14 +595,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[3] = 0;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore4();
 
         // Execute zap - should swap to get other tokens
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks4), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks4), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks4.balanceOf(zapUser);
@@ -611,14 +624,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[3] = 200 * 1e18;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore4();
 
         // Execute zap - should swap to get missing tokens
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks4), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks4), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks4.balanceOf(zapUser);
@@ -640,14 +653,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[3] = 25 * 1e18;
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks4), amounts, 8);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore4();
 
         // Execute zap
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks4), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks4), amounts, _toSwapInputs(swaps), 0);
 
         // Verify LP tokens received
         uint256 lpBalance = hooks4.balanceOf(zapUser);
@@ -668,11 +681,11 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // Get quote
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Execute zap
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         // Actual shares should match quoted exactly for balanced deposit
         uint256 actualShares = hooks.balanceOf(zapUser);
@@ -691,13 +704,13 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 1); // 1 token
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore2();
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooks.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens even for small amounts");
@@ -715,13 +728,13 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 10000);
 
         // Quote to get swaps
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
 
         // Capture balances before
         uint256[] memory balancesBefore = _getBalancesBefore2();
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks), amounts, swaps, 0);
+        zapIn.zapIn(address(hooks), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooks.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens for large amounts");
@@ -741,12 +754,12 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = 0;
 
         // With 1 iteration - sufficient for 2-token pool
-        (uint256 shares1,, Swap[] memory swaps1) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        (uint256 shares1,, SwapOutput[] memory swaps1) = zapIn.quoteZapIn(address(hooks), amounts, 1);
         assertGt(shares1, 0, "Should get shares with 1 iteration");
         assertEq(swaps1.length, 1, "Should have 1 swap with 1 iteration");
 
         // With more iterations - should give same result (already balanced after 1)
-        (uint256 shares2,, Swap[] memory swaps2) = zapIn.quoteZapIn(address(hooks), amounts, 2);
+        (uint256 shares2,, SwapOutput[] memory swaps2) = zapIn.quoteZapIn(address(hooks), amounts, 2);
         assertGe(shares2, shares1, "2 iterations should be >= 1 iteration");
         assertGe(swaps2.length, swaps1.length, "More iterations may refine");
     }
@@ -761,14 +774,14 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[2] = 0;
 
         // With 6 iterations - recommended for 3-token pool single-sided
-        (uint256 shares6,, Swap[] memory swaps6) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
+        (uint256 shares6,, SwapOutput[] memory swaps6) = zapIn.quoteZapIn(address(hooks3), amounts, 6);
         assertGt(shares6, 0, "Should get shares with 6 iterations");
         assertGt(swaps6.length, 0, "Should have swaps");
 
         // Execute with swaps
         uint256[] memory balancesBefore = _getBalancesBefore3();
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooks3), amounts, swaps6, 0);
+        zapIn.zapIn(address(hooks3), amounts, _toSwapInputs(swaps6), 0);
 
         uint256 lpBalance = hooks3.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
@@ -786,7 +799,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         amounts[1] = _toTokenWei(currency1, 100);
 
         // 0 iterations should return no swaps
-        (uint256 shares0,, Swap[] memory swaps0) = zapIn.quoteZapIn(address(hooks), amounts, 0);
+        (uint256 shares0,, SwapOutput[] memory swaps0) = zapIn.quoteZapIn(address(hooks), amounts, 0);
         assertGt(shares0, 0, "Should quote shares for balanced deposit");
         assertEq(swaps0.length, 0, "Zero iterations should return no swaps");
 
@@ -795,7 +808,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         imbalancedAmounts[0] = _toTokenWei(currency0, 200);
         imbalancedAmounts[1] = 0;
 
-        (,, Swap[] memory swapsImbalanced) = zapIn.quoteZapIn(address(hooks), imbalancedAmounts, 0);
+        (,, SwapOutput[] memory swapsImbalanced) = zapIn.quoteZapIn(address(hooks), imbalancedAmounts, 0);
         assertEq(swapsImbalanced.length, 0, "Zero iterations should return no swaps even for imbalanced");
     }
 }
@@ -931,6 +944,19 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         return Currency.unwrap(stETH) < Currency.unwrap(wstETH) ? 1 : 0;
     }
 
+    /// @dev Convert SwapOutput[] to SwapInput[] for zapIn execution
+    function _toSwapInputs(SwapOutput[] memory _swaps) internal pure returns (SwapInput[] memory) {
+        SwapInput[] memory inputs = new SwapInput[](_swaps.length);
+        for (uint256 i = 0; i < _swaps.length; ++i) {
+            inputs[i] = SwapInput({
+                tokenInIndex: _swaps[i].tokenInIndex,
+                tokenOutIndex: _swaps[i].tokenOutIndex,
+                amountIn: _swaps[i].amountIn
+            });
+        }
+        return inputs;
+    }
+
     /// @notice Test zapIn with rate oracle - balanced deposit (rate-adjusted amounts)
     function test_zapIn_rateOracle_balanced() public {
         // Add initial liquidity with rate-adjusted amounts
@@ -949,12 +975,12 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
             amounts[1] = 1100e18; // stETH
         }
 
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
         assertGt(quotedShares, 0, "Should get shares for balanced deposit");
         assertEq(swaps.length, 0, "Should not need swaps for rate-adjusted balanced deposit");
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooksRateOracle), amounts, swaps, 0);
+        zapIn.zapIn(address(hooksRateOracle), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooksRateOracle.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
@@ -976,7 +1002,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         uint256 stETHBefore = IERC20(Currency.unwrap(stETH)).balanceOf(zapUser);
         uint256 wstETHBefore = IERC20(Currency.unwrap(wstETH)).balanceOf(zapUser);
 
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
         assertGt(quotedShares, 0, "Should get shares");
         assertGt(swaps.length, 0, "Should need swaps for single-sided");
 
@@ -985,7 +1011,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         assertEq(swaps[0].tokenOutIndex, _getWstETHIndex(), "Should swap to wstETH");
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooksRateOracle), amounts, swaps, 0);
+        zapIn.zapIn(address(hooksRateOracle), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooksRateOracle.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
@@ -1015,7 +1041,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         uint256 stETHBefore = IERC20(Currency.unwrap(stETH)).balanceOf(zapUser);
         uint256 wstETHBefore = IERC20(Currency.unwrap(wstETH)).balanceOf(zapUser);
 
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
         assertGt(quotedShares, 0, "Should get shares");
         assertGt(swaps.length, 0, "Should need swaps for single-sided");
 
@@ -1024,7 +1050,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         assertEq(swaps[0].tokenOutIndex, _getStETHIndex(), "Should swap to stETH");
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooksRateOracle), amounts, swaps, 0);
+        zapIn.zapIn(address(hooksRateOracle), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooksRateOracle.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
@@ -1050,12 +1076,12 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         amounts[0] = 1000e18;
         amounts[1] = 1000e18;
 
-        (uint256 quotedShares,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 2);
+        (uint256 quotedShares,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 2);
         assertGt(quotedShares, 0, "Should get shares");
         assertGt(swaps.length, 0, "Should need swaps to rebalance");
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooksRateOracle), amounts, swaps, 0);
+        zapIn.zapIn(address(hooksRateOracle), amounts, _toSwapInputs(swaps), 0);
 
         uint256 lpBalance = hooksRateOracle.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
@@ -1074,12 +1100,12 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         uint256 stETHIndex = _getStETHIndex();
         amounts[stETHIndex] = 2200e18; // 2200 stETH
 
-        (,, Swap[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
+        (,, SwapOutput[] memory swaps) = zapIn.quoteZapIn(address(hooksRateOracle), amounts, 1);
         assertGt(swaps.length, 0, "Should need swaps");
 
         // The swap should convert roughly half the value
         // Since 1 wstETH = 1.1 stETH, swapping X stETH should give approximately X/1.1 wstETH
-        Swap memory swap = swaps[0];
+        SwapOutput memory swap = swaps[0];
 
         // For a single-sided 2200 stETH deposit into a 1.1:1 (stETH:wstETH rate-adjusted) pool,
         // we need to swap approximately half the value
@@ -1110,11 +1136,11 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         amounts[stETHIndex] = 2000e18;
         amounts[wstETHIndex] = 1000e18;
 
-        (uint256 quotedShares1, uint256[] memory resultingAmounts1, Swap[] memory swaps1) =
+        (uint256 quotedShares1, uint256[] memory resultingAmounts1, SwapOutput[] memory swaps1) =
             zapIn.quoteZapIn(address(hooksRateOracle), amounts, 2);
 
         vm.prank(zapUser);
-        zapIn.zapIn(address(hooksRateOracle), amounts, swaps1, 0);
+        zapIn.zapIn(address(hooksRateOracle), amounts, _toSwapInputs(swaps1), 0);
 
         uint256 actualShares1 = hooksRateOracle.balanceOf(zapUser);
         assertApproxEqRel(actualShares1, quotedShares1, 0.01e18, "Quoted shares should match actual for stETH heavy");
