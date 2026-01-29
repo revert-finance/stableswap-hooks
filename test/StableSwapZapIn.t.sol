@@ -814,18 +814,20 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 }
 
 import {IWstETH} from "lib/uniswap-hooks/lib/v4-periphery/src/interfaces/external/IWstETH.sol";
-import {MockWstETH} from "lib/uniswap-hooks/lib/v4-periphery/test/mocks/MockWstETH.sol";
 
-/// @notice Mock stETH for testing - matches interface expected by MockWstETH
+/// @notice Mock stETH for testing
 contract MockStETHForZapIn is MockERC20 {
     constructor() MockERC20("Liquid staked Ether 2.0", "stETH", 18) {}
+}
 
-    function getSharesByPooledEth(uint256 pooledEth) public pure returns (uint256) {
-        return pooledEth;
-    }
+/// @notice Simplified mock wstETH for coverage compatibility
+contract MockWstETHForZapIn is MockERC20 {
+    uint256 public constant EXCHANGE_RATE = 11e17; // 1 wstETH = 1.1 stETH
 
-    function getPooledEthByShares(uint256 shares) public pure returns (uint256) {
-        return shares;
+    constructor() MockERC20("Wrapped Staked ETH", "wstETH", 18) {}
+
+    function stEthPerToken() external pure returns (uint256) {
+        return EXCHANGE_RATE;
     }
 }
 
@@ -851,7 +853,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
 
         // Deploy stETH and wstETH mocks
         MockStETHForZapIn mockStETH = new MockStETHForZapIn();
-        MockWstETH mockWstETH = new MockWstETH(address(mockStETH));
+        MockWstETHForZapIn mockWstETH = new MockWstETHForZapIn();
         stETH = Currency.wrap(address(mockStETH));
         wstETH = Currency.wrap(address(mockWstETH));
 
@@ -877,34 +879,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
     }
 
     function _deployHooksWithRateOracle() private {
-        // Sort currencies
-        Currency currency0Local;
-        Currency currency1Local;
-        if (Currency.unwrap(stETH) < Currency.unwrap(wstETH)) {
-            currency0Local = stETH;
-            currency1Local = wstETH;
-        } else {
-            currency0Local = wstETH;
-            currency1Local = stETH;
-        }
-
-        Currency[] memory currencies = new Currency[](2);
-        currencies[0] = currency0Local;
-        currencies[1] = currency1Local;
-
-        // Configure rate oracle for wstETH only
-        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
-        if (Currency.unwrap(stETH) < Currency.unwrap(wstETH)) {
-            // stETH is currency0, wstETH is currency1
-            rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-            rateOracles[1] =
-                Base.RateOracleConfig({oracle: Currency.unwrap(wstETH), selector: IWstETH.stEthPerToken.selector});
-        } else {
-            // wstETH is currency0, stETH is currency1
-            rateOracles[0] =
-                Base.RateOracleConfig({oracle: Currency.unwrap(wstETH), selector: IWstETH.stEthPerToken.selector});
-            rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
-        }
+        (Currency[] memory currencies, Base.RateOracleConfig[] memory rateOracles) = _buildCurrenciesAndOracles();
 
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
@@ -916,6 +891,27 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
         hooksRateOracle.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
         hooksRateOracle.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
         vm.stopPrank();
+    }
+
+    function _buildCurrenciesAndOracles()
+        private
+        view
+        returns (Currency[] memory currencies, Base.RateOracleConfig[] memory rateOracles)
+    {
+        currencies = new Currency[](2);
+        rateOracles = new Base.RateOracleConfig[](2);
+
+        bool stETHFirst = Currency.unwrap(stETH) < Currency.unwrap(wstETH);
+        currencies[0] = stETHFirst ? stETH : wstETH;
+        currencies[1] = stETHFirst ? wstETH : stETH;
+
+        // Configure rate oracle for wstETH only
+        uint256 wstETHIdx = stETHFirst ? 1 : 0;
+        uint256 stETHIdx = stETHFirst ? 0 : 1;
+        rateOracles[stETHIdx] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[wstETHIdx] = Base.RateOracleConfig({
+            oracle: Currency.unwrap(wstETH), selector: MockWstETHForZapIn.stEthPerToken.selector
+        });
     }
 
     function _addLiquidityRateOracle(uint256 _amountStETH, uint256 _amountWstETH) internal {
