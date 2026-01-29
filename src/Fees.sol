@@ -53,7 +53,7 @@ abstract contract Fees is Liquidity {
     /// @notice Sets the protocol fee percentage
     /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = _feePercentage + hookFeePercentage + lpFeePercentage;
+        uint256 totalFees = _feePercentage + hookFeePercentage;
 
         if (totalFees > FEE_PRECISION) {
             revert InvalidFeePercentage();
@@ -67,7 +67,7 @@ abstract contract Fees is Liquidity {
     /// @notice Sets the hook fee percentage
     /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
-        uint256 totalFees = protocolFeePercentage + _feePercentage + lpFeePercentage;
+        uint256 totalFees = protocolFeePercentage + _feePercentage;
 
         if (totalFees > FEE_PRECISION) {
             revert InvalidFeePercentage();
@@ -101,11 +101,11 @@ abstract contract Fees is Liquidity {
         address _protocolFeeCollector = factory.protocolFeeCollector();
         uint256[] memory _protocolFees = protocolFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
-
         for (uint256 i = 0; i < currenciesLength; i++) {
             protocolFees[i] = 0;
         }
+
+        _handleWithdrawFeesPoolManagerAccounting(_protocolFeeCollector, _protocolFees);
 
         emit ProtocolFeesWithdrawn(sender, _protocolFeeCollector, _protocolFees);
     }
@@ -117,11 +117,11 @@ abstract contract Fees is Liquidity {
         address _hookFeeCollector = factory.hookFeeCollector();
         uint256[] memory _hookFees = hookFees;
 
-        _handleWithdrawFeesPoolManagerAccounting(_hookFeeCollector, _hookFees);
-
         for (uint256 i = 0; i < currenciesLength; i++) {
             hookFees[i] = 0;
         }
+
+        _handleWithdrawFeesPoolManagerAccounting(_hookFeeCollector, _hookFees);
 
         emit HookFeesWithdrawn(sender, _hookFeeCollector, _hookFees);
     }
@@ -148,8 +148,10 @@ abstract contract Fees is Liquidity {
         returns (uint256 lpFees, uint256 hookFees_, uint256 protocolFees_)
     {
         lpFees = Math.mulDiv(_amount, lpFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
-        hookFees_ = Math.mulDiv(_amount, hookFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
-        protocolFees_ = Math.mulDiv(_amount, protocolFeePercentage, FEE_PRECISION, Math.Rounding.Ceil);
+        hookFees_ = Math.mulDiv(lpFees, hookFeePercentage, FEE_PRECISION);
+        protocolFees_ = Math.mulDiv(lpFees, protocolFeePercentage, FEE_PRECISION);
+
+        lpFees -= hookFees_ + protocolFees_;
     }
 
     /// @dev Adds fees to the appropriate accumulators

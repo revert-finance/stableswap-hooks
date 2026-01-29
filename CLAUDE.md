@@ -26,8 +26,8 @@ forge snapshot        # Generate gas snapshots
 ```
 StableSwapHooks (main entry point, IUnlockCallback)
     └── Swap (beforeSwap hook, StableSwap pricing)
-        └── Liquidity (ERC20 LP tokens, add/remove liquidity)
-            └── Fees (three-tier fee system: LP, Hook, Protocol)
+        └── Fees (three-tier fee system: LP, Hook, Protocol)
+            └── Liquidity (ERC20 LP tokens, add/remove liquidity)
                 └── Amp (amplification coefficient ramping)
                     └── Base (pool config, hook permissions, BaseHook)
 
@@ -79,9 +79,9 @@ A·n^n·Σx_i + D = A·D·n^n + D^(n+1)/(n^n·Πx_i)
 ### Fee System
 
 Three-tier fees (all scaled by `FEE_PRECISION = 1e6`):
-- LP fees: Accumulated in reserves, increase LP token value (immutable, set at deployment)
-- Hook fees: Withdrawable to `factory.hookFeeCollector()` (percentage configurable)
-- Protocol fees: Withdrawable to `factory.protocolFeeCollector()` (percentage configurable)
+- LP fees: Gross LP fee is set at deployment; net LP fee (after hook/protocol deductions) stays in reserves.
+- Hook fees: Percentage of the gross LP fee, withdrawable to `factory.hookFeeCollector()` (percentage configurable)
+- Protocol fees: Percentage of the gross LP fee, withdrawable to `factory.protocolFeeCollector()` (percentage configurable)
 
 Admin functions on hooks use `onlyFactoryOwner` modifier (checks `factory.owner()`).
 

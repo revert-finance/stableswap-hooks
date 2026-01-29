@@ -650,6 +650,12 @@ contract StableSwapMathTest is Test {
     // getRate
     // ==========================================================================
 
+    function test_getRate_ShouldReturn1e18ForNativeEth() public view {
+        Currency nativeEth = Currency.wrap(address(0));
+        uint256 rate = StableSwapMath.getRate(nativeEth);
+        assertEq(rate, 1e18);
+    }
+
     function test_getRate_ShouldReturnScalingFactorBasedOnDecimals() public {
         // Rate formula: 10^(36 - decimals)
         // This allows scaleTo/descale to normalize any token to 18 decimals for internal math

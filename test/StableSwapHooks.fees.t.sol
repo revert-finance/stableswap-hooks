@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
@@ -9,10 +10,28 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 
 import {Base} from "src/Base.sol";
 import {Fees} from "src/Fees.sol";
+import {Swap} from "src/Swap.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
     uint256 private constant SWAP_AMOUNT = 1_000;
+
+    struct StableSwapEventData {
+        uint256 lpFees;
+        uint256 hookFees;
+        uint256 protocolFees;
+    }
+
+    function _findStableSwapEvent(Vm.Log[] memory _logs) private pure returns (StableSwapEventData memory data) {
+        for (uint256 i = 0; i < _logs.length; i++) {
+            if (_logs[i].topics[0] == Swap.StableSwap.selector) {
+                (,, data.lpFees, data.hookFees, data.protocolFees) =
+                    abi.decode(_logs[i].data, (uint256, uint256, uint256, uint256, uint256));
+                return data;
+            }
+        }
+        revert("StableSwap event not found");
+    }
 
     // ==========================================================================
     // Fee Percentage Setters
@@ -66,6 +85,18 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         vm.expectRevert(Fees.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(invalidPercentage);
+    }
+
+    function test_setFeePercentages_ShouldAllowHookPlusProtocolEqualToPrecision() public {
+        uint256 feePrecision = hooks.FEE_PRECISION();
+
+        vm.startPrank(defaultAdmin);
+        hooks.setHookFeePercentage(feePrecision / 2);
+        hooks.setProtocolFeePercentage(feePrecision / 2);
+        vm.stopPrank();
+
+        assertEq(hooks.hookFeePercentage(), feePrecision / 2);
+        assertEq(hooks.protocolFeePercentage(), feePrecision / 2);
     }
 
     // ==========================================================================
@@ -242,6 +273,76 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(hooks.protocolFees(1), 0);
         assertGt(hooks.hookFees(0), 0);
         assertEq(hooks.hookFees(1), 0);
+    }
+
+    // ==========================================================================
+    // Fee Calculation
+    // ==========================================================================
+
+    function test_feeCalculation_ShouldCalculateHookAndProtocolFeesAsPercentageOfGrossLpFees() public {
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        vm.recordLogs();
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        StableSwapEventData memory eventData = _findStableSwapEvent(logs);
+
+        uint256 grossLpFees = eventData.lpFees + eventData.hookFees + eventData.protocolFees;
+        uint256 feePrecision = hooks.FEE_PRECISION();
+
+        uint256 expectedHookFees = grossLpFees * BASE_HOOK_FEE_PERCENTAGE / feePrecision;
+        uint256 expectedProtocolFees = grossLpFees * BASE_PROTOCOL_FEE_PERCENTAGE / feePrecision;
+        uint256 expectedNetLpFees = grossLpFees - expectedHookFees - expectedProtocolFees;
+
+        assertEq(eventData.hookFees, expectedHookFees);
+        assertEq(eventData.protocolFees, expectedProtocolFees);
+        assertEq(eventData.lpFees, expectedNetLpFees);
+    }
+
+    function test_feeCalculation_ShouldGiveAllFeesToLpsWhenHookAndProtocolAreZero() public {
+        vm.startPrank(defaultAdmin);
+        hooks.setHookFeePercentage(0);
+        hooks.setProtocolFeePercentage(0);
+        vm.stopPrank();
+
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        vm.recordLogs();
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        StableSwapEventData memory eventData = _findStableSwapEvent(logs);
+
+        uint256 grossLpFees = eventData.lpFees + eventData.hookFees + eventData.protocolFees;
+        assertEq(eventData.lpFees, grossLpFees);
+        assertEq(eventData.hookFees, 0);
+        assertEq(eventData.protocolFees, 0);
+    }
+
+    function test_feeCalculation_ShouldGiveZeroToLpsWhenHookAndProtocolTakeAll() public {
+        uint256 feePrecision = hooks.FEE_PRECISION();
+
+        vm.startPrank(defaultAdmin);
+        hooks.setHookFeePercentage(feePrecision / 2);
+        hooks.setProtocolFeePercentage(feePrecision / 2);
+        vm.stopPrank();
+
+        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+
+        vm.recordLogs();
+        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        StableSwapEventData memory eventData = _findStableSwapEvent(logs);
+
+        uint256 grossLpFees = eventData.lpFees + eventData.hookFees + eventData.protocolFees;
+        uint256 expectedHookFees = grossLpFees / 2;
+        uint256 expectedProtocolFees = grossLpFees / 2;
+
+        assertEq(eventData.lpFees, 0);
+        assertEq(eventData.hookFees, expectedHookFees);
+        assertEq(eventData.protocolFees, expectedProtocolFees);
     }
 
     // ==========================================================================
