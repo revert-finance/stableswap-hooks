@@ -24,6 +24,7 @@
   - [Project structure](#project-structure)
   - [Build and test](#build-and-test)
   - [Formatting](#formatting)
+- [License](#license)
 
 ## Description
 StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
@@ -335,3 +336,8 @@ forge test --mc <contract_name>
 forge fmt
 forge fmt --check
 ```
+
+## License
+Project source files in `src/`, `script/`, and `test/` are licensed under the Business Source License 1.1 (`BUSL-1.1`). See `LICENSE` for full terms.
+
+Third-party fixtures under `test/testUtils/external/` retain their original upstream licenses.
