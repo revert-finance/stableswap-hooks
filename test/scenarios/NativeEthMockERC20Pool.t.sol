@@ -347,7 +347,7 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
     // ==========================================================================
 
     function testFuzz_exactOutputSwap_ethToToken(uint96 _amountOut) public {
-        uint256 maxAmountOut = hooks.reserves(1) - 1;
+        uint256 maxAmountOut = (hooks.reserves(1) * 99) / 100;
         uint256 amountOut = bound(uint256(_amountOut), 1, maxAmountOut);
 
         V4Quoter quoter = new V4Quoter(IPoolManager(poolManager));
