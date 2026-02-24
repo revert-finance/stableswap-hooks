@@ -49,10 +49,8 @@ contract DeployStableSwapCbETHWETHPool is Script {
         currencies[1] = Currency.wrap(WETH);
 
         Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
-        rateOracles[0] = Base.RateOracleConfig({
-            oracle: CBETH_ETH_FEED,
-            selector: IChainlinkAggregatorV3Like.latestAnswer.selector
-        });
+        rateOracles[0] =
+            Base.RateOracleConfig({oracle: CBETH_ETH_FEED, selector: IChainlinkAggregatorV3Like.latestAnswer.selector});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
         bytes memory creationCode = _resolveCreationCode(factory);
