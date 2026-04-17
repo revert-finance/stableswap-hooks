@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {CREATE3} from "./CREATE3.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
@@ -21,20 +23,33 @@ contract DeployStableSwapHooksFactory is Script {
             abi.encode(poolManager, _owner, _protocolFeeCollector, _hookFeeCollector, hooksCreationCodeHash)
         );
 
-        console2.log("Deploying StableSwapHooksFactory");
-        console2.log("Chain ID:", block.chainid);
-        console2.log("PoolManager:", poolManager);
-        console2.log("Owner:", _owner);
-        console2.log("Protocol Fee Collector:", _protocolFeeCollector);
-        console2.log("Hook Fee Collector:", _hookFeeCollector);
-        console2.log("Creation Code Hash:", vm.toString(hooksCreationCodeHash));
-        console2.log("Salt:", vm.toString(SALT));
-
         vm.startBroadcast();
+        (VmSafe.CallerMode callerMode,, address broadcaster) = vm.readCallers();
+        require(callerMode == VmSafe.CallerMode.RecurrentBroadcast, "broadcast not active");
+
+        address predictedFactory = CREATE3.predictDeterministicAddress(SALT, broadcaster);
+
+        console2.log("Deploying StableSwapHooksFactory");
+        console2.log("Chain ID:              ", block.chainid);
+        console2.log("PoolManager:           ", poolManager);
+        console2.log("Owner:                 ", _owner);
+        console2.log("Protocol Fee Collector:", _protocolFeeCollector);
+        console2.log("Hook Fee Collector:    ", _hookFeeCollector);
+        console2.log("Creation Code Hash:    ", vm.toString(hooksCreationCodeHash));
+        console2.log("Salt:                  ", vm.toString(SALT));
+        console2.log("Predicted Factory:     ", predictedFactory);
+
         address factory = CREATE3.deployDeterministic(initCode, SALT);
         vm.stopBroadcast();
 
-        console2.log("StableSwapHooksFactory deployed at:", factory);
+        console2.log("");
+        console2.log("=== Deployment Complete ===");
+        console2.log("Factory:               ", factory);
+        console2.log("Predicted Factory:     ", predictedFactory);
+        console2.log("Pool Manager:          ", poolManager);
+        console2.log("Owner:                 ", _owner);
+        console2.log("Protocol Fee Collector:", _protocolFeeCollector);
+        console2.log("Hook Fee Collector:    ", _hookFeeCollector);
     }
 
     function _getPoolManager() private view returns (address) {
