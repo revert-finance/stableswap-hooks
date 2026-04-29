@@ -18,7 +18,9 @@ interface IChainlinkAggregatorV3Like {
 ///      cbETH is currency0 because 0x2ae3... < 0x4200...
 ///
 /// Usage:
-///   forge script script/DeployStableSwapCbETHWETHPool.s.sol:DeployStableSwapCbETHWETHPool ///     --rpc-url base --broadcast --verify -vvvv ///     --sig "run(address)" <FACTORY_ADDRESS>
+///   forge script script/DeployStableSwapCbETHWETHPool.s.sol:DeployStableSwapCbETHWETHPool
+///     --rpc-url base --broadcast --verify -vvvv
+///     --sig "run(address)" <FACTORY_ADDRESS>
 contract DeployStableSwapCbETHWETHPool is Script {
     // ── Base mainnet addresses (sorted ascending) ────────────────────────
 
