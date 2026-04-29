@@ -614,15 +614,16 @@ contract StableSwapZapIn is IUnlockCallback {
         scaledReserveDecrease = StableSwapMath.scaleTo(rawOutput - lpFees, rate);
     }
 
-    /// @dev Mirrors the hook fee calculation, with each fee rounded up independently.
+    /// @dev Mirrors Fees._getFees: charge the gross LP fee, then split hook/protocol fees out of it.
     function _getSwapFees(uint256 _amount, SwapCalcContext memory ctx)
         internal
         pure
         returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees)
     {
         lpFees = Math.mulDiv(_amount, ctx.lpFee, FEE_PRECISION, Math.Rounding.Ceil);
-        hookFees = Math.mulDiv(_amount, ctx.hookFee, FEE_PRECISION, Math.Rounding.Ceil);
-        protocolFees = Math.mulDiv(_amount, ctx.protocolFee, FEE_PRECISION, Math.Rounding.Ceil);
+        hookFees = Math.mulDiv(lpFees, ctx.hookFee, FEE_PRECISION);
+        protocolFees = Math.mulDiv(lpFees, ctx.protocolFee, FEE_PRECISION);
+        lpFees -= hookFees + protocolFees;
     }
 
     /// @dev Calculate swap amount needed to balance deficit or excess token
@@ -648,10 +649,9 @@ contract StableSwapZapIn is IUnlockCallback {
                 / (RATE_PRECISION + targetRatio);
 
         uint256 outputNeeded = targetInputDeficit - ctx.scaledInputs[deficitIdx];
-        uint256 totalFee = ctx.lpFee + ctx.hookFee + ctx.protocolFee;
-        if (totalFee >= FEE_PRECISION) return 0;
+        if (ctx.lpFee >= FEE_PRECISION) return 0;
 
-        uint256 rawOutputNeeded = Math.mulDiv(outputNeeded, FEE_PRECISION, FEE_PRECISION - totalFee);
+        uint256 rawOutputNeeded = Math.mulDiv(outputNeeded, FEE_PRECISION, FEE_PRECISION - ctx.lpFee);
         uint256 deficitReserve = ctx.scaledReserves[deficitIdx];
         if (deficitReserve <= 1) return 0;
 
