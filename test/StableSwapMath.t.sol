@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
@@ -649,6 +649,12 @@ contract StableSwapMathTest is Test {
     // ==========================================================================
     // getRate
     // ==========================================================================
+
+    function test_getRate_ShouldReturn1e18ForNativeEth() public view {
+        Currency nativeEth = Currency.wrap(address(0));
+        uint256 rate = StableSwapMath.getRate(nativeEth);
+        assertEq(rate, 1e18);
+    }
 
     function test_getRate_ShouldReturnScalingFactorBasedOnDecimals() public {
         // Rate formula: 10^(36 - decimals)

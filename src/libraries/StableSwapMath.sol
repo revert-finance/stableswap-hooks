@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -167,9 +167,15 @@ library StableSwapMath {
         return _amount * RATE_PRECISION / _rate;
     }
 
-    /// @dev Returns the rate for a given currency.
-    /// @param _currency The currency to get the rate for.
+    /// @dev Computes the scaling rate to normalize a currency's decimals to 1e18 precision.
+    /// @dev For native ETH (address zero), returns 1e18 (18 decimals, no scaling needed).
+    /// @dev For ERC20 tokens, returns 10^(36 - decimals) to scale token amounts to 1e18.
+    /// @param _currency The currency to get the scaling rate for.
     function getRate(Currency _currency) internal view returns (uint256) {
+        if (_currency.isAddressZero()) {
+            return 1e18;
+        }
+
         return 10 ** (36 - IERC20Metadata(Currency.unwrap(_currency)).decimals());
     }
 

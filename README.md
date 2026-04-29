@@ -24,6 +24,7 @@
   - [Project structure](#project-structure)
   - [Build and test](#build-and-test)
   - [Formatting](#formatting)
+- [License](#license)
 
 ## Description
 StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
@@ -58,6 +59,8 @@ uint256 minShares = expectedShares * 99 / 100;
 
 hooks.addLiquidity(amounts, minAmounts, minShares);
 ```
+
+For pools with native ETH, pass the ETH amount as `msg.value` and set the corresponding `amounts[]` entry to the same value: `hooks.addLiquidity{value: ethAmount}(amounts, ...)`. Excess ETH from proportional deposits is refunded automatically.
 
 ### Remove liquidity
 Remove liquidity burns LP shares and returns proportional amounts of each currency.
@@ -128,6 +131,8 @@ inputs[0] = abi.encode(actions, params);
 universalRouter.execute(commands, inputs, block.timestamp + 100);
 ```
 
+For native ETH swaps, pass ETH via `{value: amountIn}`. For exact-output swaps, send more ETH than needed (`amountInMaximum`) and add a `Commands.SWEEP` command after `V4_SWAP` to return unused ETH. See `test/scenarios/NativeEthMockERC20Pool.t.sol` for reference.
+
 ### Quoting swaps
 Use the v4 quoter to estimate swap amounts before execution, then feed the quote into the router's slippage parameters.
 
@@ -158,7 +163,7 @@ uint256 amountInMaximum = quotedAmountIn * 1010000 / 1000000; // 1% slippage
 ```
 
 ### Fees
-Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECISION = 1e6`). For exact-input swaps, fees are deducted from the output; for exact-output swaps, fees are added to the input. LP fees remain in reserves (benefiting LPs), while hook and protocol fees accumulate and can be withdrawn by the factory admin via `withdrawHookFees()` and `withdrawProtocolFees()`.
+Fees are split into LP, hook, and protocol components (all scaled by `FEE_PRECISION = 1e6`). For exact-input swaps, fees are deducted from the output; for exact-output swaps, fees are added to the input. Hook and protocol fees are taken as percentages of the gross LP fee, and the remaining LP fee stays in reserves (benefiting LPs). Hook and protocol fees accumulate and can be withdrawn via `withdrawHookFees()` and `withdrawProtocolFees()`.
 
 ## Factory
 The factory deploys StableSwap hooks via CREATE2, validates the hook bytecode against a known hash, and configures protocol and hook fee collectors for all pools created through it.
@@ -190,7 +195,7 @@ Use the factory to deploy a new hook (and initialize all pairwise pools):
 2. Compute a CREATE2 salt off-chain (see [Off-chain salt mining](#off-chain-salt-mining) below).
 3. Call `factory.deploy(...)` with the creation code and constructor params.
 
-`currencies[]` are the token addresses for the pool, and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
+`currencies[]` are the token addresses for the pool (native ETH is supported via `address(0)`), and they must be sorted ascending by numerical address value. `rateOracles[]` are optional per-asset price oracles for tokens that represent a different underlying value (for example wstETH vs WETH at 1.22:1). Use zero values for assets that do not require an oracle.
 
 `deploy(...)` expects the hook initcode without constructor args. You can obtain it from Solidity as `type(StableSwapHooks).creationCode` (as shown below), or from the compiled artifact bytecode.object at `out/StableSwapHooks.sol/StableSwapHooks.json` after a `forge build`.
 
@@ -247,7 +252,7 @@ To adapt the script for your deployment, update the following constants:
 - Token addresses and constructor parameters (`LP_FEE_PERCENTAGE`, `BASE_AMP`, rate oracles)
 
 ## Fees
-Protocol and hook fees are configured on the factory and applied by each hook alongside the LP fee. Fees accrue during swaps: LP fees stay in reserves, while hook and protocol fees accumulate per currency inside the hook until withdrawn.
+Protocol and hook fees are configured on the factory and applied by each hook as percentages of the gross LP fee. Fees accrue during swaps: the net LP fee stays in reserves, while hook and protocol fees accumulate per currency inside the hook until withdrawn.
 
 The factory admin controls fee percentages via `setProtocolFeePercentage` and `setHookFeePercentage` on each hook, and can withdraw accumulated balances using `withdrawProtocolFees()` and `withdrawHookFees()`. The protocol fee collector is intended to be Uniswap, and the hook fee collector is intended to be revert.
 
@@ -255,29 +260,30 @@ The factory admin controls fee percentages via `setProtocolFeePercentage` and `s
 Set fee percentages on the hook (scaled by `FEE_PRECISION = 1e6`).
 
 ```solidity
-hooks.setProtocolFeePercentage(5000); // 0.5%
-hooks.setHookFeePercentage(2000); // 0.2%
+hooks.setProtocolFeePercentage(100000); // 10% of gross LP fee
+hooks.setHookFeePercentage(200000); // 20% of gross LP fee
 ```
 
 Example fee mix (LP fee set at deployment):
 
 ```solidity
-// LP fee is set when deploying the hook (0.03% = 300).
-uint256 lpFeePercentage = 300;
+// LP fee is set when deploying the hook (0.05% = 500).
+uint256 lpFeePercentage = 500;
 
-// Hook/protocol fees set post-deploy.
-hooks.setHookFeePercentage(200); // 0.02%
-hooks.setProtocolFeePercentage(100); // 0.01%
+// Hook/protocol fees set post-deploy (percentages of gross LP fee).
+hooks.setHookFeePercentage(200000); // 20% of gross LP fee
+hooks.setProtocolFeePercentage(100000); // 10% of gross LP fee
 ```
 
 Swap example (exact input):
 
 ```solidity
 // amountOut = 1,000,000 units (1 USDC with 6 decimals), FEE_PRECISION = 1e6
-// LP fee = 1,000,000 * 300 / 1e6 = 300 (stays in reserves)
-// Hook fee = 1,000,000 * 200 / 1e6 = 200 (accrues to hookFees)
-// Protocol fee = 1,000,000 * 100 / 1e6 = 100 (accrues to protocolFees)
-// Amount out after fees = 1,000,000 - (300 + 200 + 100) = 999,400.
+// Gross LP fee = 1,000,000 * 500 / 1e6 = 500
+// Hook fee = 500 * 200000 / 1e6 = 100 (accrues to hookFees)
+// Protocol fee = 500 * 100000 / 1e6 = 50 (accrues to protocolFees)
+// Net LP fee = 500 - 100 - 50 = 350 (stays in reserves)
+// Amount out after fees = 1,000,000 - 500 = 999,500.
 ```
 
 ### Fee withdrawal
@@ -330,3 +336,8 @@ forge test --mc <contract_name>
 forge fmt
 forge fmt --check
 ```
+
+## License
+Project source files in `src/`, `script/`, and `test/` are licensed under the Business Source License 1.1 (`BUSL-1.1`). See `LICENSE` for full terms.
+
+Third-party fixtures under `test/testUtils/external/` retain their original upstream licenses.
