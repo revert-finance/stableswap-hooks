@@ -21,11 +21,21 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+      - name: Read Foundry version
+        id: foundry-version
+        run: echo "version=$(cat .foundry-version)" >> "$GITHUB_OUTPUT"
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ steps.foundry-version.outputs.version }}
 
       - name: Show Forge version
-        run: forge --version
+        env:
+          FOUNDRY_VERSION: ${{ steps.foundry-version.outputs.version }}
+        run: |
+          forge --version
+          forge --version | grep -q "forge Version: ${FOUNDRY_VERSION#v}"
 
       - name: Run Forge fmt
         run: forge fmt --check
