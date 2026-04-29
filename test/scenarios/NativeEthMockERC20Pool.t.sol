@@ -530,7 +530,7 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
 
     function test_withdrawProtocolFees_withNativeEth() public {
         // Set up protocol fees
-        uint256 protocolFeePercentage = 1000; // 0.1%
+        uint256 protocolFeePercentage = 1000; // 0.1% of gross LP fees
         vm.prank(admin);
         hooks.setProtocolFeePercentage(protocolFeePercentage);
 
@@ -566,7 +566,7 @@ contract NativeEthMockERC20Test is ExternalContractsDeployer {
 
     function test_withdrawHookFees_withNativeEth() public {
         // Set up hook fees
-        uint256 hookFeePercentage = 1000; // 0.1%
+        uint256 hookFeePercentage = 1000; // 0.1% of gross LP fees
         vm.prank(admin);
         hooks.setHookFeePercentage(hookFeePercentage);
 

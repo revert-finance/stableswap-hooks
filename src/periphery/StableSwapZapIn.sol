@@ -46,9 +46,9 @@ struct SwapQuote {
 /// @param scaledInputs User input amounts scaled by rate
 /// @param scaledReserves Pool reserves scaled by rate
 /// @param rates Dynamic rates for each currency (includes oracle rates)
-/// @param lpFee LP fee percentage (in FEE_PRECISION units)
-/// @param hookFee Hook fee percentage (in FEE_PRECISION units)
-/// @param protocolFee Protocol fee percentage (in FEE_PRECISION units)
+/// @param lpFee Gross LP fee percentage (in FEE_PRECISION units)
+/// @param hookFee Hook fee share of gross LP fees (in FEE_PRECISION units)
+/// @param protocolFee Protocol fee share of gross LP fees (in FEE_PRECISION units)
 /// @param amp Current amplification coefficient
 struct SwapCalcContext {
     uint256[] scaledInputs;

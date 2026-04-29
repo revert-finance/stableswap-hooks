@@ -33,8 +33,8 @@ contract DeployStableSwapCbETHWETHPool is StableSwapHooksCreationCodeResolver {
 
     uint256 constant LP_FEE_PERCENTAGE = 300; // 0.03% of swap amount
     uint256 constant BASE_AMP = 100;
-    uint256 constant PROTOCOL_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 10; // 10% of LP fee = 0.003%
-    uint256 constant HOOK_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 5; // 20% of LP fee = 0.006%
+    uint256 constant PROTOCOL_FEE_PERCENTAGE = 100_000; // 10% of gross LP fee = 0.003% of swap amount
+    uint256 constant HOOK_FEE_PERCENTAGE = 200_000; // 20% of gross LP fee = 0.006% of swap amount
 
     /// @notice Deploys the StableSwap pool via an existing factory.
     /// @param _factory Address of the deployed StableSwapHooksFactory.
@@ -87,9 +87,10 @@ contract DeployStableSwapCbETHWETHPool is StableSwapHooksCreationCodeResolver {
         console2.log("Currencies:          cbETH, WETH");
         console2.log("cbETH Oracle:       ", CBETH_ETH_FEED);
         console2.log("Oracle Selector:     latestAnswer()");
-        console2.log("LP Fee:              0.03%%");
+        console2.log("Gross LP Fee:        0.03%%");
+        console2.log("Net LP Fee:          0.021%%");
         console2.log("Amp:                ", BASE_AMP);
-        console2.log("Protocol Fee:        0.003%% (10%% of LP fee)");
-        console2.log("Hook Fee:            0.006%% (20%% of LP fee)");
+        console2.log("Protocol Fee Share:  10%% of gross LP fee (0.003%% of swap amount)");
+        console2.log("Hook Fee Share:      20%% of gross LP fee (0.006%% of swap amount)");
     }
 }

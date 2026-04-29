@@ -12,10 +12,10 @@ abstract contract Fees is Liquidity {
     /// @notice Fee denominator for percentage calculations (100% = 1e6)
     uint256 public constant FEE_PRECISION = LPFeeLibrary.MAX_LP_FEE;
 
-    /// @notice Protocol fee percentage (scaled by FEE_PRECISION)
+    /// @notice Protocol fee share of gross LP fees (scaled by FEE_PRECISION)
     uint256 public protocolFeePercentage;
 
-    /// @notice Hook fee percentage (scaled by FEE_PRECISION)
+    /// @notice Hook fee share of gross LP fees (scaled by FEE_PRECISION)
     uint256 public hookFeePercentage;
 
     /// @notice Accumulated protocol fees for currencies
@@ -50,8 +50,8 @@ abstract contract Fees is Liquidity {
         hookFees = new uint256[](currenciesLength);
     }
 
-    /// @notice Sets the protocol fee percentage
-    /// @param _feePercentage Protocol fee percentage (scaled by FEE_PRECISION)
+    /// @notice Sets the protocol fee share of gross LP fees
+    /// @param _feePercentage Protocol fee share of gross LP fees (scaled by FEE_PRECISION)
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = _feePercentage + hookFeePercentage;
 
@@ -64,8 +64,8 @@ abstract contract Fees is Liquidity {
         emit ProtocolFeePercentageSet(msg.sender, _feePercentage);
     }
 
-    /// @notice Sets the hook fee percentage
-    /// @param _feePercentage Hook fee percentage (scaled by FEE_PRECISION)
+    /// @notice Sets the hook fee share of gross LP fees
+    /// @param _feePercentage Hook fee share of gross LP fees (scaled by FEE_PRECISION)
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = protocolFeePercentage + _feePercentage;
 
@@ -140,7 +140,7 @@ abstract contract Fees is Liquidity {
         }
     }
 
-    /// @dev Calculates LP, hook, and protocol fees from a given amount
+    /// @dev Calculates the gross LP fee, then splits hook/protocol fees out of that gross LP fee.
     /// @param _amount The amount to calculate fees on
     function _getFees(uint256 _amount)
         internal

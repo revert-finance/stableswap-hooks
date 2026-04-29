@@ -29,8 +29,8 @@ contract DeployStableSwapPool is StableSwapHooksCreationCodeResolver {
 
     uint256 constant LP_FEE_PERCENTAGE = 500; // 0.05% of swap amount
     uint256 constant BASE_AMP = 500;
-    uint256 constant PROTOCOL_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 10; // 10% of LP fee = 0.005%
-    uint256 constant HOOK_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 5; // 20% of LP fee = 0.01%
+    uint256 constant PROTOCOL_FEE_PERCENTAGE = 100_000; // 10% of gross LP fee = 0.005% of swap amount
+    uint256 constant HOOK_FEE_PERCENTAGE = 200_000; // 20% of gross LP fee = 0.01% of swap amount
 
     /// @notice Deploys the StableSwap pool via an existing factory.
     /// @param _factory Address of the deployed StableSwapHooksFactory.
@@ -82,9 +82,10 @@ contract DeployStableSwapPool is StableSwapHooksCreationCodeResolver {
         console2.log("Factory:            ", address(factory));
         console2.log("Pool Manager:       ", address(factory.poolManager()));
         console2.log("Currencies:          USDS, USDC, USDT");
-        console2.log("LP Fee:              0.05%%");
+        console2.log("Gross LP Fee:        0.05%%");
+        console2.log("Net LP Fee:          0.035%%");
         console2.log("Amp:                ", BASE_AMP);
-        console2.log("Protocol Fee:        0.005%% (10%% of LP fee)");
-        console2.log("Hook Fee:            0.01%% (20%% of LP fee)");
+        console2.log("Protocol Fee Share:  10%% of gross LP fee (0.005%% of swap amount)");
+        console2.log("Hook Fee Share:      20%% of gross LP fee (0.01%% of swap amount)");
     }
 }
