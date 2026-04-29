@@ -16,25 +16,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {IStableSwapHooks} from "src/interfaces/IStableSwapHooks.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
-
-/// @notice Interface for StableSwapHooks contract
-interface IStableSwapHooks {
-    function currencies(uint256 index) external view returns (Currency);
-    function currenciesLength() external view returns (uint256);
-    function reserves(uint256 index) external view returns (uint256);
-    function rates(uint256 index) external view returns (uint256);
-    function rateOracles(uint256 index) external view returns (address oracle, bytes4 selector);
-    function lpFeePercentage() external view returns (uint256);
-    function getCurrentAmp() external view returns (uint256);
-    function totalSupply() external view returns (uint256);
-    function TICK_SPACING() external view returns (int24);
-    function addLiquidity(uint256[] calldata amounts, uint256[] calldata minAmounts, uint256 minShares) external;
-    function quoteAddLiquidity(uint256[] calldata amounts)
-        external
-        view
-        returns (uint256 shares, uint256[] memory actualAmounts);
-}
 
 /// @notice Swap for zapIn execution (minimal struct for gas efficiency)
 /// @param tokenInIndex Index of the input token in the pool's currencies array
@@ -58,6 +41,20 @@ struct SwapQuote {
     uint256 expectedAmountOut;
 }
 
+/// @dev Context for swap calculations (all values in scaled 1e18 precision)
+/// @param scaledInputs User input amounts scaled by rate
+/// @param scaledReserves Pool reserves scaled by rate
+/// @param rates Dynamic rates for each currency (includes oracle rates)
+/// @param lpFee LP fee percentage (in FEE_PRECISION units)
+/// @param amp Current amplification coefficient
+struct SwapCalcContext {
+    uint256[] scaledInputs;
+    uint256[] scaledReserves;
+    uint256[] rates;
+    uint256 lpFee;
+    uint256 amp;
+}
+
 /// @title StableSwapZapIn
 /// @notice Periphery contract for adding liquidity with arbitrary token amounts
 /// @dev User must approve this contract to spend their tokens. This contract calculates
@@ -76,6 +73,9 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Sentinel value for pools that do not include the configured wrapped-native token
     uint256 private constant NO_WRAPPED_NATIVE_INDEX = type(uint256).max;
 
+    /// @dev Maximum imbalance delta tolerated before scheduling another balancing swap (0.001% in RATE_PRECISION units)
+    uint256 private constant IMBALANCE_THRESHOLD = 1e13;
+
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
 
@@ -83,6 +83,13 @@ contract StableSwapZapIn is IUnlockCallback {
     IWETH9 public immutable wrappedNativeToken;
 
     /// @notice Emitted when liquidity is added via zap
+    /// @param sender User who performed the zap
+    /// @param hooks StableSwap hook the liquidity was added to
+    /// @param inputAmounts Raw input amounts provided to `zapIn`
+    /// @param usedAmounts Amount of each originally supplied currency that was consumed.
+    /// Tokens produced by swaps and later refunded are not represented here when the original input for that
+    /// currency was zero.
+    /// @param shares LP shares received from the zap
     event ZapIn(
         address indexed sender, address indexed hooks, uint256[] inputAmounts, uint256[] usedAmounts, uint256 shares
     );
@@ -117,6 +124,9 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @notice Error thrown when an unexpected address sends ETH to this contract
     error InvalidEthSender();
 
+    /// @notice Error thrown when rate oracle call fails
+    error RateOracleCallFailed();
+
     /// @param _poolManager The Uniswap v4 PoolManager contract address
     /// @param _wrappedNativeToken The wrapped-native token that accepts `deposit()` from ETH
     constructor(address _poolManager, address _wrappedNativeToken) {
@@ -131,6 +141,7 @@ contract StableSwapZapIn is IUnlockCallback {
     }
 
     /// @notice Quote the result of a zap-in operation with configurable iteration count
+    /// @dev Memory usage grows linearly with `_maxIterations`, so callers should keep it reasonably small.
     /// @param _hooks The StableSwapHooks contract address
     /// @param _amounts Array of input amounts for each currency
     /// @param _maxIterations Maximum iterations for balancing (0 = no swaps)
@@ -224,7 +235,7 @@ contract StableSwapZapIn is IUnlockCallback {
 
         // Execute all swaps via PoolManager.unlock
         if (_swaps.length > 0) {
-            poolManager.unlock(abi.encode(hooks, _swaps));
+            poolManager.unlock(abi.encode(hooks, currencies, _swaps));
         }
 
         // Add liquidity and get shares
@@ -245,15 +256,11 @@ contract StableSwapZapIn is IUnlockCallback {
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
 
-        (IStableSwapHooks hooks, Swap[] memory swaps) = abi.decode(data, (IStableSwapHooks, Swap[]));
-
-        uint256 len = hooks.currenciesLength();
+        (IStableSwapHooks hooks, Currency[] memory currencies, Swap[] memory swaps) =
+            abi.decode(data, (IStableSwapHooks, Currency[], Swap[]));
+        uint256 len = currencies.length;
 
         // Cache currencies and pool config
-        Currency[] memory currencies = new Currency[](len);
-        for (uint256 i = 0; i < len; ++i) {
-            currencies[i] = hooks.currencies(i);
-        }
         _revertIfNativePool(currencies);
         uint24 fee = uint24(hooks.lpFeePercentage());
         int24 tickSpacing = hooks.TICK_SPACING();
@@ -424,7 +431,9 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @param _amounts Original input amounts (used to calculate how much was used)
     /// @param _wrappedNativeIndex Index of the wrapped-native token in the pool, or sentinel if absent
     /// @param _wrappedNativeInput Amount of ETH that was wrapped into the wrapped-native token
-    /// @return usedAmounts Amount actually used for each currency
+    /// @return usedAmounts Amount of each originally supplied currency that was consumed.
+    /// Swap-produced tokens refunded back to the user are not represented here when the original input for that
+    /// currency was zero.
     function _refundLeftovers(
         Currency[] memory _currencies,
         uint256[] calldata _amounts,
@@ -521,20 +530,6 @@ contract StableSwapZapIn is IUnlockCallback {
         for (uint256 i = 0; i < swapCount; ++i) {
             swaps[i] = tempSwaps[i];
         }
-    }
-
-    /// @dev Context for swap calculations (all values in scaled 1e18 precision)
-    /// @param scaledInputs User input amounts scaled by rate
-    /// @param scaledReserves Pool reserves scaled by rate
-    /// @param rates Dynamic rates for each currency (includes oracle rates)
-    /// @param lpFee LP fee percentage (in FEE_PRECISION units)
-    /// @param amp Current amplification coefficient
-    struct SwapCalcContext {
-        uint256[] scaledInputs;
-        uint256[] scaledReserves;
-        uint256[] rates;
-        uint256 lpFee;
-        uint256 amp;
     }
 
     /// @dev Calculate and apply swap to balance either the deficit or excess token
@@ -658,6 +653,8 @@ contract StableSwapZapIn is IUnlockCallback {
         uint256 minRatio = type(uint256).max;
 
         for (uint256 i = 0; i < len; ++i) {
+            // Initial deposits return early before this function, so zero reserves can only appear on unsupported
+            // partially initialized state and should not influence pair selection.
             if (scaledReserves[i] == 0) continue;
             uint256 ratio = scaledInputs[i] * RATE_PRECISION / scaledReserves[i];
             if (ratio > maxRatio) {
@@ -670,8 +667,7 @@ contract StableSwapZapIn is IUnlockCallback {
             }
         }
 
-        // Consider imbalanced if difference is > 0.001% (very tight tolerance)
-        hasImbalance = maxRatio > minRatio && (maxRatio - minRatio) * 100000 / RATE_PRECISION > 1;
+        hasImbalance = maxRatio > minRatio && maxRatio - minRatio > IMBALANCE_THRESHOLD;
     }
 
     /// @dev Gets the dynamic rate for a currency, fetching from oracle if configured
@@ -695,7 +691,4 @@ contract StableSwapZapIn is IUnlockCallback {
             rate = rate * fetchedRate / RATE_PRECISION;
         }
     }
-
-    /// @notice Error thrown when rate oracle call fails
-    error RateOracleCallFailed();
 }
