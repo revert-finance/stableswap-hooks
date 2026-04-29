@@ -14,6 +14,7 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
@@ -561,7 +562,8 @@ contract StableSwapZapIn is IUnlockCallback {
             invariant
         );
         uint256 rawOutput = ctx.scaledReserves[deficitIdx] - newReserveDeficit;
-        uint256 outputAfterFee = rawOutput * (FEE_PRECISION - ctx.lpFee) / FEE_PRECISION;
+        uint256 lpFees = Math.mulDiv(rawOutput, ctx.lpFee, FEE_PRECISION, Math.Rounding.Ceil);
+        uint256 outputAfterFee = rawOutput - lpFees;
 
         // Update simulated state for next iteration
         ctx.scaledInputs[excessIdx] -= scaledSwapAmount;
