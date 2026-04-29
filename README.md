@@ -323,6 +323,8 @@ hooks.stopAmpRamp();
 - `test/` Forge tests and helpers
 
 ### Build and test
+CI reads the pinned Foundry version from `.foundry-version`; use the same version locally before compiling/deploying the factory so `StableSwapHooks` creation-code hashes match.
+
 ```bash
 forge build
 forge test

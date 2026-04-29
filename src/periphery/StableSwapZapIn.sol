@@ -14,6 +14,7 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IStableSwapHooks} from "src/interfaces/IStableSwapHooks.sol";
@@ -64,9 +65,9 @@ struct SwapCalcContext {
 /// @notice Periphery contract for adding liquidity with arbitrary token amounts
 /// @dev User must approve this contract to spend their tokens. This contract calculates
 /// optimal swaps to balance deposits and executes them atomically via PoolManager.
-/// @dev Security: Reentrancy protection is provided by PoolManager's lock mechanism.
+/// @dev Security: zapIn is reentrancy-guarded before user tokens are pulled; PoolManager's lock protects swap callbacks.
 /// The contract does not hold user funds between transactions.
-contract StableSwapZapIn is IUnlockCallback {
+contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @dev Precision for rate calculations
@@ -81,15 +82,14 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Maximum imbalance delta tolerated before scheduling another balancing swap (0.001% in RATE_PRECISION units)
     uint256 private constant IMBALANCE_THRESHOLD = 1e13;
 
-    /// @dev Current StableSwapHooks creation-code hash. Legacy factory bytecode uses incompatible fee semantics.
-    bytes32 private constant CURRENT_HOOKS_CREATION_CODE_HASH =
-        0xf7fe024c196db1a550cc398157bfdff0ed2b34c8ecd0454e0944bd0e8fc9b27b;
-
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
 
     /// @notice Trusted factory used to validate hook provenance
     IStableSwapHooksFactory public immutable factory;
+
+    /// @notice StableSwapHooks creation-code hash expected from the trusted factory
+    bytes32 public immutable hooksCreationCodeHash;
 
     /// @notice The wrapped-native token that can be funded via msg.value
     IWETH9 public immutable wrappedNativeToken;
@@ -147,15 +147,18 @@ contract StableSwapZapIn is IUnlockCallback {
 
     /// @param _factory The StableSwapHooksFactory that deployed supported hooks
     /// @param _wrappedNativeToken The wrapped-native token that accepts `deposit()` from ETH
-    constructor(address _factory, address _wrappedNativeToken) {
+    /// @param _hooksCreationCodeHash Expected StableSwapHooks creation-code hash for this deployment build
+    constructor(address _factory, address _wrappedNativeToken, bytes32 _hooksCreationCodeHash) {
         if (_factory == address(0)) revert ZeroAddress();
         if (_wrappedNativeToken == address(0)) revert InvalidWrappedNativeToken();
 
         factory = IStableSwapHooksFactory(_factory);
+
         bytes32 actualCreationCodeHash = factory.creationCodeHash();
-        if (actualCreationCodeHash != CURRENT_HOOKS_CREATION_CODE_HASH) {
-            revert UnsupportedFactoryCreationCode(CURRENT_HOOKS_CREATION_CODE_HASH, actualCreationCodeHash);
+        if (actualCreationCodeHash != _hooksCreationCodeHash) {
+            revert UnsupportedFactoryCreationCode(_hooksCreationCodeHash, actualCreationCodeHash);
         }
+        hooksCreationCodeHash = _hooksCreationCodeHash;
 
         poolManager = factory.poolManager();
 
@@ -232,6 +235,7 @@ contract StableSwapZapIn is IUnlockCallback {
     function zapIn(address _hooks, uint256[] calldata _amounts, Swap[] calldata _swaps, uint256 _minShares)
         external
         payable
+        nonReentrant
     {
         if (_hooks == address(0)) revert ZeroAddress();
         _validateHook(_hooks);

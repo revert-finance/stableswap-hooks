@@ -34,11 +34,21 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         uint256 protocolFees;
     }
 
+    struct ReentrantZapPool {
+        ReentrantERC20ForZapIn reentrantToken;
+        MockERC20 pairedToken;
+        StableSwapHooks hooks;
+        uint256 reentrantIndex;
+        uint256 pairedIndex;
+    }
+
     function setUp() public override {
         super.setUp();
 
         wrappedNative = new WETH();
-        zapIn = new StableSwapZapIn(address(factory), address(wrappedNative));
+        zapIn = new StableSwapZapIn(
+            address(factory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
+        );
         zapUser = makeAddr("zapUser");
 
         // Deploy a 4th mock token for 4-token pool tests
@@ -505,7 +515,40 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
                 unsupportedHash
             )
         );
-        new StableSwapZapIn(address(legacyFactory), address(wrappedNative));
+        new StableSwapZapIn(
+            address(legacyFactory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
+        );
+    }
+
+    function test_zapIn_revertReentrantTokenTransfer() public {
+        ReentrantZapPool memory pool = _deployReentrantZapPool();
+        _seedReentrantZapPool(pool);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[pool.reentrantIndex] = 10e18;
+        amounts[pool.pairedIndex] = 10e18;
+        Swap[] memory swaps = new Swap[](0);
+
+        pool.reentrantToken.mint(zapUser, 10e18);
+        pool.pairedToken.mint(zapUser, 10e18);
+
+        vm.startPrank(zapUser);
+        IERC20(address(pool.reentrantToken)).forceApprove(address(zapIn), type(uint256).max);
+        IERC20(address(pool.pairedToken)).forceApprove(address(zapIn), type(uint256).max);
+        vm.stopPrank();
+
+        uint256[] memory reentrantAmounts = new uint256[](2);
+        reentrantAmounts[pool.reentrantIndex] = 1;
+        pool.reentrantToken
+            .configureReentrancy(
+                address(zapIn),
+                abi.encodeWithSelector(StableSwapZapIn.zapIn.selector, address(pool.hooks), reentrantAmounts, swaps, 0)
+            );
+        pool.reentrantToken.setAttackEnabled(true);
+
+        vm.prank(zapUser);
+        vm.expectRevert(bytes4(keccak256("ReentrancyGuardReentrantCall()")));
+        zapIn.zapIn(address(pool.hooks), amounts, swaps, 0);
     }
 
     function test_zapIn_revertInvalidNativeValue_withoutWrappedNativePool() public {
@@ -532,11 +575,54 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         MockNativeETHHooksForZapIn nativeHooks = new MockNativeETHHooksForZapIn(currency1);
         MockStableSwapHooksFactoryForZapIn trustedFactory = new MockStableSwapHooksFactoryForZapIn(address(poolManager));
         trustedFactory.setDeployed(address(nativeHooks), true);
-        StableSwapZapIn nativeZapIn = new StableSwapZapIn(address(trustedFactory), address(wrappedNative));
+        StableSwapZapIn nativeZapIn = new StableSwapZapIn(
+            address(trustedFactory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
+        );
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.NativePoolUnsupported.selector);
         nativeZapIn.zapIn(address(nativeHooks), amounts, swaps, 0);
+    }
+
+    function _deployReentrantZapPool() private returns (ReentrantZapPool memory pool) {
+        pool.reentrantToken = new ReentrantERC20ForZapIn();
+        pool.pairedToken = new MockERC20("Paired Token", "PAIR", 18);
+
+        Currency reentrantCurrency = Currency.wrap(address(pool.reentrantToken));
+        Currency pairedCurrency = Currency.wrap(address(pool.pairedToken));
+        bool reentrantFirst = Currency.unwrap(reentrantCurrency) < Currency.unwrap(pairedCurrency);
+
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = reentrantFirst ? reentrantCurrency : pairedCurrency;
+        currencies[1] = reentrantFirst ? pairedCurrency : reentrantCurrency;
+
+        pool.reentrantIndex = reentrantFirst ? 0 : 1;
+        pool.pairedIndex = reentrantFirst ? 1 : 0;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+        pool.hooks =
+            StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+    }
+
+    function _seedReentrantZapPool(ReentrantZapPool memory pool) private {
+        uint256[] memory initialAmounts = new uint256[](2);
+        initialAmounts[pool.reentrantIndex] = 1000e18;
+        initialAmounts[pool.pairedIndex] = 1000e18;
+        uint256[] memory minAmounts = new uint256[](2);
+
+        pool.reentrantToken.mint(liquidityProvider, 1000e18);
+        pool.pairedToken.mint(liquidityProvider, 1000e18);
+
+        vm.startPrank(liquidityProvider);
+        IERC20(address(pool.reentrantToken)).forceApprove(address(pool.hooks), type(uint256).max);
+        IERC20(address(pool.pairedToken)).forceApprove(address(pool.hooks), type(uint256).max);
+        pool.hooks.addLiquidity(initialAmounts, minAmounts, 0);
+        vm.stopPrank();
     }
 
     // ============ 3-Token Pool Tests ============
@@ -965,7 +1051,9 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
 
         wrappedNative = new WETH();
         wrappedNativeCurrency = Currency.wrap(address(wrappedNative));
-        zapIn = new StableSwapZapIn(address(factory), address(wrappedNative));
+        zapIn = new StableSwapZapIn(
+            address(factory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
+        );
         zapUser = makeAddr("zapUser");
 
         _deployHooksWithWeth();
@@ -1087,6 +1175,39 @@ contract MockWstETHForZapIn is MockERC20 {
     }
 }
 
+contract ReentrantERC20ForZapIn is MockERC20 {
+    address internal zapInTarget;
+    bytes internal attackData;
+    bool internal attackEnabled;
+
+    constructor() MockERC20("Reentrant Token", "REENT", 18) {}
+
+    function configureReentrancy(address _zapInTarget, bytes calldata _attackData) external {
+        zapInTarget = _zapInTarget;
+        attackData = _attackData;
+    }
+
+    function setAttackEnabled(bool _attackEnabled) external {
+        attackEnabled = _attackEnabled;
+    }
+
+    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
+        bool success = super.transferFrom(from, to, value);
+
+        if (attackEnabled && to == zapInTarget) {
+            attackEnabled = false;
+            (bool reentrantSuccess, bytes memory returndata) = zapInTarget.call(attackData);
+            if (!reentrantSuccess) {
+                assembly ("memory-safe") {
+                    revert(add(returndata, 32), mload(returndata))
+                }
+            }
+        }
+
+        return success;
+    }
+}
+
 contract MockNativeETHHooksForZapIn {
     Currency internal immutable otherCurrency;
 
@@ -1162,7 +1283,8 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
     function setUp() public override {
         super.setUp();
 
-        zapIn = new StableSwapZapIn(address(factory), address(new WETH()));
+        zapIn =
+            new StableSwapZapIn(address(factory), address(new WETH()), keccak256(type(StableSwapHooks).creationCode));
         zapUser = makeAddr("zapUser");
 
         // Deploy stETH and wstETH mocks

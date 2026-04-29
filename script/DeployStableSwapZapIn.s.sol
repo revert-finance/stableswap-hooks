@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {StableSwapZapIn} from "src/periphery/StableSwapZapIn.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
 /// @notice Deploys the StableSwapZapIn periphery contract.
@@ -23,15 +24,17 @@ contract DeployStableSwapZapIn is Script {
     function _run(address _factory) private {
         address poolManager = address(IStableSwapHooksFactory(_factory).poolManager());
         address wrappedNative = _getWrappedNative();
+        bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
 
         console2.log("Deploying StableSwapZapIn");
         console2.log("Chain ID:    ", block.chainid);
         console2.log("Factory:     ", _factory);
         console2.log("PoolManager: ", poolManager);
         console2.log("WrappedNative:", wrappedNative);
+        console2.log("Creation Code Hash:", vm.toString(hooksCreationCodeHash));
 
         vm.startBroadcast();
-        StableSwapZapIn zapIn = new StableSwapZapIn(_factory, wrappedNative);
+        StableSwapZapIn zapIn = new StableSwapZapIn(_factory, wrappedNative, hooksCreationCodeHash);
         vm.stopBroadcast();
 
         console2.log("StableSwapZapIn deployed at:", address(zapIn));
