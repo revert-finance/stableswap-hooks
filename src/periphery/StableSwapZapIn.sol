@@ -8,6 +8,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -276,7 +277,11 @@ contract StableSwapZapIn is IUnlockCallback {
                     tickSpacing: tickSpacing,
                     hooks: hooksInterface
                 }),
-                SwapParams({zeroForOne: zeroForOne, amountSpecified: -int256(swap.amountIn), sqrtPriceLimitX96: 0}),
+                SwapParams({
+                    zeroForOne: zeroForOne,
+                    amountSpecified: -int256(swap.amountIn),
+                    sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                }),
                 ""
             );
 
