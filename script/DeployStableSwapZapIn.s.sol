@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
 import {Script, console2} from "forge-std/Script.sol";
@@ -12,13 +12,15 @@ import {StableSwapZapIn} from "src/periphery/StableSwapZapIn.sol";
 contract DeployStableSwapZapIn is Script {
     function run() external {
         address poolManager = _getPoolManager();
+        address wrappedNative = _getWrappedNative();
 
         console2.log("Deploying StableSwapZapIn");
         console2.log("Chain ID:    ", block.chainid);
         console2.log("PoolManager: ", poolManager);
+        console2.log("WrappedNative:", wrappedNative);
 
         vm.startBroadcast();
-        StableSwapZapIn zapIn = new StableSwapZapIn(poolManager);
+        StableSwapZapIn zapIn = new StableSwapZapIn(poolManager, wrappedNative);
         vm.stopBroadcast();
 
         console2.log("StableSwapZapIn deployed at:", address(zapIn));
@@ -51,5 +53,19 @@ contract DeployStableSwapZapIn is Script {
         if (chainId == 421614) return 0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317; // Arbitrum Sepolia
 
         revert("Unsupported chain");
+    }
+
+    function _getWrappedNative() private view returns (address) {
+        uint256 chainId = block.chainid;
+
+        if (chainId == 1) return 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // Ethereum WETH
+        if (
+            chainId == 10 || chainId == 130 || chainId == 8453 || chainId == 7777777 || chainId == 480
+                || chainId == 57073 || chainId == 1868 || chainId == 1301 || chainId == 84532
+        ) return 0x4200000000000000000000000000000000000006; // OP Stack wrapped native predeploy
+        if (chainId == 42161) return 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // Arbitrum WETH
+
+        // For other supported PoolManager chains, provide WRAPPED_NATIVE explicitly when running the script.
+        return vm.envAddress("WRAPPED_NATIVE");
     }
 }

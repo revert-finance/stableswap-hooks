@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -8,6 +8,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -70,8 +71,14 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Precision for fee calculations (matches pool's FEE_PRECISION)
     uint256 private constant FEE_PRECISION = 1e6;
 
+    /// @dev Sentinel value for pools that do not include the configured wrapped-native token
+    uint256 private constant NO_WRAPPED_NATIVE_INDEX = type(uint256).max;
+
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
+
+    /// @notice The wrapped-native token that can be funded via msg.value
+    IWETH9 public immutable wrappedNativeToken;
 
     /// @notice Emitted when liquidity is added via zap
     event ZapIn(
@@ -96,10 +103,29 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @notice Error thrown when hooks address is zero
     error ZeroAddress();
 
+    /// @notice Error thrown when the configured wrapped-native token address is zero
+    error InvalidWrappedNativeToken();
+
+    /// @notice Error thrown when ETH is sent but cannot be wrapped for this pool/amount configuration
+    error InvalidNativeValue();
+
+    /// @notice Error thrown when a pool uses native ETH directly instead of a wrapped token
+    error NativePoolUnsupported();
+
+    /// @notice Error thrown when an unexpected address sends ETH to this contract
+    error InvalidEthSender();
+
     /// @param _poolManager The Uniswap v4 PoolManager contract address
-    constructor(address _poolManager) {
+    /// @param _wrappedNativeToken The wrapped-native token that accepts `deposit()` from ETH
+    constructor(address _poolManager, address _wrappedNativeToken) {
         if (_poolManager == address(0)) revert ZeroAddress();
+        if (_wrappedNativeToken == address(0)) revert InvalidWrappedNativeToken();
         poolManager = IPoolManager(_poolManager);
+        wrappedNativeToken = IWETH9(_wrappedNativeToken);
+    }
+
+    receive() external payable {
+        if (msg.sender != address(wrappedNativeToken)) revert InvalidEthSender();
     }
 
     /// @notice Quote the result of a zap-in operation with configurable iteration count
@@ -149,11 +175,21 @@ contract StableSwapZapIn is IUnlockCallback {
 
     /// @notice Add liquidity with pre-calculated swaps
     /// @dev Reentrancy protection is provided by PoolManager's lock mechanism
+    /// @dev If the pool contains `wrappedNativeToken`, callers may fund that token's entry in `_amounts`
+    /// with `msg.value`. `_amounts[wrappedNativeIndex]` is treated as the total desired wrapped-native
+    /// contribution, so callers may combine ETH and ERC20 wrapped-native in the same zap:
+    /// `msg.value` is wrapped first and any remainder is pulled via `transferFrom`.
+    /// Reverts if `msg.value` exceeds the wrapped-native amount declared in `_amounts`.
+    /// Any leftover wrapped-native sourced from `msg.value` is refunded back as native ETH, with any
+    /// remaining leftover refunded as ERC20 wrapped-native.
     /// @param _hooks The StableSwapHooks contract address
     /// @param _amounts Array of input amounts for each currency
     /// @param _swaps Pre-calculated swaps from quoteZapIn (use tokenInIndex, tokenOutIndex, amountIn fields)
     /// @param _minShares Minimum LP shares to receive (slippage protection)
-    function zapIn(address _hooks, uint256[] calldata _amounts, Swap[] calldata _swaps, uint256 _minShares) external {
+    function zapIn(address _hooks, uint256[] calldata _amounts, Swap[] calldata _swaps, uint256 _minShares)
+        external
+        payable
+    {
         if (_hooks == address(0)) revert ZeroAddress();
 
         IStableSwapHooks hooks = IStableSwapHooks(_hooks);
@@ -178,9 +214,11 @@ contract StableSwapZapIn is IUnlockCallback {
         for (uint256 i = 0; i < len; ++i) {
             currencies[i] = hooks.currencies(i);
         }
+        _revertIfNativePool(currencies);
+        uint256 wrappedNativeIndex = _getWrappedNativeIndex(currencies);
 
         // Transfer tokens from user
-        _transferTokensFromUser(currencies, _amounts);
+        _transferTokensFromUser(currencies, _amounts, wrappedNativeIndex, msg.value);
 
         // Execute all swaps via PoolManager.unlock
         if (_swaps.length > 0) {
@@ -196,7 +234,7 @@ contract StableSwapZapIn is IUnlockCallback {
 
         // Transfer LP tokens and refund leftovers
         IERC20(address(hooks)).safeTransfer(msg.sender, sharesReceived);
-        uint256[] memory usedAmounts = _refundLeftovers(currencies, _amounts);
+        uint256[] memory usedAmounts = _refundLeftovers(currencies, _amounts, wrappedNativeIndex, msg.value);
 
         emit ZapIn(msg.sender, address(hooks), _amounts, usedAmounts, sharesReceived);
     }
@@ -214,6 +252,7 @@ contract StableSwapZapIn is IUnlockCallback {
         for (uint256 i = 0; i < len; ++i) {
             currencies[i] = hooks.currencies(i);
         }
+        _revertIfNativePool(currencies);
         uint24 fee = uint24(hooks.lpFeePercentage());
         int24 tickSpacing = hooks.TICK_SPACING();
         IHooks hooksInterface = IHooks(address(hooks));
@@ -272,20 +311,68 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Transfer tokens from user to this contract
     /// @param _currencies Array of currencies to transfer
     /// @param _amounts Array of amounts to transfer for each currency
-    function _transferTokensFromUser(Currency[] memory _currencies, uint256[] calldata _amounts) internal {
+    /// @param _wrappedNativeIndex Index of the wrapped-native token in the pool, or sentinel if absent
+    /// @param _nativeValue ETH supplied alongside the zap for wrapping into the wrapped-native token
+    function _transferTokensFromUser(
+        Currency[] memory _currencies,
+        uint256[] calldata _amounts,
+        uint256 _wrappedNativeIndex,
+        uint256 _nativeValue
+    ) internal {
         uint256 len = _currencies.length;
         bool hasTokens = false;
 
         for (uint256 i = 0; i < len; ++i) {
-            if (_amounts[i] > 0) {
+            uint256 amount = _amounts[i];
+            if (amount > 0) {
                 hasTokens = true;
-                IERC20(Currency.unwrap(_currencies[i])).safeTransferFrom(msg.sender, address(this), _amounts[i]);
+
+                if (i == _wrappedNativeIndex && _nativeValue > 0) {
+                    if (_nativeValue > amount) revert InvalidNativeValue();
+
+                    wrappedNativeToken.deposit{value: _nativeValue}();
+
+                    uint256 remainingAmount = amount - _nativeValue;
+                    if (remainingAmount > 0) {
+                        IERC20(Currency.unwrap(_currencies[i]))
+                            .safeTransferFrom(msg.sender, address(this), remainingAmount);
+                    }
+
+                    _nativeValue = 0;
+                } else {
+                    IERC20(Currency.unwrap(_currencies[i])).safeTransferFrom(msg.sender, address(this), amount);
+                }
             }
         }
 
+        if (_nativeValue > 0) revert InvalidNativeValue();
         if (!hasTokens) {
             revert NoTokensProvided();
         }
+    }
+
+    /// @dev Reject pools that use native ETH directly. The underlying liquidity flow is still ERC20-oriented.
+    function _revertIfNativePool(Currency[] memory _currencies) internal pure {
+        uint256 len = _currencies.length;
+
+        for (uint256 i = 0; i < len; ++i) {
+            if (Currency.unwrap(_currencies[i]) == address(0)) {
+                revert NativePoolUnsupported();
+            }
+        }
+    }
+
+    /// @dev Find the wrapped-native token in the pool, if present.
+    function _getWrappedNativeIndex(Currency[] memory _currencies) internal view returns (uint256) {
+        uint256 len = _currencies.length;
+
+        for (uint256 i = 0; i < len; ++i) {
+            if (Currency.unwrap(_currencies[i]) == address(wrappedNativeToken)) {
+                return i;
+            }
+        }
+
+        return NO_WRAPPED_NATIVE_INDEX;
     }
 
     /// @dev Add liquidity using current contract balances and return shares received
@@ -320,11 +407,15 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Refund leftover tokens to msg.sender and calculate used amounts
     /// @param _currencies Array of currencies to refund
     /// @param _amounts Original input amounts (used to calculate how much was used)
+    /// @param _wrappedNativeIndex Index of the wrapped-native token in the pool, or sentinel if absent
+    /// @param _wrappedNativeInput Amount of ETH that was wrapped into the wrapped-native token
     /// @return usedAmounts Amount actually used for each currency
-    function _refundLeftovers(Currency[] memory _currencies, uint256[] calldata _amounts)
-        internal
-        returns (uint256[] memory usedAmounts)
-    {
+    function _refundLeftovers(
+        Currency[] memory _currencies,
+        uint256[] calldata _amounts,
+        uint256 _wrappedNativeIndex,
+        uint256 _wrappedNativeInput
+    ) internal returns (uint256[] memory usedAmounts) {
         uint256 len = _currencies.length;
         usedAmounts = new uint256[](len);
 
@@ -334,7 +425,19 @@ contract StableSwapZapIn is IUnlockCallback {
             // leftover can exceed _amounts[i] when swaps produce output tokens not originally provided
             usedAmounts[i] = leftover >= _amounts[i] ? 0 : _amounts[i] - leftover;
             if (leftover > 0) {
-                token.safeTransfer(msg.sender, leftover);
+                if (i == _wrappedNativeIndex && _wrappedNativeInput > 0) {
+                    uint256 nativeRefund = leftover < _wrappedNativeInput ? leftover : _wrappedNativeInput;
+                    if (nativeRefund > 0) {
+                        wrappedNativeToken.withdraw(nativeRefund);
+                        Address.sendValue(payable(msg.sender), nativeRefund);
+                        leftover -= nativeRefund;
+                        _wrappedNativeInput -= nativeRefund;
+                    }
+                }
+
+                if (leftover > 0) {
+                    token.safeTransfer(msg.sender, leftover);
+                }
             }
         }
     }
