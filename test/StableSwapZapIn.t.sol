@@ -4,11 +4,13 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {Base} from "src/Base.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
+import {Swap as StableSwapHookSwap} from "src/Swap.sol";
 import {StableSwapZapIn, SwapQuote, Swap} from "src/periphery/StableSwapZapIn.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
@@ -24,11 +26,19 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
     address internal zapUser;
 
+    struct StableSwapEventData {
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 lpFees;
+        uint256 hookFees;
+        uint256 protocolFees;
+    }
+
     function setUp() public override {
         super.setUp();
 
         wrappedNative = new WETH();
-        zapIn = new StableSwapZapIn(address(poolManager), address(wrappedNative));
+        zapIn = new StableSwapZapIn(address(factory), address(wrappedNative));
         zapUser = makeAddr("zapUser");
 
         // Deploy a 4th mock token for 4-token pool tests
@@ -113,6 +123,18 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
             });
         }
         return inputs;
+    }
+
+    function _findStableSwapEvent(Vm.Log[] memory _logs) private pure returns (StableSwapEventData memory data) {
+        for (uint256 i = 0; i < _logs.length; ++i) {
+            if (_logs[i].topics[0] == StableSwapHookSwap.StableSwap.selector) {
+                (data.amountIn, data.amountOut, data.lpFees, data.hookFees, data.protocolFees) =
+                    abi.decode(_logs[i].data, (uint256, uint256, uint256, uint256, uint256));
+                return data;
+            }
+        }
+
+        revert("StableSwap event not found");
     }
 
     /// @dev Helper to assert that at least 99.9% of provided tokens were used (leftover < 0.1%)
@@ -444,6 +466,33 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         zapIn.zapIn(address(0), amounts, swaps, 0);
     }
 
+    function test_zapIn_revertHookNotFromFactory_beforeTokenTransfer() public {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 100);
+
+        Swap[] memory swaps = new Swap[](0);
+        MockUntrustedHooksForZapIn untrustedHooks = new MockUntrustedHooksForZapIn(currency0, currency1);
+
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency0)).balanceOf(zapUser);
+
+        vm.prank(zapUser);
+        vm.expectRevert(StableSwapZapIn.HookNotFromFactory.selector);
+        zapIn.zapIn(address(untrustedHooks), amounts, swaps, 0);
+
+        assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(zapUser), balanceBefore);
+        assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(address(untrustedHooks)), 0);
+    }
+
+    function test_quoteZapIn_revertHookNotFromFactory() public {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 100);
+
+        MockUntrustedHooksForZapIn untrustedHooks = new MockUntrustedHooksForZapIn(currency0, currency1);
+
+        vm.expectRevert(StableSwapZapIn.HookNotFromFactory.selector);
+        zapIn.quoteZapIn(address(untrustedHooks), amounts, 1);
+    }
+
     function test_zapIn_revertInvalidNativeValue_withoutWrappedNativePool() public {
         _addLiquidity(1000, 1000);
 
@@ -466,10 +515,13 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         Swap[] memory swaps = new Swap[](0);
         MockNativeETHHooksForZapIn nativeHooks = new MockNativeETHHooksForZapIn(currency1);
+        MockStableSwapHooksFactoryForZapIn trustedFactory = new MockStableSwapHooksFactoryForZapIn(address(poolManager));
+        trustedFactory.setDeployed(address(nativeHooks), true);
+        StableSwapZapIn nativeZapIn = new StableSwapZapIn(address(trustedFactory), address(wrappedNative));
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.NativePoolUnsupported.selector);
-        zapIn.zapIn(address(nativeHooks), amounts, swaps, 0);
+        nativeZapIn.zapIn(address(nativeHooks), amounts, swaps, 0);
     }
 
     // ============ 3-Token Pool Tests ============
@@ -727,6 +779,26 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         assertEq(actualShares, quotedShares, "Actual shares should match quoted");
     }
 
+    function test_quoteZapIn_expectedOutputIncludesHookAndProtocolFees() public {
+        _addLiquidity(1000, 1000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 100);
+
+        (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        assertEq(swaps.length, 1, "Should quote one balancing swap");
+
+        vm.recordLogs();
+        vm.prank(zapUser);
+        zapIn.zapIn(address(hooks), amounts, _toSwaps(swaps), 0);
+
+        StableSwapEventData memory eventData = _findStableSwapEvent(vm.getRecordedLogs());
+
+        assertEq(eventData.amountIn, swaps[0].amountIn, "Quoted input should match swap input");
+        assertEq(eventData.amountOut, swaps[0].expectedAmountOut, "Quoted output should include all swap fees");
+        assertGt(eventData.hookFees + eventData.protocolFees, 0, "Regression must exercise non-LP fees");
+    }
+
     // ============ Edge Cases ============
 
     function test_zapIn_smallAmounts() public {
@@ -862,7 +934,7 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
 
         wrappedNative = new WETH();
         wrappedNativeCurrency = Currency.wrap(address(wrappedNative));
-        zapIn = new StableSwapZapIn(address(poolManager), address(wrappedNative));
+        zapIn = new StableSwapZapIn(address(factory), address(wrappedNative));
         zapUser = makeAddr("zapUser");
 
         _deployHooksWithWeth();
@@ -1002,6 +1074,40 @@ contract MockNativeETHHooksForZapIn {
     }
 }
 
+contract MockUntrustedHooksForZapIn {
+    Currency internal immutable currency0;
+    Currency internal immutable currency1;
+
+    constructor(Currency _currency0, Currency _currency1) {
+        currency0 = _currency0;
+        currency1 = _currency1;
+    }
+
+    function currenciesLength() external pure returns (uint256) {
+        return 2;
+    }
+
+    function currencies(uint256 index) external view returns (Currency) {
+        if (index == 0) return currency0;
+        if (index == 1) return currency1;
+        revert("invalid index");
+    }
+}
+
+contract MockStableSwapHooksFactoryForZapIn {
+    address public immutable poolManager;
+
+    mapping(address hook => bool deployed) public isDeployedByFactory;
+
+    constructor(address _poolManager) {
+        poolManager = _poolManager;
+    }
+
+    function setDeployed(address hook, bool deployed) external {
+        isDeployedByFactory[hook] = deployed;
+    }
+}
+
 /// @notice Tests ZapIn with rate oracles (non-1:1 relationships like wstETH/stETH)
 contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
     using SafeERC20 for IERC20;
@@ -1019,7 +1125,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
     function setUp() public override {
         super.setUp();
 
-        zapIn = new StableSwapZapIn(address(poolManager), address(new WETH()));
+        zapIn = new StableSwapZapIn(address(factory), address(new WETH()));
         zapUser = makeAddr("zapUser");
 
         // Deploy stETH and wstETH mocks

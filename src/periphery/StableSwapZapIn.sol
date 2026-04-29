@@ -17,6 +17,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IStableSwapHooks} from "src/interfaces/IStableSwapHooks.sol";
+import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 
 /// @notice Swap for zapIn execution (minimal struct for gas efficiency)
@@ -46,12 +47,16 @@ struct SwapQuote {
 /// @param scaledReserves Pool reserves scaled by rate
 /// @param rates Dynamic rates for each currency (includes oracle rates)
 /// @param lpFee LP fee percentage (in FEE_PRECISION units)
+/// @param hookFee Hook fee percentage (in FEE_PRECISION units)
+/// @param protocolFee Protocol fee percentage (in FEE_PRECISION units)
 /// @param amp Current amplification coefficient
 struct SwapCalcContext {
     uint256[] scaledInputs;
     uint256[] scaledReserves;
     uint256[] rates;
     uint256 lpFee;
+    uint256 hookFee;
+    uint256 protocolFee;
     uint256 amp;
 }
 
@@ -78,6 +83,9 @@ contract StableSwapZapIn is IUnlockCallback {
 
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
+
+    /// @notice Trusted factory used to validate hook provenance
+    IStableSwapHooksFactory public immutable factory;
 
     /// @notice The wrapped-native token that can be funded via msg.value
     IWETH9 public immutable wrappedNativeToken;
@@ -127,12 +135,20 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @notice Error thrown when rate oracle call fails
     error RateOracleCallFailed();
 
-    /// @param _poolManager The Uniswap v4 PoolManager contract address
+    /// @notice Error thrown when a hook was not deployed by the trusted factory
+    error HookNotFromFactory();
+
+    /// @param _factory The StableSwapHooksFactory that deployed supported hooks
     /// @param _wrappedNativeToken The wrapped-native token that accepts `deposit()` from ETH
-    constructor(address _poolManager, address _wrappedNativeToken) {
-        if (_poolManager == address(0)) revert ZeroAddress();
+    constructor(address _factory, address _wrappedNativeToken) {
+        if (_factory == address(0)) revert ZeroAddress();
         if (_wrappedNativeToken == address(0)) revert InvalidWrappedNativeToken();
-        poolManager = IPoolManager(_poolManager);
+
+        factory = IStableSwapHooksFactory(_factory);
+        poolManager = factory.poolManager();
+
+        if (address(poolManager) == address(0)) revert ZeroAddress();
+
         wrappedNativeToken = IWETH9(_wrappedNativeToken);
     }
 
@@ -154,6 +170,8 @@ contract StableSwapZapIn is IUnlockCallback {
         returns (uint256 shares, uint256[] memory resultingAmounts, SwapQuote[] memory swaps)
     {
         IStableSwapHooks hooks = IStableSwapHooks(_hooks);
+        _validateHook(_hooks);
+
         uint256 len = hooks.currenciesLength();
 
         if (_amounts.length != len) {
@@ -204,6 +222,7 @@ contract StableSwapZapIn is IUnlockCallback {
         payable
     {
         if (_hooks == address(0)) revert ZeroAddress();
+        _validateHook(_hooks);
 
         IStableSwapHooks hooks = IStableSwapHooks(_hooks);
         uint256 len = hooks.currenciesLength();
@@ -250,6 +269,13 @@ contract StableSwapZapIn is IUnlockCallback {
         uint256[] memory usedAmounts = _refundLeftovers(currencies, _amounts, wrappedNativeIndex, msg.value);
 
         emit ZapIn(msg.sender, address(hooks), _amounts, usedAmounts, sharesReceived);
+    }
+
+    /// @dev Ensures ZapIn only interacts with hooks deployed by the configured factory.
+    function _validateHook(address _hooks) internal view {
+        if (!factory.isDeployedByFactory(_hooks)) {
+            revert HookNotFromFactory();
+        }
     }
 
     /// @notice Callback from PoolManager.unlock - executes swaps and settles
@@ -485,6 +511,8 @@ contract StableSwapZapIn is IUnlockCallback {
         ctx.scaledReserves = new uint256[](len);
         ctx.rates = new uint256[](len);
         ctx.lpFee = _hooks.lpFeePercentage();
+        ctx.hookFee = _hooks.hookFeePercentage();
+        ctx.protocolFee = _hooks.protocolFeePercentage();
         ctx.amp = _hooks.getCurrentAmp();
 
         for (uint256 i = 0; i < len; ++i) {
@@ -556,19 +584,45 @@ contract StableSwapZapIn is IUnlockCallback {
             ctx.amp,
             invariant
         );
-        uint256 rawOutput = ctx.scaledReserves[deficitIdx] - newReserveDeficit;
-        uint256 lpFees = Math.mulDiv(rawOutput, ctx.lpFee, FEE_PRECISION, Math.Rounding.Ceil);
-        uint256 outputAfterFee = rawOutput - lpFees;
+        uint256 scaledOutputAfterFees;
+        uint256 scaledReserveDecrease;
+        (expectedOutput, scaledOutputAfterFees, scaledReserveDecrease) =
+            _quoteSwapOutput(ctx, deficitIdx, ctx.scaledReserves[deficitIdx] - newReserveDeficit);
 
         // Update simulated state for next iteration
         ctx.scaledInputs[excessIdx] -= scaledSwapAmount;
-        ctx.scaledInputs[deficitIdx] += outputAfterFee;
+        ctx.scaledInputs[deficitIdx] += scaledOutputAfterFees;
         ctx.scaledReserves[excessIdx] += scaledSwapAmount;
-        ctx.scaledReserves[deficitIdx] -= rawOutput;
+        ctx.scaledReserves[deficitIdx] -= scaledReserveDecrease;
 
         // Return descaled amounts
         swapAmount = StableSwapMath.descale(scaledSwapAmount, ctx.rates[excessIdx]);
-        expectedOutput = StableSwapMath.descale(outputAfterFee, ctx.rates[deficitIdx]);
+    }
+
+    /// @dev Quotes exact-input swap output and reserve movement in the same units used by the live hook.
+    function _quoteSwapOutput(SwapCalcContext memory ctx, uint256 deficitIdx, uint256 rawOutputScaled)
+        internal
+        pure
+        returns (uint256 outputAfterFees, uint256 scaledOutputAfterFees, uint256 scaledReserveDecrease)
+    {
+        uint256 rate = ctx.rates[deficitIdx];
+        uint256 rawOutput = StableSwapMath.descale(rawOutputScaled, rate);
+        (uint256 lpFees, uint256 hookFees, uint256 protocolFees) = _getSwapFees(rawOutput, ctx);
+
+        outputAfterFees = rawOutput - lpFees - hookFees - protocolFees;
+        scaledOutputAfterFees = StableSwapMath.scaleTo(outputAfterFees, rate);
+        scaledReserveDecrease = StableSwapMath.scaleTo(rawOutput - lpFees, rate);
+    }
+
+    /// @dev Mirrors the hook fee calculation, with each fee rounded up independently.
+    function _getSwapFees(uint256 _amount, SwapCalcContext memory ctx)
+        internal
+        pure
+        returns (uint256 lpFees, uint256 hookFees, uint256 protocolFees)
+    {
+        lpFees = Math.mulDiv(_amount, ctx.lpFee, FEE_PRECISION, Math.Rounding.Ceil);
+        hookFees = Math.mulDiv(_amount, ctx.hookFee, FEE_PRECISION, Math.Rounding.Ceil);
+        protocolFees = Math.mulDiv(_amount, ctx.protocolFee, FEE_PRECISION, Math.Rounding.Ceil);
     }
 
     /// @dev Calculate swap amount needed to balance deficit or excess token
@@ -589,7 +643,8 @@ contract StableSwapZapIn is IUnlockCallback {
         if (targetInputDeficit <= ctx.scaledInputs[deficitIdx]) return 0;
 
         uint256 outputNeeded = targetInputDeficit - ctx.scaledInputs[deficitIdx];
-        uint256 rawOutputNeeded = outputNeeded * FEE_PRECISION / (FEE_PRECISION - ctx.lpFee);
+        uint256 totalFee = ctx.lpFee + ctx.hookFee + ctx.protocolFee;
+        uint256 rawOutputNeeded = outputNeeded * FEE_PRECISION / (FEE_PRECISION - totalFee);
 
         // Calculate input needed for this output
         uint256 inputNeeded = _getInputForOutput(ctx, excessIdx, deficitIdx, rawOutputNeeded);

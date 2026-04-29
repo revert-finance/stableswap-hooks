@@ -29,8 +29,8 @@ contract DeployStableSwapPool is Script {
 
     uint256 constant LP_FEE_PERCENTAGE = 500; // 0.05% of swap amount
     uint256 constant BASE_AMP = 500;
-    uint256 constant PROTOCOL_FEE_PERCENTAGE = 100000; // 10% of LP fees
-    uint256 constant HOOK_FEE_PERCENTAGE = 200000; // 20% of LP fees
+    uint256 constant PROTOCOL_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 10; // 10% of LP fee = 0.005%
+    uint256 constant HOOK_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 5; // 20% of LP fee = 0.01%
 
     /// @notice Deploys the StableSwap pool via an existing factory.
     /// @param _factory Address of the deployed StableSwapHooksFactory.
@@ -84,7 +84,7 @@ contract DeployStableSwapPool is Script {
         console2.log("Currencies:          USDS, USDC, USDT");
         console2.log("LP Fee:              0.05%%");
         console2.log("Amp:                ", BASE_AMP);
-        console2.log("Protocol Fee:        10%% of LP fees");
-        console2.log("Hook Fee:            20%% of LP fees");
+        console2.log("Protocol Fee:        0.005%% (10%% of LP fee)");
+        console2.log("Hook Fee:            0.01%% (20%% of LP fee)");
     }
 }

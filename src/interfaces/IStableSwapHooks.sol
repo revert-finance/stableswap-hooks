@@ -11,6 +11,8 @@ interface IStableSwapHooks {
     function rates(uint256 index) external view returns (uint256);
     function rateOracles(uint256 index) external view returns (address oracle, bytes4 selector);
     function lpFeePercentage() external view returns (uint256);
+    function hookFeePercentage() external view returns (uint256);
+    function protocolFeePercentage() external view returns (uint256);
     function getCurrentAmp() external view returns (uint256);
     function totalSupply() external view returns (uint256);
     function TICK_SPACING() external view returns (int24);

@@ -32,8 +32,8 @@ contract DeployStableSwapCbETHWETHPool is Script {
 
     uint256 constant LP_FEE_PERCENTAGE = 300; // 0.03% of swap amount
     uint256 constant BASE_AMP = 100;
-    uint256 constant PROTOCOL_FEE_PERCENTAGE = 100000; // 10% of LP fees
-    uint256 constant HOOK_FEE_PERCENTAGE = 200000; // 20% of LP fees
+    uint256 constant PROTOCOL_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 10; // 10% of LP fee = 0.003%
+    uint256 constant HOOK_FEE_PERCENTAGE = LP_FEE_PERCENTAGE / 5; // 20% of LP fee = 0.006%
 
     error CreationCodeHashMismatch(bytes32 localHash, bytes32 expectedHash);
 
@@ -90,8 +90,8 @@ contract DeployStableSwapCbETHWETHPool is Script {
         console2.log("Oracle Selector:     latestAnswer()");
         console2.log("LP Fee:              0.03%%");
         console2.log("Amp:                ", BASE_AMP);
-        console2.log("Protocol Fee:        10%% of LP fees");
-        console2.log("Hook Fee:            20%% of LP fees");
+        console2.log("Protocol Fee:        0.003%% (10%% of LP fee)");
+        console2.log("Hook Fee:            0.006%% (20%% of LP fee)");
     }
 
     function _legacyCreationCode() private pure returns (bytes memory) {
