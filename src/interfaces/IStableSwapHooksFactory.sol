@@ -11,6 +11,9 @@ interface IStableSwapHooksFactory {
     /// @notice Returns the PoolManager used by factory-deployed hooks
     function poolManager() external view returns (IPoolManager);
 
+    /// @notice Returns the StableSwapHooks creation-code hash accepted by the factory
+    function creationCodeHash() external view returns (bytes32);
+
     /// @notice Returns the protocol fee collector address
     function protocolFeeCollector() external view returns (address);
 

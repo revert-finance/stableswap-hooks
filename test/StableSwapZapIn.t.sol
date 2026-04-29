@@ -493,6 +493,21 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         zapIn.quoteZapIn(address(untrustedHooks), amounts, 1);
     }
 
+    function test_constructor_revertUnsupportedFactoryCreationCode() public {
+        MockStableSwapHooksFactoryForZapIn legacyFactory = new MockStableSwapHooksFactoryForZapIn(address(poolManager));
+        bytes32 unsupportedHash = bytes32(uint256(1));
+        legacyFactory.setCreationCodeHash(unsupportedHash);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StableSwapZapIn.UnsupportedFactoryCreationCode.selector,
+                keccak256(type(StableSwapHooks).creationCode),
+                unsupportedHash
+            )
+        );
+        new StableSwapZapIn(address(legacyFactory), address(wrappedNative));
+    }
+
     function test_zapIn_revertInvalidNativeValue_withoutWrappedNativePool() public {
         _addLiquidity(1000, 1000);
 
@@ -1112,11 +1127,17 @@ contract MockUntrustedHooksForZapIn {
 
 contract MockStableSwapHooksFactoryForZapIn {
     address public immutable poolManager;
+    bytes32 public creationCodeHash;
 
     mapping(address hook => bool deployed) public isDeployedByFactory;
 
     constructor(address _poolManager) {
         poolManager = _poolManager;
+        creationCodeHash = keccak256(type(StableSwapHooks).creationCode);
+    }
+
+    function setCreationCodeHash(bytes32 hash) external {
+        creationCodeHash = hash;
     }
 
     function setDeployed(address hook, bool deployed) external {

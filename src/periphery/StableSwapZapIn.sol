@@ -81,6 +81,10 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @dev Maximum imbalance delta tolerated before scheduling another balancing swap (0.001% in RATE_PRECISION units)
     uint256 private constant IMBALANCE_THRESHOLD = 1e13;
 
+    /// @dev Current StableSwapHooks creation-code hash. Legacy factory bytecode uses incompatible fee semantics.
+    bytes32 private constant CURRENT_HOOKS_CREATION_CODE_HASH =
+        0xf7fe024c196db1a550cc398157bfdff0ed2b34c8ecd0454e0944bd0e8fc9b27b;
+
     /// @notice The Uniswap v4 PoolManager contract
     IPoolManager public immutable poolManager;
 
@@ -138,6 +142,9 @@ contract StableSwapZapIn is IUnlockCallback {
     /// @notice Error thrown when a hook was not deployed by the trusted factory
     error HookNotFromFactory();
 
+    /// @notice Error thrown when the factory deploys unsupported StableSwapHooks bytecode
+    error UnsupportedFactoryCreationCode(bytes32 expectedHash, bytes32 actualHash);
+
     /// @param _factory The StableSwapHooksFactory that deployed supported hooks
     /// @param _wrappedNativeToken The wrapped-native token that accepts `deposit()` from ETH
     constructor(address _factory, address _wrappedNativeToken) {
@@ -145,6 +152,11 @@ contract StableSwapZapIn is IUnlockCallback {
         if (_wrappedNativeToken == address(0)) revert InvalidWrappedNativeToken();
 
         factory = IStableSwapHooksFactory(_factory);
+        bytes32 actualCreationCodeHash = factory.creationCodeHash();
+        if (actualCreationCodeHash != CURRENT_HOOKS_CREATION_CODE_HASH) {
+            revert UnsupportedFactoryCreationCode(CURRENT_HOOKS_CREATION_CODE_HASH, actualCreationCodeHash);
+        }
+
         poolManager = factory.poolManager();
 
         if (address(poolManager) == address(0)) revert ZeroAddress();

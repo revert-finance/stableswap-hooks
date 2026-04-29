@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import {console2} from "forge-std/Script.sol";
+import {Script, console2} from "forge-std/Script.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
-import {StableSwapHooksCreationCodeResolver} from "./StableSwapHooksCreationCodeResolver.sol";
 
 interface IChainlinkAggregatorV3Like {
     function latestAnswer() external view returns (int256);
@@ -20,7 +19,7 @@ interface IChainlinkAggregatorV3Like {
 ///
 /// Usage:
 ///   forge script script/DeployStableSwapCbETHWETHPool.s.sol:DeployStableSwapCbETHWETHPool ///     --rpc-url base --broadcast --verify -vvvv ///     --sig "run(address)" <FACTORY_ADDRESS>
-contract DeployStableSwapCbETHWETHPool is StableSwapHooksCreationCodeResolver {
+contract DeployStableSwapCbETHWETHPool is Script {
     // ── Base mainnet addresses (sorted ascending) ────────────────────────
 
     address constant CBETH = 0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22;
@@ -35,6 +34,8 @@ contract DeployStableSwapCbETHWETHPool is StableSwapHooksCreationCodeResolver {
     uint256 constant BASE_AMP = 100;
     uint256 constant PROTOCOL_FEE_PERCENTAGE = 100_000; // 10% of gross LP fee = 0.003% of swap amount
     uint256 constant HOOK_FEE_PERCENTAGE = 200_000; // 20% of gross LP fee = 0.006% of swap amount
+
+    error FactoryCreationCodeHashMismatch(bytes32 expectedHash, bytes32 actualHash);
 
     /// @notice Deploys the StableSwap pool via an existing factory.
     /// @param _factory Address of the deployed StableSwapHooksFactory.
@@ -52,7 +53,13 @@ contract DeployStableSwapCbETHWETHPool is StableSwapHooksCreationCodeResolver {
             Base.RateOracleConfig({oracle: CBETH_ETH_FEED, selector: IChainlinkAggregatorV3Like.latestAnswer.selector});
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        bytes memory creationCode = _resolveCreationCode(factory);
+        bytes memory creationCode = type(StableSwapHooks).creationCode;
+        bytes32 creationCodeHash = keccak256(creationCode);
+        bytes32 factoryCreationCodeHash = factory.creationCodeHash();
+        if (factoryCreationCodeHash != creationCodeHash) {
+            revert FactoryCreationCodeHashMismatch(creationCodeHash, factoryCreationCodeHash);
+        }
+
         bytes memory constructorArgs =
             abi.encode(factory.poolManager(), currencies, rateOracles, LP_FEE_PERCENTAGE, BASE_AMP);
 
