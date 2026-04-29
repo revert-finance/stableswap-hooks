@@ -16,7 +16,7 @@ interface IStableSwapHooks {
     function getCurrentAmp() external view returns (uint256);
     function totalSupply() external view returns (uint256);
     function TICK_SPACING() external view returns (int24);
-    function addLiquidity(uint256[] calldata amounts, uint256[] calldata minAmounts, uint256 minShares) external;
+    function addLiquidity(uint256[] calldata amounts, uint256[] calldata minAmounts, uint256 minShares) external payable;
     function quoteAddLiquidity(uint256[] calldata amounts)
         external
         view

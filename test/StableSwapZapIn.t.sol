@@ -22,7 +22,6 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
     StableSwapZapIn internal zapIn;
     StableSwapHooks internal hooks4;
     Currency internal currency3;
-    WETH internal wrappedNative;
 
     address internal zapUser;
 
@@ -45,10 +44,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
     function setUp() public override {
         super.setUp();
 
-        wrappedNative = new WETH();
-        zapIn = new StableSwapZapIn(
-            address(factory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
-        );
+        zapIn = new StableSwapZapIn(address(factory), keccak256(type(StableSwapHooks).creationCode));
         zapUser = makeAddr("zapUser");
 
         // Deploy a 4th mock token for 4-token pool tests
@@ -515,9 +511,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
                 unsupportedHash
             )
         );
-        new StableSwapZapIn(
-            address(legacyFactory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
-        );
+        new StableSwapZapIn(address(legacyFactory), keccak256(type(StableSwapHooks).creationCode));
     }
 
     function test_zapIn_revertReentrantTokenTransfer() public {
@@ -551,7 +545,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         zapIn.zapIn(address(pool.hooks), amounts, swaps, 0);
     }
 
-    function test_zapIn_revertInvalidNativeValue_withoutWrappedNativePool() public {
+    function test_zapIn_revertInvalidNativeValue_withoutNativePool() public {
         _addLiquidity(1000, 1000);
 
         uint256[] memory amounts = new uint256[](2);
@@ -564,24 +558,6 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidNativeValue.selector);
         zapIn.zapIn{value: 1 ether}(address(hooks), amounts, swaps, 0);
-    }
-
-    function test_zapIn_revertNativePoolUnsupported() public {
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = 1 ether;
-        amounts[1] = _toTokenWei(currency1, 100);
-
-        Swap[] memory swaps = new Swap[](0);
-        MockNativeETHHooksForZapIn nativeHooks = new MockNativeETHHooksForZapIn(currency1);
-        MockStableSwapHooksFactoryForZapIn trustedFactory = new MockStableSwapHooksFactoryForZapIn(address(poolManager));
-        trustedFactory.setDeployed(address(nativeHooks), true);
-        StableSwapZapIn nativeZapIn = new StableSwapZapIn(
-            address(trustedFactory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
-        );
-
-        vm.prank(zapUser);
-        vm.expectRevert(StableSwapZapIn.NativePoolUnsupported.selector);
-        nativeZapIn.zapIn(address(nativeHooks), amounts, swaps, 0);
     }
 
     function _deployReentrantZapPool() private returns (ReentrantZapPool memory pool) {
@@ -1036,13 +1012,16 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
     }
 }
 
-contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
+contract StableSwapZapInNativeAssetTest is StableSwapHooksBaseTest {
     using SafeERC20 for IERC20;
 
     StableSwapZapIn internal zapIn;
     StableSwapHooks internal hooksWeth;
+    StableSwapHooks internal hooksNative;
+    StableSwapHooks internal hooksNativeWeth;
     WETH internal wrappedNative;
     Currency internal wrappedNativeCurrency;
+    Currency internal nativeCurrency;
 
     address internal zapUser;
 
@@ -1051,28 +1030,33 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
 
         wrappedNative = new WETH();
         wrappedNativeCurrency = Currency.wrap(address(wrappedNative));
-        zapIn = new StableSwapZapIn(
-            address(factory), address(wrappedNative), keccak256(type(StableSwapHooks).creationCode)
-        );
+        nativeCurrency = Currency.wrap(address(0));
+        zapIn = new StableSwapZapIn(address(factory), keccak256(type(StableSwapHooks).creationCode));
         zapUser = makeAddr("zapUser");
 
         _deployHooksWithWeth();
+        _deployHooksWithNative();
+        _deployHooksWithNativeAndWeth();
 
         vm.deal(liquidityProvider, 10_000 ether);
         vm.startPrank(liquidityProvider);
         wrappedNative.deposit{value: 2_000 ether}();
         IERC20(Currency.unwrap(currency0)).forceApprove(address(hooksWeth), type(uint256).max);
         IERC20(address(wrappedNative)).forceApprove(address(hooksWeth), type(uint256).max);
+        IERC20(Currency.unwrap(currency0)).forceApprove(address(hooksNative), type(uint256).max);
+        IERC20(address(wrappedNative)).forceApprove(address(hooksNativeWeth), type(uint256).max);
         vm.stopPrank();
 
+        deal(Currency.unwrap(currency0), zapUser, _toTokenWei(currency0, 10_000));
         vm.deal(zapUser, 10_000 ether);
         vm.startPrank(zapUser);
+        wrappedNative.deposit{value: 2_000 ether}();
         IERC20(Currency.unwrap(currency0)).forceApprove(address(zapIn), type(uint256).max);
         IERC20(address(wrappedNative)).forceApprove(address(zapIn), type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_zapIn_wrapsEthIntoWethPool() public {
+    function test_zapIn_wethPoolRequiresWethErc20() public {
         _addLiquidityWethPool(1_000, 1_000);
 
         uint256[] memory amounts = new uint256[](2);
@@ -1084,16 +1068,15 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
         (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooksWeth), amounts, 1);
 
         vm.prank(zapUser);
-        zapIn.zapIn{value: wethAmount}(address(hooksWeth), amounts, _toSwaps(swaps), 0);
+        zapIn.zapIn(address(hooksWeth), amounts, _toSwaps(swaps), 0);
 
         assertGt(hooksWeth.balanceOf(zapUser), 0, "Should receive LP tokens");
-        assertLt(zapUser.balance, ethBalanceBefore, "ETH balance should decrease");
-        assertEq(wrappedNative.balanceOf(zapUser), 0, "Unused wrapped native should refund as ETH");
+        assertEq(zapUser.balance, ethBalanceBefore, "WETH zap should not consume native ETH");
         assertEq(wrappedNative.balanceOf(address(zapIn)), 0, "Zap should not retain wrapped native");
         assertEq(address(zapIn).balance, 0, "Zap should not retain ETH");
     }
 
-    function test_zapIn_revertInvalidNativeValue_whenValueExceedsWrappedAmount() public {
+    function test_zapIn_revertNativeValueForWethPool() public {
         _addLiquidityWethPool(1_000, 1_000);
 
         uint256[] memory amounts = new uint256[](2);
@@ -1102,7 +1085,89 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidNativeValue.selector);
-        zapIn.zapIn{value: 101 ether}(address(hooksWeth), amounts, new Swap[](0), 0);
+        zapIn.zapIn{value: 100 ether}(address(hooksWeth), amounts, new Swap[](0), 0);
+    }
+
+    function test_zapIn_nativePoolWithNativeEthInput() public {
+        _addLiquidityNativePool(1_000 ether, 1_000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeIndex()] = 200 ether;
+        amounts[_nativeOtherTokenIndex()] = 0;
+
+        (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooksNative), amounts, 1);
+
+        uint256 ethBalanceBefore = zapUser.balance;
+
+        vm.prank(zapUser);
+        zapIn.zapIn{value: 200 ether}(address(hooksNative), amounts, _toSwaps(swaps), 0);
+
+        assertGt(hooksNative.balanceOf(zapUser), 0, "Should receive LP tokens");
+        assertLt(zapUser.balance, ethBalanceBefore, "Native ETH should be consumed");
+        assertEq(address(zapIn).balance, 0, "Zap should not retain ETH");
+        assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(address(zapIn)), 0, "Zap should not retain ERC20");
+    }
+
+    function test_zapIn_nativePoolWithErc20InputCanReceiveNativeFromSwap() public {
+        _addLiquidityNativePool(1_000 ether, 1_000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeIndex()] = 0;
+        amounts[_nativeOtherTokenIndex()] = _toTokenWei(currency0, 200);
+
+        (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooksNative), amounts, 1);
+
+        vm.prank(zapUser);
+        zapIn.zapIn(address(hooksNative), amounts, _toSwaps(swaps), 0);
+
+        assertGt(hooksNative.balanceOf(zapUser), 0, "Should receive LP tokens");
+        assertEq(address(zapIn).balance, 0, "Zap should not retain ETH");
+        assertEq(IERC20(Currency.unwrap(currency0)).balanceOf(address(zapIn)), 0, "Zap should not retain ERC20");
+    }
+
+    function test_zapIn_revertNativeValueMismatchForNativePool() public {
+        _addLiquidityNativePool(1_000 ether, 1_000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeIndex()] = 100 ether;
+
+        vm.prank(zapUser);
+        vm.expectRevert(StableSwapZapIn.InvalidNativeValue.selector);
+        zapIn.zapIn{value: 99 ether}(address(hooksNative), amounts, new Swap[](0), 0);
+    }
+
+    function test_zapIn_nativeEthWethPoolRequiresBothAssetsSeparately() public {
+        _addLiquidityNativeWethPool(1_000 ether, 1_000 ether);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeWethNativeIndex()] = 100 ether;
+        amounts[_nativeWethWrappedNativeIndex()] = 100 ether;
+
+        (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooksNativeWeth), amounts, 1);
+
+        uint256 ethBalanceBefore = zapUser.balance;
+        uint256 wethBalanceBefore = wrappedNative.balanceOf(zapUser);
+
+        vm.prank(zapUser);
+        zapIn.zapIn{value: 100 ether}(address(hooksNativeWeth), amounts, _toSwaps(swaps), 0);
+
+        assertGt(hooksNativeWeth.balanceOf(zapUser), 0, "Should receive LP tokens");
+        assertEq(zapUser.balance, ethBalanceBefore - 100 ether, "Should use only native ETH amount as msg.value");
+        assertEq(wrappedNative.balanceOf(zapUser), wethBalanceBefore - 100 ether, "Should pull WETH as ERC20");
+        assertEq(address(zapIn).balance, 0, "Zap should not retain ETH");
+        assertEq(wrappedNative.balanceOf(address(zapIn)), 0, "Zap should not retain WETH");
+    }
+
+    function test_zapIn_revertNativeEthWethPoolDoesNotWrapEthForWeth() public {
+        _addLiquidityNativeWethPool(1_000 ether, 1_000 ether);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeWethNativeIndex()] = 100 ether;
+        amounts[_nativeWethWrappedNativeIndex()] = 100 ether;
+
+        vm.prank(zapUser);
+        vm.expectRevert(StableSwapZapIn.InvalidNativeValue.selector);
+        zapIn.zapIn{value: 200 ether}(address(hooksNativeWeth), amounts, new Swap[](0), 0);
     }
 
     function _deployHooksWithWeth() private {
@@ -1127,6 +1192,48 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
         vm.stopPrank();
     }
 
+    function _deployHooksWithNative() private {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = nativeCurrency;
+        currencies[1] = currency0;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+
+        hooksNative =
+            StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+
+        vm.startPrank(defaultAdmin);
+        hooksNative.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooksNative.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
+        vm.stopPrank();
+    }
+
+    function _deployHooksWithNativeAndWeth() private {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = nativeCurrency;
+        currencies[1] = wrappedNativeCurrency;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, code);
+
+        hooksNativeWeth =
+            StableSwapHooks(factory.deploy(currencies, rateOracles, BASE_LP_FEE_PERCENTAGE, BASE_AMP, salt, code));
+
+        vm.startPrank(defaultAdmin);
+        hooksNativeWeth.setProtocolFeePercentage(BASE_PROTOCOL_FEE_PERCENTAGE);
+        hooksNativeWeth.setHookFeePercentage(BASE_HOOK_FEE_PERCENTAGE);
+        vm.stopPrank();
+    }
+
     function _addLiquidityWethPool(uint256 _otherTokenAmount, uint256 _wethAmount) private {
         uint256[] memory amounts = new uint256[](2);
         amounts[_wrappedNativeIndex()] = _wethAmount * 1e18;
@@ -1138,12 +1245,50 @@ contract StableSwapZapInEthWrappingTest is StableSwapHooksBaseTest {
         hooksWeth.addLiquidity(amounts, minAmounts, 0);
     }
 
+    function _addLiquidityNativePool(uint256 _nativeAmount, uint256 _otherTokenAmount) private {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeIndex()] = _nativeAmount;
+        amounts[_nativeOtherTokenIndex()] = _toTokenWei(currency0, _otherTokenAmount);
+
+        uint256[] memory minAmounts = new uint256[](2);
+
+        vm.prank(liquidityProvider);
+        hooksNative.addLiquidity{value: _nativeAmount}(amounts, minAmounts, 0);
+    }
+
+    function _addLiquidityNativeWethPool(uint256 _nativeAmount, uint256 _wethAmount) private {
+        uint256[] memory amounts = new uint256[](2);
+        amounts[_nativeWethNativeIndex()] = _nativeAmount;
+        amounts[_nativeWethWrappedNativeIndex()] = _wethAmount;
+
+        uint256[] memory minAmounts = new uint256[](2);
+
+        vm.prank(liquidityProvider);
+        hooksNativeWeth.addLiquidity{value: _nativeAmount}(amounts, minAmounts, 0);
+    }
+
     function _wrappedNativeIndex() private view returns (uint256) {
         return Currency.unwrap(hooksWeth.currencies(0)) == address(wrappedNative) ? 0 : 1;
     }
 
     function _otherTokenIndex() private view returns (uint256) {
         return _wrappedNativeIndex() == 0 ? 1 : 0;
+    }
+
+    function _nativeIndex() private view returns (uint256) {
+        return hooksNative.currencies(0).isAddressZero() ? 0 : 1;
+    }
+
+    function _nativeOtherTokenIndex() private view returns (uint256) {
+        return _nativeIndex() == 0 ? 1 : 0;
+    }
+
+    function _nativeWethNativeIndex() private view returns (uint256) {
+        return hooksNativeWeth.currencies(0).isAddressZero() ? 0 : 1;
+    }
+
+    function _nativeWethWrappedNativeIndex() private view returns (uint256) {
+        return _nativeWethNativeIndex() == 0 ? 1 : 0;
     }
 
     function _toSwaps(SwapQuote[] memory _swaps) private pure returns (Swap[] memory) {
@@ -1208,24 +1353,6 @@ contract ReentrantERC20ForZapIn is MockERC20 {
     }
 }
 
-contract MockNativeETHHooksForZapIn {
-    Currency internal immutable otherCurrency;
-
-    constructor(Currency _otherCurrency) {
-        otherCurrency = _otherCurrency;
-    }
-
-    function currenciesLength() external pure returns (uint256) {
-        return 2;
-    }
-
-    function currencies(uint256 index) external view returns (Currency) {
-        if (index == 0) return Currency.wrap(address(0));
-        if (index == 1) return otherCurrency;
-        revert("invalid index");
-    }
-}
-
 contract MockUntrustedHooksForZapIn {
     Currency internal immutable currency0;
     Currency internal immutable currency1;
@@ -1283,8 +1410,7 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
     function setUp() public override {
         super.setUp();
 
-        zapIn =
-            new StableSwapZapIn(address(factory), address(new WETH()), keccak256(type(StableSwapHooks).creationCode));
+        zapIn = new StableSwapZapIn(address(factory), keccak256(type(StableSwapHooks).creationCode));
         zapUser = makeAddr("zapUser");
 
         // Deploy stETH and wstETH mocks
