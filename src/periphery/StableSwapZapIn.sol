@@ -642,17 +642,27 @@ contract StableSwapZapIn is IUnlockCallback {
         uint256 targetInputDeficit = targetRatio * ctx.scaledReserves[deficitIdx] / RATE_PRECISION;
         if (targetInputDeficit <= ctx.scaledInputs[deficitIdx]) return 0;
 
-        uint256 outputNeeded = targetInputDeficit - ctx.scaledInputs[deficitIdx];
-        uint256 totalFee = ctx.lpFee + ctx.hookFee + ctx.protocolFee;
-        uint256 rawOutputNeeded = outputNeeded * FEE_PRECISION / (FEE_PRECISION - totalFee);
-
-        // Calculate input needed for this output
-        uint256 inputNeeded = _getInputForOutput(ctx, excessIdx, deficitIdx, rawOutputNeeded);
-
         // Calculate max swap from excess to reach target ratio
         uint256 maxFromExcess =
             (ctx.scaledInputs[excessIdx] * RATE_PRECISION - targetRatio * ctx.scaledReserves[excessIdx])
                 / (RATE_PRECISION + targetRatio);
+
+        uint256 outputNeeded = targetInputDeficit - ctx.scaledInputs[deficitIdx];
+        uint256 totalFee = ctx.lpFee + ctx.hookFee + ctx.protocolFee;
+        if (totalFee >= FEE_PRECISION) return 0;
+
+        uint256 rawOutputNeeded = Math.mulDiv(outputNeeded, FEE_PRECISION, FEE_PRECISION - totalFee);
+        uint256 deficitReserve = ctx.scaledReserves[deficitIdx];
+        if (deficitReserve <= 1) return 0;
+
+        // When the ideal target would drain the deficit reserve, use the maximum ratio-balancing input instead.
+        // The actual output for that input is computed later from the invariant, so this avoids quote-only underflows.
+        if (rawOutputNeeded >= deficitReserve - 1) {
+            return maxFromExcess > ctx.scaledInputs[excessIdx] ? ctx.scaledInputs[excessIdx] : maxFromExcess;
+        }
+
+        // Calculate input needed for this output
+        uint256 inputNeeded = _getInputForOutput(ctx, excessIdx, deficitIdx, rawOutputNeeded);
 
         // Return minimum of: what deficit needs, what excess can give, or available input
         uint256 result = inputNeeded < maxFromExcess ? inputNeeded : maxFromExcess;

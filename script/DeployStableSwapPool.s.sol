@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import {Script, console2} from "forge-std/Script.sol";
+import {console2} from "forge-std/Script.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
+import {StableSwapHooksCreationCodeResolver} from "./StableSwapHooksCreationCodeResolver.sol";
 
 /// @notice Deploys a 3-token StableSwap pool (USDC, USDT, DAI) on Base mainnet.
 /// @dev Assumes StableSwapHooksFactory is already deployed.
@@ -18,7 +18,7 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///   forge script script/DeployStableSwapPool.s.sol:DeployStableSwapPool \
 ///     --rpc-url base --broadcast --verify -vvvv \
 ///     --sig "run(address)" <FACTORY_ADDRESS>
-contract DeployStableSwapPool is Script {
+contract DeployStableSwapPool is StableSwapHooksCreationCodeResolver {
     // ── Base mainnet token addresses (sorted ascending) ──────────────────
 
     address constant USDS = 0x820C137fa70C8691f0e44Dc420a5e53c168921Dc; // 18 decimals
@@ -49,7 +49,7 @@ contract DeployStableSwapPool is Script {
         rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
         rateOracles[2] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
 
-        bytes memory creationCode = type(StableSwapHooks).creationCode;
+        bytes memory creationCode = _resolveCreationCode(factory);
         bytes memory constructorArgs =
             abi.encode(factory.poolManager(), currencies, rateOracles, LP_FEE_PERCENTAGE, BASE_AMP);
 

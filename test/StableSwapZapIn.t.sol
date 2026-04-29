@@ -849,6 +849,22 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         _assertMinimalLeftover(amounts, _getCurrencies2(), balancesBefore);
     }
 
+    function test_quoteZapIn_largeSingleSidedRelativeToReserves() public {
+        _addLiquidity(1000, 1000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 5000);
+
+        (uint256 quotedShares,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        assertGt(quotedShares, 0, "Should quote shares");
+        assertGt(swaps.length, 0, "Should still find a balancing swap");
+
+        vm.prank(zapUser);
+        zapIn.zapIn(address(hooks), amounts, _toSwaps(swaps), 0);
+
+        assertGt(hooks.balanceOf(zapUser), 0, "Should execute quoted zap");
+    }
+
     // ============ Max Iterations Tests ============
 
     function test_quoteZapIn_explicitIterations_2tokens() public {
