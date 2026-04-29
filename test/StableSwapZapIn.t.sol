@@ -234,6 +234,10 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         uint256 lpBalance = hooks.balanceOf(zapUser);
         assertGt(lpBalance, 0, "Should receive LP tokens");
 
+        // Verify temporary approvals were revoked
+        assertEq(IERC20(Currency.unwrap(currency0)).allowance(address(zapIn), address(hooks)), 0);
+        assertEq(IERC20(Currency.unwrap(currency1)).allowance(address(zapIn), address(hooks)), 0);
+
         // Verify minimal leftover
         _assertMinimalLeftover(amounts, _getCurrencies2(), balancesBefore);
     }

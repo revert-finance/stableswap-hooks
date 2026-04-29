@@ -390,11 +390,13 @@ contract StableSwapZapIn is IUnlockCallback {
     {
         uint256 len = _currencies.length;
         uint256[] memory balances = new uint256[](len);
+        IERC20[] memory tokens = new IERC20[](len);
 
         // Get balances and approve in single loop
         for (uint256 i = 0; i < len; ++i) {
             IERC20 token = IERC20(Currency.unwrap(_currencies[i]));
             uint256 balance = token.balanceOf(address(this));
+            tokens[i] = token;
             balances[i] = balance;
             if (balance > 0) {
                 token.forceApprove(address(_hooks), balance);
@@ -405,6 +407,13 @@ contract StableSwapZapIn is IUnlockCallback {
         uint256 sharesBefore = IERC20(address(_hooks)).balanceOf(address(this));
 
         _hooks.addLiquidity(balances, minAmounts, 0);
+
+        // Clear temporary approvals so user-supplied hooks do not retain spending power.
+        for (uint256 i = 0; i < len; ++i) {
+            if (balances[i] > 0) {
+                tokens[i].forceApprove(address(_hooks), 0);
+            }
+        }
 
         return IERC20(address(_hooks)).balanceOf(address(this)) - sharesBefore;
     }
