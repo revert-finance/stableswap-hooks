@@ -2,6 +2,8 @@
 
 This file is to be used as reference for the main feature branch where the different PR regarding cantina finding fixes are made
 
+Can be deleted when all finding fixes are merged
+
 ## Findings
 
 - [ ] **1351** - quoteZapIn underestimates shares, undermining slippage protection
