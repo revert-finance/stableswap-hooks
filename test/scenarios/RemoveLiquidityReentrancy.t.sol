@@ -18,7 +18,7 @@ import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFacto
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
 
-contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
+contract RemoveLiquidityReentrancy is ExternalContractsDeployer {
     uint256 internal constant LP_FEE_PERCENTAGE = 300;
     uint256 internal constant AMP = 100;
     uint256 internal constant HONEST_LIQUIDITY = 10_000 ether;
