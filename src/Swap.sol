@@ -32,6 +32,9 @@ abstract contract Swap is Fees {
         uint256 protocolFees;
     }
 
+    /// @notice Error thrown when a nonzero exact-output swap would require zero input
+    error ZeroInputForNonZeroOutput();
+
     /// @notice Emitted when a swap is executed
     event StableSwap(
         address indexed _sender,
@@ -146,6 +149,10 @@ abstract contract Swap is Fees {
 
         result.amountIn = rawAmountIn + totalFees;
         result.amountOut = _amountOut;
+
+        if (_amountOut != 0 && result.amountIn == 0) {
+            revert ZeroInputForNonZeroOutput();
+        }
 
         _settleTrade(_ctx, result, false);
     }
