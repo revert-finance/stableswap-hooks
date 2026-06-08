@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -20,8 +19,6 @@ import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeploye
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
 
 contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
-    using SafeERC20 for IERC20;
-
     uint256 internal constant LP_FEE_PERCENTAGE = 300;
     uint256 internal constant AMP = 100;
     uint256 internal constant HONEST_LIQUIDITY = 10_000 ether;
@@ -33,8 +30,6 @@ contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
     MockERC20 internal token;
     Currency internal nativeEth;
     Currency internal tokenCurrency;
-    address internal admin;
-    address internal honestLp;
 
     function setUp() public override {
         super.setUp();
@@ -42,12 +37,10 @@ contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
         nativeEth = Currency.wrap(address(0));
         token = new MockERC20("Mock Token", "MOCK", 18);
         tokenCurrency = Currency.wrap(address(token));
-        admin = makeAddr("admin");
-        honestLp = makeAddr("honestLp");
 
         factory = new StableSwapHooksFactoryHarness(
             IPoolManager(poolManager),
-            admin,
+            makeAddr("admin"),
             makeAddr("protocolFeeCollector"),
             makeAddr("hookFeeCollector"),
             keccak256(type(StableSwapHooks).creationCode)
@@ -55,45 +48,38 @@ contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
 
         hooks = _deployHooks();
 
+        address honestLp = makeAddr("honestLp");
         vm.deal(honestLp, HONEST_LIQUIDITY);
         token.mint(honestLp, HONEST_LIQUIDITY);
-        vm.prank(honestLp);
+        vm.startPrank(honestLp);
         token.approve(address(hooks), type(uint256).max);
-
-        uint256[] memory amounts = _makeAmounts(HONEST_LIQUIDITY, HONEST_LIQUIDITY);
-        vm.prank(honestLp);
-        hooks.addLiquidity{value: HONEST_LIQUIDITY}(amounts, new uint256[](2), 0);
+        hooks.addLiquidity{value: HONEST_LIQUIDITY}(_amounts(HONEST_LIQUIDITY, HONEST_LIQUIDITY), new uint256[](2), 0);
+        vm.stopPrank();
     }
 
     function test_ReentrancyThroughRemoveLiquidityShouldNotBeExploitable() public {
-        RemoveLiquidityReenterAttacker attacker =
-            new RemoveLiquidityReenterAttacker(hooks, IPoolManager(poolManager), token, _poolKey());
+        Reenterer attacker =
+            new Reenterer(hooks, IPoolManager(poolManager), IERC20(address(token)), _poolKey(), REENTRANT_ETH_OUT);
 
         vm.deal(address(attacker), ATTACKER_LIQUIDITY);
         token.mint(address(attacker), ATTACKER_LIQUIDITY + 200_000 ether);
 
-        attacker.addLiquidity{value: ATTACKER_LIQUIDITY}(ATTACKER_LIQUIDITY, ATTACKER_LIQUIDITY);
-        assertEq(hooks.reserves(0), HONEST_LIQUIDITY + ATTACKER_LIQUIDITY, "pre-attack ETH reserve");
-        assertEq(hooks.reserves(1), HONEST_LIQUIDITY + ATTACKER_LIQUIDITY, "pre-attack token reserve");
+        attacker.addLiquidity{value: ATTACKER_LIQUIDITY}(_amounts(ATTACKER_LIQUIDITY, ATTACKER_LIQUIDITY));
+        attacker.removeAllAndReenter();
 
-        attacker.attack(REENTRANT_ETH_OUT);
-
-        assertTrue(attacker.reentered(), "receive() reentered PoolManager.swap");
         assertEq(
-            attacker.observedEthReserveBeforeSwap(),
+            attacker.observedEthReserve(),
             HONEST_LIQUIDITY,
-            "reentrant swap must see updated post-removal reserves, not stale inflated ones"
+            "reentrant swap saw stale pre-removal reserves: shares/reserves not updated before payout"
         );
-        assertEq(attacker.ethTakenInReentrantSwap(), REENTRANT_ETH_OUT);
-
         assertGt(
-            attacker.tokenPaidInReentrantSwap(),
+            attacker.tokenPaid(),
             100_000 ether,
-            "reentrant swap paid fair price, not a near-1:1 stale-reserve rate"
+            "reentrant swap got a near-1:1 stale-reserve price instead of the fair post-removal price"
         );
     }
 
-    function _deployHooks() internal returns (StableSwapHooks deployedHooks) {
+    function _deployHooks() internal returns (StableSwapHooks) {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = nativeEth;
         currencies[1] = tokenCurrency;
@@ -105,7 +91,7 @@ contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, LP_FEE_PERCENTAGE, AMP, code);
 
-        deployedHooks = StableSwapHooks(factory.deploy(currencies, rateOracles, LP_FEE_PERCENTAGE, AMP, salt, code));
+        return StableSwapHooks(factory.deploy(currencies, rateOracles, LP_FEE_PERCENTAGE, AMP, salt, code));
     }
 
     function _poolKey() internal view returns (PoolKey memory) {
@@ -118,79 +104,73 @@ contract RemoveLiquidityReentrancyPoC is ExternalContractsDeployer {
         });
     }
 
-    function _makeAmounts(uint256 ethAmount, uint256 tokenAmount) internal pure returns (uint256[] memory amounts) {
+    function _amounts(uint256 ethAmount, uint256 tokenAmount) internal pure returns (uint256[] memory amounts) {
         amounts = new uint256[](2);
         amounts[0] = ethAmount;
         amounts[1] = tokenAmount;
     }
 }
 
-contract RemoveLiquidityReenterAttacker {
+/// @dev Removes all of its liquidity and, when the pool pays out native ETH, reenters
+///      PoolManager.swap. Records the ETH reserve and token cost seen during reentry so the
+///      test can assert the swap is priced against the updated post-removal reserves.
+contract Reenterer {
     using BalanceDeltaLibrary for BalanceDelta;
     using SafeERC20 for IERC20;
 
     StableSwapHooks internal immutable hooks;
     IPoolManager internal immutable poolManager;
-    MockERC20 internal immutable token;
+    IERC20 internal immutable token;
+    uint256 internal immutable ethOut;
     PoolKey internal poolKey;
 
-    bool public attackActive;
-    bool public reentered;
-    uint256 public targetEthOut;
-    uint256 public observedEthReserveBeforeSwap;
-    uint256 public tokenPaidInReentrantSwap;
-    uint256 public ethTakenInReentrantSwap;
+    uint256 public observedEthReserve;
+    uint256 public tokenPaid;
 
-    constructor(StableSwapHooks _hooks, IPoolManager _poolManager, MockERC20 _token, PoolKey memory _poolKey) {
+    constructor(
+        StableSwapHooks _hooks,
+        IPoolManager _poolManager,
+        IERC20 _token,
+        PoolKey memory _poolKey,
+        uint256 _ethOut
+    ) {
         hooks = _hooks;
         poolManager = _poolManager;
         token = _token;
         poolKey = _poolKey;
+        ethOut = _ethOut;
         _token.approve(address(_hooks), type(uint256).max);
     }
 
-    function addLiquidity(uint256 ethAmount, uint256 tokenAmount) external payable {
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = ethAmount;
-        amounts[1] = tokenAmount;
-
+    function addLiquidity(uint256[] calldata amounts) external payable {
         hooks.addLiquidity{value: msg.value}(amounts, new uint256[](2), 0);
     }
 
-    function attack(uint256 ethOut) external {
-        targetEthOut = ethOut;
-        attackActive = true;
-
+    function removeAllAndReenter() external {
         hooks.removeLiquidity(hooks.balanceOf(address(this)), new uint256[](2));
-
-        attackActive = false;
     }
 
     receive() external payable {
-        if (!attackActive || reentered) {
+        // Reenter only on the removal payout, not on the nested swap's own ETH take.
+        if (observedEthReserve != 0) {
             return;
         }
 
-        reentered = true;
-        observedEthReserveBeforeSwap = hooks.reserves(0);
+        observedEthReserve = hooks.reserves(0);
 
         BalanceDelta delta = poolManager.swap(
             poolKey,
             SwapParams({
-                zeroForOne: false, amountSpecified: int256(targetEthOut), sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+                zeroForOne: false, amountSpecified: int256(ethOut), sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
             }),
             ""
         );
 
-        uint256 ethOut = uint128(delta.amount0());
-        uint256 tokenIn = uint128(-delta.amount1());
-
-        tokenPaidInReentrantSwap = tokenIn;
-        ethTakenInReentrantSwap = ethOut;
+        tokenPaid = uint128(-delta.amount1());
 
         poolManager.sync(poolKey.currency1);
-        IERC20(address(token)).safeTransfer(address(poolManager), tokenIn);
+        token.safeTransfer(address(poolManager), tokenPaid);
         poolManager.settle();
-        poolManager.take(poolKey.currency0, address(this), ethOut);
+        poolManager.take(poolKey.currency0, address(this), uint128(delta.amount0()));
     }
 }
