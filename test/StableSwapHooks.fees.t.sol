@@ -11,6 +11,7 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 import {Base} from "src/Base.sol";
 import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
@@ -31,6 +32,26 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
             }
         }
         revert("StableSwap event not found");
+    }
+
+    // ==========================================================================
+    // Deployment Fee Validation
+    // ==========================================================================
+
+    function test_deploy_ShouldRevertWhenLpFeePercentageIsZero() public {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = currency0;
+        currencies[1] = currency1;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, 0, BASE_AMP, code);
+
+        vm.expectRevert(Base.ZeroLpFeePercentage.selector);
+        factory.deploy(currencies, rateOracles, 0, BASE_AMP, salt, code);
     }
 
     // ==========================================================================
