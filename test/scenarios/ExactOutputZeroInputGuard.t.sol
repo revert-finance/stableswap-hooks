@@ -11,7 +11,11 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+
 import {Base} from "src/Base.sol";
+import {Swap} from "src/Swap.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
@@ -98,7 +102,7 @@ contract ExactOutputZeroInputGuardTest is ExternalContractsDeployer {
         uint256 reserveInputBefore = hooks.reserves(inputSideIndex);
         uint256 reserveOutputBefore = hooks.reserves(outputSideIndex);
 
-        vm.expectRevert();
+        vm.expectRevert(_expectedRevert());
         _executeExactOutput(inputSideCurrency, outputSideCurrency, FREE_OUTPUT);
 
         assertEq(inputSideToken.balanceOf(attacker), attackerInputBefore, "attacker balance unchanged");
@@ -111,7 +115,7 @@ contract ExactOutputZeroInputGuardTest is ExternalContractsDeployer {
         uint256 reserveOutputBefore = hooks.reserves(outputSideIndex);
 
         for (uint256 i = 0; i < 3; ++i) {
-            vm.expectRevert();
+            vm.expectRevert(_expectedRevert());
             _executeExactOutput(inputSideCurrency, outputSideCurrency, FREE_OUTPUT);
         }
 
@@ -126,6 +130,16 @@ contract ExactOutputZeroInputGuardTest is ExternalContractsDeployer {
             mathProbe.targetInputReserve(inputScaled, outputScaled, FREE_OUTPUT, inputSideIndex, outputSideIndex);
 
         assertEq(targetInput, inputScaled, "solver required zero input-side reserve increase for nonzero output");
+    }
+
+    function _expectedRevert() private view returns (bytes memory) {
+        return abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(hooks),
+            IHooks.beforeSwap.selector,
+            abi.encodeWithSelector(Swap.ZeroInputForNonZeroOutput.selector),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
     }
 
     function _deployPool() private {
