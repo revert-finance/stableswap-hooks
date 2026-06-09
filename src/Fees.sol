@@ -41,9 +41,6 @@ abstract contract Fees is Liquidity {
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
 
-    /// @notice Error thrown when fee percentage is invalid
-    error InvalidFeePercentage();
-
     /// @dev Initializes fee accumulator arrays for each currency
     constructor() {
         protocolFees = new uint256[](currenciesLength);

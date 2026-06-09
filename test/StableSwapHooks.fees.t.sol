@@ -50,7 +50,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, 0, BASE_AMP, code);
 
-        vm.expectRevert(Base.ZeroLpFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         factory.deploy(currencies, rateOracles, 0, BASE_AMP, salt, code);
     }
 
@@ -78,7 +78,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     function test_setProtocolFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
         uint256 invalidPercentage = hooks.FEE_PRECISION();
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setProtocolFeePercentage(invalidPercentage);
     }
@@ -103,7 +103,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     function test_setHookFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
         uint256 invalidPercentage = hooks.FEE_PRECISION();
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(invalidPercentage);
     }
@@ -114,7 +114,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(feePrecision / 2);
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setProtocolFeePercentage(feePrecision / 2);
     }

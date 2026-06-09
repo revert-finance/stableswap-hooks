@@ -67,8 +67,8 @@ abstract contract Base is BaseHook {
     /// @notice Thrown when currencies array length is outside valid range [MIN_CURRENCIES, MAX_CURRENCIES]
     error InvalidCurrenciesLength();
 
-    /// @notice Thrown when the LP fee percentage is zero
-    error ZeroLpFeePercentage();
+    /// @notice Thrown when a fee percentage is invalid
+    error InvalidFeePercentage();
 
     /// @notice Thrown when currencies array is not sorted in ascending order
     error CurrenciesNotSorted();
@@ -103,7 +103,7 @@ abstract contract Base is BaseHook {
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
         if (_lpFeePercentage == 0) {
-            revert ZeroLpFeePercentage();
+            revert InvalidFeePercentage();
         }
 
         factory = _factory;
