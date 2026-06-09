@@ -55,7 +55,9 @@ abstract contract Fees is Liquidity {
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = _feePercentage + hookFeePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        // edge case: totalFees == FEE_PRECISION leaves zero net LP fee in reserves, removing the
+        // floor that keeps reserves[out] above zero and allowing an exact-input swap to drain it
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 
@@ -69,7 +71,9 @@ abstract contract Fees is Liquidity {
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = protocolFeePercentage + _feePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        // edge case: totalFees == FEE_PRECISION leaves zero net LP fee in reserves, removing the
+        // floor that keeps reserves[out] above zero and allowing an exact-input swap to drain it
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 
