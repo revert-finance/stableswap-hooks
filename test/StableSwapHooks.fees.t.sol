@@ -108,16 +108,15 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         hooks.setHookFeePercentage(invalidPercentage);
     }
 
-    function test_setFeePercentages_ShouldAllowHookPlusProtocolEqualToPrecision() public {
+    function test_setFeePercentages_ShouldRevertWhenHookPlusProtocolEqualToPrecision() public {
         uint256 feePrecision = hooks.FEE_PRECISION();
 
-        vm.startPrank(defaultAdmin);
+        vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(feePrecision / 2);
-        hooks.setProtocolFeePercentage(feePrecision / 2);
-        vm.stopPrank();
 
-        assertEq(hooks.hookFeePercentage(), feePrecision / 2);
-        assertEq(hooks.protocolFeePercentage(), feePrecision / 2);
+        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.prank(defaultAdmin);
+        hooks.setProtocolFeePercentage(feePrecision / 2);
     }
 
     // ==========================================================================
@@ -339,31 +338,6 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(eventData.lpFees, grossLpFees);
         assertEq(eventData.hookFees, 0);
         assertEq(eventData.protocolFees, 0);
-    }
-
-    function test_feeCalculation_ShouldGiveZeroToLpsWhenHookAndProtocolTakeAll() public {
-        uint256 feePrecision = hooks.FEE_PRECISION();
-
-        vm.startPrank(defaultAdmin);
-        hooks.setHookFeePercentage(feePrecision / 2);
-        hooks.setProtocolFeePercentage(feePrecision / 2);
-        vm.stopPrank();
-
-        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
-
-        vm.recordLogs();
-        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-
-        StableSwapEventData memory eventData = _findStableSwapEvent(logs);
-
-        uint256 grossLpFees = eventData.lpFees + eventData.hookFees + eventData.protocolFees;
-        uint256 expectedHookFees = grossLpFees / 2;
-        uint256 expectedProtocolFees = grossLpFees / 2;
-
-        assertEq(eventData.lpFees, 0);
-        assertEq(eventData.hookFees, expectedHookFees);
-        assertEq(eventData.protocolFees, expectedProtocolFees);
     }
 
     // ==========================================================================

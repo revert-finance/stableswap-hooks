@@ -17,9 +17,8 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
-import {stdError} from "forge-std/StdError.sol";
 
-contract ZeroNetLpFeeReserveDrainTest is ExternalContractsDeployer {
+contract NonZeroNetLpFeePreventsReserveDrainTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
     uint256 internal constant LP_FEE_PERCENTAGE = 300;
@@ -57,18 +56,18 @@ contract ZeroNetLpFeeReserveDrainTest is ExternalContractsDeployer {
         _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
     }
 
-    function test_exactInput_zeroNetLpFee_drainsReserveAndBricksPool() public {
-        uint256 feePrecision = hooks.FEE_PRECISION();
+    function test_exactInput_maxValidFeeSplit_cannotDrainReserve_poolStaysOperational() public {
+        uint256 maxValidHookFee = hooks.FEE_PRECISION() - 1;
 
         vm.prank(admin);
-        hooks.setHookFeePercentage(feePrecision);
+        hooks.setHookFeePercentage(maxValidHookFee);
 
         uint256 drainAmount = 1e18 * _toTokenWei(currency0, 1);
         deal(Currency.unwrap(currency0), swapper, drainAmount);
 
         _executeExactInputSwap(true, drainAmount);
 
-        assertEq(hooks.reserves(1), 0, "zero net lp fee must drain reserves[out] to zero");
+        assertGt(hooks.reserves(1), 0, "positive net lp fee must leave a reserve floor above zero");
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = _toTokenWei(currency0, LIQUIDITY_AMOUNT);
@@ -78,9 +77,12 @@ contract ZeroNetLpFeeReserveDrainTest is ExternalContractsDeployer {
         deal(Currency.unwrap(currency0), liquidityProvider, amounts[0]);
         deal(Currency.unwrap(currency1), liquidityProvider, amounts[1]);
 
+        uint256 reserve1Before = hooks.reserves(1);
+
         vm.prank(liquidityProvider);
-        vm.expectRevert(stdError.divisionError);
         hooks.addLiquidity(amounts, minAmounts, 0);
+
+        assertGt(hooks.reserves(1), reserve1Before, "addLiquidity must remain functional after the drain attempt");
     }
 
     function _deployHooks() private {
