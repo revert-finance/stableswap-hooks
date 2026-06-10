@@ -182,7 +182,8 @@ library StableSwapMath {
     /// @notice Calculate the geometric mean of an array of values without overflow.
     /// @dev Uses different strategies based on array length to avoid overflow:
     ///      - 2 values: sqrt(a * b) using mulDiv for safe multiplication
-    ///      - 3 values: cbrt(a) * cbrt(b) * cbrt(c) to avoid computing full product
+    ///      - 3 values: cbrt(a * b * c) when the product fits in uint256, falling back to
+    ///        cbrt(a) * cbrt(b) * cbrt(c) on overflow
     ///      - 4 values: sqrt(sqrt(a*b) * sqrt(c*d)) using pairwise approach
     /// @param _values Array of values (must be length 2, 3, or 4).
     function geometricMean(uint256[] memory _values) internal pure returns (uint256) {
@@ -194,9 +195,12 @@ library StableSwapMath {
         }
 
         if (n == 3) {
-            // cbrt(a) * cbrt(b) * cbrt(c) = (a * b * c)^(1/3)
-            // This avoids computing the full product which could overflow
-            return cbrt(_values[0]) * cbrt(_values[1]) * cbrt(_values[2]);
+            // cbrt(a * b * c) floors only once, while cbrt(a) * cbrt(b) * cbrt(c) compounds three flooring errors
+            (bool fits, uint256 product) = Math.tryMul(_values[0], _values[1]);
+            (fits, product) = fits ? Math.tryMul(product, _values[2]) : (false, 0);
+
+            // Fall back to per-value cube roots when the product overflows uint256 (values above ~4.87e25 each)
+            return fits ? cbrt(product) : cbrt(_values[0]) * cbrt(_values[1]) * cbrt(_values[2]);
         }
 
         if (n == 4) {
