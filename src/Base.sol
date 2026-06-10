@@ -8,6 +8,8 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -109,6 +111,10 @@ abstract contract Base is BaseHook {
 
         if (_lpFeePercentage == 0) {
             revert InvalidFeePercentage();
+        }
+
+        if (_lpFeePercentage >= LPFeeLibrary.MAX_LP_FEE) {
+            revert InvalidLpFeePercentage();
         }
 
         if (currenciesLength < MIN_CURRENCIES || currenciesLength > MAX_CURRENCIES) {
