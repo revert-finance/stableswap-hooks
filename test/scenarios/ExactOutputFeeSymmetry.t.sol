@@ -7,7 +7,7 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
-contract ExactOutputFeeAsymmetryTest is StableSwapHooksBaseTest {
+contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
     bytes32 internal constant STABLE_SWAP_TOPIC =
         keccak256("StableSwap(address,address,address,uint256,uint256,uint256,uint256,uint256)");
 
@@ -17,7 +17,7 @@ contract ExactOutputFeeAsymmetryTest is StableSwapHooksBaseTest {
         _addLiquidity(1_000_000, 1_000_000);
     }
 
-    function test_exactOutput_chargesFeeOnNetInput_underchargingTheGrossLpFee() public {
+    function test_exactOutput_collectsTheFullGrossLpFeeOnTotalInput() public {
         vm.recordLogs();
         _executeExactOutputSwap(true, _toTokenWei(currency1, 1000));
 
@@ -25,7 +25,20 @@ contract ExactOutputFeeAsymmetryTest is StableSwapHooksBaseTest {
 
         uint256 grossLpFee = Math.mulDiv(amountIn, hooks.lpFeePercentage(), hooks.FEE_PRECISION(), Math.Rounding.Ceil);
 
-        assertLt(totalFees, grossLpFee, "exact output should undercharge the gross lp fee while bug is present");
+        assertEq(totalFees, grossLpFee, "exact output must charge the full gross lp fee on the total input paid");
+    }
+
+    function test_exactOutput_minimumOutput_stillCollectsTheGrossLpFee() public {
+        vm.recordLogs();
+        _executeExactOutputSwap(true, 1);
+
+        (uint256 amountIn, uint256 totalFees) = _readSwapFees();
+
+        uint256 grossLpFee = Math.mulDiv(amountIn, hooks.lpFeePercentage(), hooks.FEE_PRECISION(), Math.Rounding.Ceil);
+
+        assertEq(
+            totalFees, grossLpFee, "minimum exact output must charge the full gross lp fee on the total input paid"
+        );
     }
 
     function _readSwapFees() internal returns (uint256 amountIn, uint256 totalFees) {

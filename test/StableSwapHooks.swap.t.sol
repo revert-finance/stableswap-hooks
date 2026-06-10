@@ -661,7 +661,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertEq(eventData.amountIn, actualAmountIn);
         assertEq(eventData.amountOut, amountOut);
 
-        // Verify fee ratios (fees added to input for exact output)
+        // Verify fee ratios (fees grossed up into the input for exact output)
         _assertFeeRatios(eventData);
     }
 
