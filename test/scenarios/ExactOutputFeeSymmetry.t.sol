@@ -73,13 +73,11 @@ contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
             _exactOutputSwap(tierHooks, amountOut);
             uint256 amountInForSameOutput = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
 
-            // Both paths now collect the full fee, so this is not a fee shortfall: it is a third-order curve
-            // term from charging the fee on the input token (exact output) versus the output token (exact
-            // input), leaving exact output a hair cheaper. At 0.05% it is ~5e-9 of the trade (~$0.005 on a
-            // $1M swap) versus the old fee undercharge of ~2.5e-7 (~$0.25 per $1M, leaking from LPs on every
-            // exact-output trade). The remaining gap is below gas cost to capture and grows ~linearly with
-            // the fee (~lpFee * 1e-11), so the tolerance tracks the fee tier with 2x headroom: ~1e-8 at 0.05%
-            // up to 1e-5 even at a punitive 50% fee.
+            // Both paths now charge the full fee, so the pool is not shortchanged. A tiny difference is left
+            // because the fee sits on the input token one way and the output token the other, making exact
+            // output a hair cheaper: about $0.005 on a $1M swap at 0.05% fee. That is too small to be worth
+            // exploiting (a swap costs more in gas), and it grows with the fee, so the allowed difference is
+            // sized per fee tier with 2x room to spare.
             assertApproxEqRel(
                 amountInForSameOutput,
                 amountIn,
