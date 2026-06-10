@@ -8,14 +8,13 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {Base} from "src/Base.sol";
-import {Liquidity} from "src/Liquidity.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 import {StableSwapHooksFactoryHarness} from "test/testUtils/StableSwapHooksFactoryHarness.sol";
 import {ExternalContractsDeployer} from "test/testUtils/ExternalContractsDeployer.sol";
 import {MockERC20} from "test/scenarios/mocks/MockERC20.sol";
 
-contract ThreeTokenGeometricMeanUnderMintTest is ExternalContractsDeployer {
+contract ThreeTokenGeometricMeanExactMintTest is ExternalContractsDeployer {
     using SafeERC20 for IERC20;
 
     uint256 internal constant LP_FEE = 500;
@@ -84,7 +83,7 @@ contract ThreeTokenGeometricMeanUnderMintTest is ExternalContractsDeployer {
         vm.stopPrank();
     }
 
-    function test_initialDeposit_UnderMintsSharesVersusProductCubeRoot() public {
+    function test_initialDeposit_MintsProductCubeRootShares() public {
         uint256[] memory amounts = new uint256[](3);
         amounts[0] = DEPOSIT_AMOUNT;
         amounts[1] = DEPOSIT_AMOUNT;
@@ -96,14 +95,11 @@ contract ThreeTokenGeometricMeanUnderMintTest is ExternalContractsDeployer {
         vm.prank(lp);
         hooks3.addLiquidity(amounts, new uint256[](3), 0);
 
-        uint256 actualShares = hooks3.balanceOf(lp);
-
         assertEq(productCubeRootShares, 1_000, "product cube root entitles lp to 1000 shares");
-        assertEq(actualShares, 728, "lp receives 728 shares from triple cbrt flooring");
-        assertLt(actualShares, productCubeRootShares, "first lp is under-minted");
+        assertEq(hooks3.balanceOf(lp), productCubeRootShares, "lp receives the full product cube root shares");
     }
 
-    function test_initialDeposit_RevertsForValidAmountsAboveMinimumLiquidity() public {
+    function test_initialDeposit_SucceedsForValidAmountsAboveMinimumLiquidity() public {
         uint256[] memory amounts = new uint256[](3);
         amounts[0] = 999;
         amounts[1] = 1_330;
@@ -113,17 +109,22 @@ contract ThreeTokenGeometricMeanUnderMintTest is ExternalContractsDeployer {
         assertGt(productCubeRoot, hooks3.MINIMUM_LIQUIDITY(), "correct geometric mean exceeds minimum liquidity");
 
         vm.prank(lp);
-        vm.expectRevert(Liquidity.InsufficientInitialLiquidity.selector);
         hooks3.addLiquidity(amounts, new uint256[](3), 0);
+
+        assertEq(
+            hooks3.balanceOf(lp),
+            productCubeRoot - hooks3.MINIMUM_LIQUIDITY(),
+            "lp receives product cube root shares minus minimum liquidity"
+        );
     }
 
-    function test_geometricMean_TripleCbrtFlooringUnderestimatesProductCubeRoot() public pure {
+    function test_geometricMean_MatchesProductCubeRoot() public pure {
         uint256[] memory values = new uint256[](3);
         values[0] = 7;
         values[1] = 7;
         values[2] = 7;
 
-        assertEq(StableSwapMath.geometricMean(values), 1, "triple cbrt flooring collapses 7 to 1");
-        assertEq(StableSwapMath.cbrt(7 * 7 * 7), 7, "product cube root is exact");
+        assertEq(StableSwapMath.geometricMean(values), 7, "geometric mean of equal values is the value itself");
+        assertEq(StableSwapMath.geometricMean(values), StableSwapMath.cbrt(7 * 7 * 7), "matches product cube root");
     }
 }
