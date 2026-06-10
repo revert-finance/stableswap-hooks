@@ -145,9 +145,6 @@ abstract contract Swap is Fees {
             newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
         );
 
-        // Gross up the curve input so the fee is charged on the total the user pays, keeping the
-        // effective fee symmetric with exact-input. Adding fees on top of rawAmountIn would instead
-        // yield fee/(1+fee), letting exact-output swaps underpay. Requires lpFeePercentage < FEE_PRECISION.
         uint256 grossAmountIn =
             Math.mulDiv(rawAmountIn, FEE_PRECISION, FEE_PRECISION - lpFeePercentage, Math.Rounding.Ceil);
 
