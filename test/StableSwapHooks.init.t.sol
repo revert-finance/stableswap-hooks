@@ -117,7 +117,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, invalidFee, BASE_AMP, code);
 
-        vm.expectRevert(Base.InvalidLpFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         factory.deploy(currencies, rateOracles, invalidFee, BASE_AMP, salt, code);
     }
 
@@ -135,7 +135,7 @@ contract StableSwapHooksInitTest is StableSwapHooksBaseTest {
         bytes memory code = type(StableSwapHooks).creationCode;
         (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, maxFee, BASE_AMP, code);
 
-        vm.expectRevert(Base.InvalidLpFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         factory.deploy(currencies, rateOracles, maxFee, BASE_AMP, salt, code);
     }
 
