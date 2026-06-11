@@ -8,6 +8,8 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -32,6 +34,9 @@ abstract contract Base is BaseHook {
 
     /// @notice Maximum number of currencies allowed in the pool
     uint256 public constant MAX_CURRENCIES = 4;
+
+    /// @notice Fee denominator for percentage calculations (100% = 1e6)
+    uint256 public constant FEE_PRECISION = LPFeeLibrary.MAX_LP_FEE;
 
     /// @notice LP fee percentage (scaled by FEE_PRECISION)
     uint256 public immutable lpFeePercentage;
@@ -108,6 +113,10 @@ abstract contract Base is BaseHook {
         currenciesLength = _currencies.length;
 
         if (_lpFeePercentage == 0) {
+            revert InvalidFeePercentage();
+        }
+
+        if (_lpFeePercentage >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 
