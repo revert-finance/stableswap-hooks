@@ -197,20 +197,22 @@ abstract contract Liquidity is Amp, ERC20 {
 
         uint256[] memory amounts = _calculateRemoveLiquidity(shares);
 
+        _burn(sender, shares);
+
         for (uint256 i = 0; i < currenciesLength; ++i) {
             if (amounts[i] < minAmounts[i]) {
                 revert InsufficientAmounts();
             }
 
+            reserves[i] -= amounts[i];
+        }
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
             Currency currency = currencies[i];
 
             poolManager.burn(address(this), currency.toId(), amounts[i]);
             poolManager.take(currency, sender, amounts[i]);
-
-            reserves[i] -= amounts[i];
         }
-
-        _burn(sender, shares);
 
         emit LiquidityRemoved(sender, amounts, shares);
     }
