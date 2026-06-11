@@ -9,8 +9,8 @@ Can be deleted when all finding fixes are merged
 - [ ] **1351** - quoteZapIn underestimates shares, undermining slippage protection
 - [ ] **998** - Reachable 4-token pool states allow zero-input exact-output reserve extraction
 - [ ] **788** - Low-amp pools can be pushed into non-convergent reserve states that brick swaps
-- [ ] **546** - Zero-fee exact-input round trips can extract reserves through StableSwap rounding asymmetry
-- [ ] **522** - Zero LP Fee Deployment Allows Single Exact-Input Swap to Drain Output Reserve, Permanently Bricking addLiquidity
+- [x] **546** - Zero-fee exact-input round trips can extract reserves through StableSwap rounding asymmetry
+- [x] **522** - Zero LP Fee Deployment Allows Single Exact-Input Swap to Drain Output Reserve, Permanently Bricking addLiquidity
 - [ ] **512** - StableSwapZapIn._calculateSwapAmount Overshoots Target Ratio in 3+ Token Pools, Causing Up to ~17% LP-Share Loss
 - [ ] **102** - Asymmetric Exact Output Math Enables Systemic Fee Evasion and LP Yield Loss
 - [ ] **63** - StableSwap Invariant Overflow Causes Persistent Swap DoS in Imbalanced Pools

@@ -41,9 +41,6 @@ abstract contract Fees is Liquidity {
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
 
-    /// @notice Error thrown when fee percentage is invalid
-    error InvalidFeePercentage();
-
     /// @dev Initializes fee accumulator arrays for each currency
     constructor() {
         protocolFees = new uint256[](currenciesLength);
@@ -55,7 +52,7 @@ abstract contract Fees is Liquidity {
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = _feePercentage + hookFeePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 
@@ -69,7 +66,7 @@ abstract contract Fees is Liquidity {
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = protocolFeePercentage + _feePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 

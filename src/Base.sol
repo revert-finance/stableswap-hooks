@@ -67,6 +67,9 @@ abstract contract Base is BaseHook {
     /// @notice Thrown when currencies array length is outside valid range [MIN_CURRENCIES, MAX_CURRENCIES]
     error InvalidCurrenciesLength();
 
+    /// @notice Thrown when a fee percentage is invalid
+    error InvalidFeePercentage();
+
     /// @notice Thrown when currencies array is not sorted in ascending order
     error CurrenciesNotSorted();
 
@@ -103,6 +106,10 @@ abstract contract Base is BaseHook {
         lpFeePercentage = _lpFeePercentage;
         currencies = _currencies;
         currenciesLength = _currencies.length;
+
+        if (_lpFeePercentage == 0) {
+            revert InvalidFeePercentage();
+        }
 
         if (currenciesLength < MIN_CURRENCIES || currenciesLength > MAX_CURRENCIES) {
             revert InvalidCurrenciesLength();
