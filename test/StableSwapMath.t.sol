@@ -597,6 +597,78 @@ contract StableSwapMathTest is Test {
     }
 
     // ==========================================================================
+    // scaleToUp / descaleUp
+    // ==========================================================================
+
+    function test_scaleToUp_ShouldRoundUpHighDecimalOutput() public pure {
+        // Token with 19 decimals => rate = 10^(36-19) = 1e17
+        // scaleTo: 1 * 1e17 / 1e18 = 0.1, floors to 0
+        // scaleToUp: ceil(0.1) = 1
+        uint256 rate = 1e17;
+        uint256 amount = 1;
+
+        assertEq(StableSwapMath.scaleTo(amount, rate), 0);
+        assertEq(StableSwapMath.scaleToUp(amount, rate), 1);
+    }
+
+    function test_scaleToUp_ShouldReturnZeroForZeroAmount() public pure {
+        uint256 rate = 1e17;
+
+        assertEq(StableSwapMath.scaleToUp(0, rate), 0);
+    }
+
+    function test_scaleToUp_ShouldBeIdentityFor18DecimalTokens() public pure {
+        // For 18-decimal tokens, rate = 1e18, so scaleToUp should be identity
+        uint256 rate = 1e18;
+        uint256 amount = 123e18;
+
+        assertEq(StableSwapMath.scaleToUp(amount, rate), amount);
+    }
+
+    function test_scaleToUp_ShouldMatchScaleToWhenExact() public pure {
+        // 123e6 * 1e30 / 1e18 = 123e18 exactly, so ceil and floor agree
+        uint256 rate = 1e30;
+        uint256 amount = 123e6;
+
+        assertEq(StableSwapMath.scaleToUp(amount, rate), 123e18);
+        assertEq(StableSwapMath.scaleToUp(amount, rate), StableSwapMath.scaleTo(amount, rate));
+    }
+
+    function test_descaleUp_ShouldRoundUpLowDecimalInput() public pure {
+        // Token with 0 decimals => rate = 10^(36-0) = 1e36
+        // descale: 5e17 * 1e18 / 1e36 = 0.5, floors to 0
+        // descaleUp: ceil(0.5) = 1
+        uint256 rate = 1e36;
+        uint256 scaledAmount = 5e17;
+
+        assertEq(StableSwapMath.descale(scaledAmount, rate), 0);
+        assertEq(StableSwapMath.descaleUp(scaledAmount, rate), 1);
+    }
+
+    function test_descaleUp_ShouldReturnZeroForZeroAmount() public pure {
+        uint256 rate = 1e36;
+
+        assertEq(StableSwapMath.descaleUp(0, rate), 0);
+    }
+
+    function test_descaleUp_ShouldBeIdentityFor18DecimalTokens() public pure {
+        // For 18-decimal tokens, rate = 1e18, so descaleUp should be identity
+        uint256 rate = 1e18;
+        uint256 amount = 456e18;
+
+        assertEq(StableSwapMath.descaleUp(amount, rate), amount);
+    }
+
+    function test_descaleUp_ShouldRoundUpForSmallAmounts() public pure {
+        // (1.1e12 * 1e18) / 1e30 = 1.1, descale floors to 1, descaleUp ceils to 2
+        uint256 rate = 1e30;
+        uint256 scaledAmount = 1e12 + 1e11;
+
+        assertEq(StableSwapMath.descale(scaledAmount, rate), 1);
+        assertEq(StableSwapMath.descaleUp(scaledAmount, rate), 2);
+    }
+
+    // ==========================================================================
     // scaleTo / descale - Fuzz Tests
     // ==========================================================================
 
@@ -644,6 +716,23 @@ contract StableSwapMathTest is Test {
 
         // Rescaled should be <= original scaled (due to rounding down)
         assertTrue(rescaled <= scaled);
+    }
+
+    function testFuzz_descaleUp_ShouldNeverRoundNonzeroToZero(uint128 _scaled, uint8 _decimals) public pure {
+        uint8 decimals = uint8(bound(uint256(_decimals), 0, 18));
+        uint256 rate = 10 ** (36 - decimals);
+        uint256 scaled = bound(uint256(_scaled), 1, type(uint128).max);
+
+        // A positive scaled obligation must never descale to zero raw input
+        assertGe(StableSwapMath.descaleUp(scaled, rate), 1);
+    }
+
+    function testFuzz_scaleToUp_ShouldBeGreaterOrEqualScaleTo(uint128 _amount, uint8 _decimals) public pure {
+        uint8 decimals = uint8(bound(uint256(_decimals), 0, 36));
+        uint256 rate = 10 ** (36 - decimals);
+        uint256 amount = bound(uint256(_amount), 0, type(uint256).max / rate);
+
+        assertGe(StableSwapMath.scaleToUp(amount, rate), StableSwapMath.scaleTo(amount, rate));
     }
 
     // ==========================================================================

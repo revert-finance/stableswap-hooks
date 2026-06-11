@@ -134,14 +134,14 @@ abstract contract Swap is Fees {
 
     /// @dev Calculates input amount for exact output swap, fees grossed up into the input
     function _swapExactOutput(uint256 _amountOut, SwapContext memory _ctx) private returns (SwapResult memory result) {
-        uint256 newTokenOutReserves =
-            _ctx.scaledReserves[_ctx.tokenOutIndex] - StableSwapMath.scaleTo(_amountOut, _getRate(_ctx.tokenOutIndex));
+        uint256 newTokenOutReserves = _ctx.scaledReserves[_ctx.tokenOutIndex]
+            - StableSwapMath.scaleToUp(_amountOut, _getRate(_ctx.tokenOutIndex));
 
         uint256 newTokenInReserves = StableSwapMath.getTargetReserves(
             _ctx.tokenOutIndex, _ctx.tokenInIndex, newTokenOutReserves, _ctx.scaledReserves, _ctx.amp, _ctx.invariant
         );
 
-        uint256 rawAmountIn = StableSwapMath.descale(
+        uint256 rawAmountIn = StableSwapMath.descaleUp(
             newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
         );
 
