@@ -731,7 +731,7 @@ contract StableSwapMathTest is Test {
         assertEq(StableSwapMath.geometricMean(_makeValues3(7, 7, 7)), 7, "cbrt(343) = 7");
         assertEq(StableSwapMath.geometricMean(_makeValues3(10, 10, 10)), 10, "cbrt(1000) = 10");
         assertEq(StableSwapMath.geometricMean(_makeValues3(2, 4, 8)), 4, "cbrt(64) = 4");
-        assertEq(StableSwapMath.geometricMean(_makeValues3(999, 1330, 1727)), 1318, "cbrt(2294225090) = 1318");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(999, 1330, 1727)), 1318, "cbrt(2294613090) = 1318");
     }
 
     function test_geometricMean_ShouldFallBackToPerValueCbrtWhenProductOverflows() public pure {
