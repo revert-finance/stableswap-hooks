@@ -102,14 +102,14 @@ abstract contract Base is BaseHook {
         Currency[] memory _currencies,
         RateOracleConfig[] memory _rateOracles
     ) BaseHook(_poolManager) {
-        if (_lpFeePercentage == 0) {
-            revert InvalidFeePercentage();
-        }
-
         factory = _factory;
         lpFeePercentage = _lpFeePercentage;
         currencies = _currencies;
         currenciesLength = _currencies.length;
+
+        if (_lpFeePercentage == 0) {
+            revert InvalidFeePercentage();
+        }
 
         if (currenciesLength < MIN_CURRENCIES || currenciesLength > MAX_CURRENCIES) {
             revert InvalidCurrenciesLength();
