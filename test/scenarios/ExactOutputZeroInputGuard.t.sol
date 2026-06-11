@@ -137,7 +137,7 @@ contract ExactOutputZeroInputGuardTest is ExternalContractsDeployer {
             CustomRevert.WrappedError.selector,
             address(hooks),
             IHooks.beforeSwap.selector,
-            abi.encodeWithSelector(Swap.ZeroInputForNonZeroOutput.selector),
+            abi.encodeWithSelector(Swap.ZeroInput.selector),
             abi.encodeWithSelector(Hooks.HookCallFailed.selector)
         );
     }
