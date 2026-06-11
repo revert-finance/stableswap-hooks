@@ -14,7 +14,7 @@ Can be deleted when all finding fixes are merged
 - [ ] **512** - StableSwapZapIn._calculateSwapAmount Overshoots Target Ratio in 3+ Token Pools, Causing Up to ~17% LP-Share Loss
 - [ ] **102** - Asymmetric Exact Output Math Enables Systemic Fee Evasion and LP Yield Loss
 - [ ] **63** - StableSwap Invariant Overflow Causes Persistent Swap DoS in Imbalanced Pools
-- [ ] **53** - Integer rounding in 3-token geometricMean leads to mispriced initial invariant and capital loss for LPs
+- [x] **53** - Integer rounding in 3-token geometricMean leads to mispriced initial invariant and capital loss for LPs
 - [x] **29** - Native ETH removeLiquidity reentrancy lets LP swap against withdrawn stale reserves
 - [ ] **15** - zapIn passes zero slippage to internal addLiquidity, enabling sandwich attacks
 - [ ] **8** - Low-decimal exact-output swaps can withdraw LP reserves for zero input

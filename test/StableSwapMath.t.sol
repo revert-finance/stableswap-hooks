@@ -722,14 +722,21 @@ contract StableSwapMathTest is Test {
     }
 
     function test_geometricMean_ShouldCalculateCorrectlyForThreeEqualValues() public pure {
-        // For 3 equal values, geometricMean uses cbrt(a) * cbrt(b) * cbrt(c)
-        // cbrt(1000e18) ≈ 10e6 (since (10e6)^3 = 1e21, not 1e18)
-        // Actually cbrt(1000e18) = cbrt(1e21) = 1e7
-        // So result = 1e7 * 1e7 * 1e7 = 1e21
         uint256[] memory values = _makeValues3(1000e18, 1000e18, 1000e18);
         uint256 result = StableSwapMath.geometricMean(values);
-        // cbrt(1000e18) = 1e7 (since 1e21 = 1e7^3), so result = 1e7 * 1e7 * 1e7 = 1e21
         assertEq(result, 1e21);
+    }
+
+    function test_geometricMean_ShouldUseProductCubeRootForThreeNonPerfectCubeValues() public pure {
+        assertEq(StableSwapMath.geometricMean(_makeValues3(7, 7, 7)), 7, "cbrt(343) = 7");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(10, 10, 10)), 10, "cbrt(1000) = 10");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(2, 4, 8)), 4, "cbrt(64) = 4");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(999, 1330, 1727)), 1318, "cbrt(2294613090) = 1318");
+    }
+
+    function test_geometricMean_ShouldFallBackToPerValueCbrtWhenProductOverflows() public pure {
+        assertEq(StableSwapMath.geometricMean(_makeValues3(1e27, 1e27, 1e27)), 1e27, "second multiplication overflows");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(1e39, 1e39, 1e39)), 1e39, "first multiplication overflows");
     }
 
     function test_geometricMean_ShouldCalculateCorrectlyForFourValues() public pure {
