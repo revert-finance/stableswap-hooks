@@ -62,7 +62,7 @@ contract NonZeroNetLpFeePreventsReserveDrainTest is ExternalContractsDeployer {
         vm.prank(admin);
         hooks.setHookFeePercentage(maxValidHookFee);
 
-        uint256 drainAmount = 1e18 * _toTokenWei(currency0, 1);
+        uint256 drainAmount = 100 * _toTokenWei(currency0, LIQUIDITY_AMOUNT);
         deal(Currency.unwrap(currency0), swapper, drainAmount);
 
         _executeExactInputSwap(true, drainAmount);
