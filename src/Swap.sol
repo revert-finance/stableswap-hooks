@@ -73,6 +73,8 @@ abstract contract Swap is Fees {
         SwapResult memory result =
             isExactInput ? _swapExactInput(specifiedAmount, ctx) : _swapExactOutput(specifiedAmount, ctx);
 
+        _checkInvariant();
+
         emit StableSwap(
             _sender,
             currencies[ctx.tokenInIndex],

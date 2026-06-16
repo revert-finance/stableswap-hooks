@@ -52,17 +52,16 @@ library StableSwapMath {
             uint256 invariantProduct = invariant;
 
             for (uint256 j = 0; j < nCurrencies; ++j) {
-                invariantProduct = (invariantProduct * invariant) / _scaledReserves[j];
+                invariantProduct = Math.mulDiv(invariantProduct, invariant, _scaledReserves[j]);
             }
 
             invariantProduct = invariantProduct / (nCurrencies ** nCurrencies);
 
             uint256 previousInvariant = invariant;
 
-            // forgefmt: disable-next-item
-            invariant = (
-                (ampTimesCoins * totalReserves / AMP_PRECISION + invariantProduct * nCurrencies) * invariant
-            ) / (
+            invariant = Math.mulDiv(
+                ampTimesCoins * totalReserves / AMP_PRECISION + invariantProduct * nCurrencies,
+                invariant,
                 (ampTimesCoins - AMP_PRECISION) * invariant / AMP_PRECISION + (nCurrencies + 1) * invariantProduct
             );
 
@@ -120,10 +119,10 @@ library StableSwapMath {
 
             knownReservesSum += reserves;
 
-            invariantProduct = invariantProduct * _invariant / (reserves * nCurrencies);
+            invariantProduct = Math.mulDiv(invariantProduct, _invariant, reserves * nCurrencies);
         }
 
-        invariantProduct = invariantProduct * _invariant * AMP_PRECISION / (ampTimesCoins * nCurrencies);
+        invariantProduct = Math.mulDiv(invariantProduct, _invariant * AMP_PRECISION, ampTimesCoins * nCurrencies);
 
         uint256 sumPlusInvariantRatio = knownReservesSum + _invariant * AMP_PRECISION / ampTimesCoins;
 

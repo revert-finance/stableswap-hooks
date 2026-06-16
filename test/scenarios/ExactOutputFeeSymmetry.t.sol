@@ -49,42 +49,53 @@ contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
         );
     }
 
-    function test_exactInputAndExactOutput_costGapIsNegligibleAcrossFeeTiers() public {
-        uint256[] memory feeTiers = new uint256[](5);
-        feeTiers[0] = 500; // 0.05%
-        feeTiers[1] = 3000; // 0.30%
-        feeTiers[2] = 10000; // 1%
-        feeTiers[3] = 100000; // 10%
-        feeTiers[4] = 500000; // 50%
+    function test_exactInputAndExactOutput_costGapIsNegligible_500() public {
+        _assertCostGapForFeeTier(500);
+    }
 
-        for (uint256 i = 0; i < feeTiers.length; i++) {
-            StableSwapHooks tierHooks = _deployHooksWithLpFee(feeTiers[i]);
-            _seedHooks(tierHooks);
+    function test_exactInputAndExactOutput_costGapIsNegligible_3000() public {
+        _assertCostGapForFeeTier(3000);
+    }
 
-            uint256 amountIn = _toTokenWei(currency0, 1000);
+    function test_exactInputAndExactOutput_costGapIsNegligible_10000() public {
+        _assertCostGapForFeeTier(10000);
+    }
 
-            uint256 snapshot = vm.snapshotState();
-            uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
-            _exactInputSwap(tierHooks, amountIn);
-            uint256 amountOut = IERC20(Currency.unwrap(currency1)).balanceOf(swapper) - balance1Before;
-            vm.revertToState(snapshot);
+    function test_exactInputAndExactOutput_costGapIsNegligible_100000() public {
+        _assertCostGapForFeeTier(100000);
+    }
 
-            uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
-            _exactOutputSwap(tierHooks, amountOut);
-            uint256 amountInForSameOutput = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+    function test_exactInputAndExactOutput_costGapIsNegligible_500000() public {
+        _assertCostGapForFeeTier(500000);
+    }
 
-            // Both paths now charge the full fee, so the pool is not shortchanged. A tiny difference is left
-            // because the fee sits on the input token one way and the output token the other, making exact
-            // output a hair cheaper: about $0.005 on a $1M swap at 0.05% fee. That is too small to be worth
-            // exploiting (a swap costs more in gas), and it grows with the fee, so the allowed difference is
-            // sized per fee tier with 2x room to spare.
-            assertApproxEqRel(
-                amountInForSameOutput,
-                amountIn,
-                feeTiers[i] * 2e7,
-                "exact output cost must match exact input within rounding across fee tiers"
-            );
-        }
+    // Both paths now charge the full fee, so the pool is not shortchanged. A tiny difference is left
+    // because the fee sits on the input token one way and the output token the other, making exact
+    // output a hair cheaper: about $0.005 on a $1M swap at 0.05% fee. That is too small to be worth
+    // exploiting (a swap costs more in gas), and it grows with the fee, so the allowed difference is
+    // sized per fee tier with 2x room to spare.
+    function _assertCostGapForFeeTier(uint256 _feeTier) private {
+        StableSwapHooks tierHooks = _deployHooksWithLpFee(_feeTier);
+        _seedHooks(tierHooks);
+
+        uint256 amountIn = _toTokenWei(currency0, 1000);
+
+        uint256 snapshot = vm.snapshotState();
+        uint256 balance1Before = IERC20(Currency.unwrap(currency1)).balanceOf(swapper);
+        _exactInputSwap(tierHooks, amountIn);
+        uint256 amountOut = IERC20(Currency.unwrap(currency1)).balanceOf(swapper) - balance1Before;
+        vm.revertToState(snapshot);
+
+        uint256 balance0Before = IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+        _exactOutputSwap(tierHooks, amountOut);
+        uint256 amountInForSameOutput = balance0Before - IERC20(Currency.unwrap(currency0)).balanceOf(swapper);
+
+        assertApproxEqRel(
+            amountInForSameOutput,
+            amountIn,
+            _feeTier * 2e7,
+            "exact output cost must match exact input within rounding across fee tiers"
+        );
     }
 
     function _deployHooksWithLpFee(uint256 _lpFeePercentage) private returns (StableSwapHooks) {

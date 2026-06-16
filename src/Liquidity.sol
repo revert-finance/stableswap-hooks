@@ -183,6 +183,8 @@ abstract contract Liquidity is Amp, ERC20 {
             Address.sendValue(payable(sender), refundValue);
         }
 
+        _checkInvariant();
+
         emit LiquidityAdded(sender, actualAmounts, newShares);
     }
 
@@ -271,5 +273,17 @@ abstract contract Liquidity is Amp, ERC20 {
         for (uint256 i = 0; i < currenciesLength; ++i) {
             amounts[i] = (_shares * reserves[i]) / currentTotalSupply;
         }
+    }
+
+    /// @dev Reverts unless current reserves are priceable by `getInvariant`.
+    /// Used after adding liquidity or after a swap to verify that the pool is not left in a bricked state.
+    function _checkInvariant() internal view {
+        uint256[] memory scaledReserves = new uint256[](currenciesLength);
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
+            scaledReserves[i] = StableSwapMath.scaleTo(reserves[i], _getRate(i));
+        }
+
+        StableSwapMath.getInvariant(scaledReserves, getCurrentAmp());
     }
 }
