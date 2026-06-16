@@ -275,6 +275,8 @@ abstract contract Liquidity is Amp, ERC20 {
         }
     }
 
+    /// @dev Reverts unless current reserves are priceable by `getInvariant`.
+    /// Used after adding liquidity or after a swap to verify that the pool is not left in a bricked state.
     function _checkInvariant() internal view {
         uint256[] memory scaledReserves = new uint256[](currenciesLength);
 
