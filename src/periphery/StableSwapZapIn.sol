@@ -181,8 +181,10 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
 
         resultingAmounts = new uint256[](len);
 
+        uint256 currentTotalSupply = hooks.totalSupply();
+
         // For initial deposit, no swaps needed - use all amounts directly
-        if (hooks.totalSupply() == 0) {
+        if (currentTotalSupply == 0) {
             (shares,) = hooks.quoteAddLiquidity(_amounts);
             for (uint256 i = 0; i < len; ++i) {
                 resultingAmounts[i] = _amounts[i];
@@ -190,8 +192,12 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
             return (shares, resultingAmounts, new SwapQuote[](0));
         }
 
+        // The amount of reserves after the optimal swaps are applied
+        // Used to quote the amount of shares minted based on the remaining reserves after the swaps
+        uint256[] memory postSwapReserves;
+
         // Calculate optimal swaps accounting for price impact
-        swaps = _calculateOptimalSwaps(hooks, _amounts, _maxIterations);
+        (swaps, postSwapReserves) = _calculateOptimalSwaps(hooks, _amounts, _maxIterations);
 
         // Calculate resulting amounts after swaps
         for (uint256 i = 0; i < len; ++i) {
@@ -202,7 +208,18 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
             resultingAmounts[swaps[i].tokenOutIndex] += swaps[i].expectedAmountOut;
         }
 
-        (shares,) = hooks.quoteAddLiquidity(resultingAmounts);
+        // Calculate the amount of shares mirroring the logic of Liquidity._calculateAddLiquidity
+        uint256 minProportion = type(uint256).max;
+
+        for (uint256 i = 0; i < len; ++i) {
+            uint256 proportion = Math.mulDiv(resultingAmounts[i], currentTotalSupply, postSwapReserves[i]);
+
+            if (proportion < minProportion) {
+                minProportion = proportion;
+            }
+        }
+
+        shares = minProportion;
     }
 
     /// @notice Add liquidity with pre-calculated swaps
@@ -478,12 +495,25 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
     /// @param _amounts Input amounts
     /// @param _maxIterations Maximum iterations (0 = no swaps)
     /// @return swaps Array of swaps to execute
+    /// @return postSwapReserves Simulated pool reserves after the swaps, in raw token units
     function _calculateOptimalSwaps(IStableSwapHooks _hooks, uint256[] calldata _amounts, uint256 _maxIterations)
         internal
         view
-        returns (SwapQuote[] memory swaps)
+        returns (SwapQuote[] memory swaps, uint256[] memory postSwapReserves)
     {
         uint256 len = _hooks.currenciesLength();
+
+        // Cache the current unscaled reserves
+        uint256[] memory unscaledCurrentReserves = new uint256[](len);
+
+        for (uint256 i = 0; i < len; ++i) {
+            unscaledCurrentReserves[i] = _hooks.reserves(i);
+        }
+
+        // If no iterations requested, return empty swaps and current reserves
+        if (_maxIterations == 0) {
+            return (new SwapQuote[](0), unscaledCurrentReserves);
+        }
 
         // Build context with scaled inputs and reserves
         SwapCalcContext memory ctx;
@@ -497,14 +527,9 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
 
         for (uint256 i = 0; i < len; ++i) {
             ctx.rates[i] = _getDynamicRate(_hooks, i);
-            uint256 reserve = _hooks.reserves(i);
+            uint256 reserve = unscaledCurrentReserves[i];
             ctx.scaledInputs[i] = StableSwapMath.scaleTo(_amounts[i], ctx.rates[i]);
             ctx.scaledReserves[i] = StableSwapMath.scaleTo(reserve, ctx.rates[i]);
-        }
-
-        // If no iterations requested, return empty swaps
-        if (_maxIterations == 0) {
-            return new SwapQuote[](0);
         }
 
         // Temporary array to collect swaps
@@ -533,10 +558,21 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
             }
         }
 
+        // If no swaps are to be applied, return the unscaled current reserves to avoid scale round-trip drift
+        if (swapCount == 0) {
+            return (new SwapQuote[](0), unscaledCurrentReserves);
+        }
+
         // Copy to correctly sized array
         swaps = new SwapQuote[](swapCount);
         for (uint256 i = 0; i < swapCount; ++i) {
             swaps[i] = tempSwaps[i];
+        }
+
+        postSwapReserves = new uint256[](len);
+
+        for (uint256 i = 0; i < len; ++i) {
+            postSwapReserves[i] = StableSwapMath.descale(ctx.scaledReserves[i], ctx.rates[i]);
         }
     }
 
