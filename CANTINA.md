@@ -6,7 +6,7 @@ Can be deleted when all finding fixes are merged
 
 ## Findings
 
-- [ ] **1351** - quoteZapIn underestimates shares, undermining slippage protection
+- [x] **1351** - quoteZapIn underestimates shares, undermining slippage protection
 - [x] **998** - Reachable 4-token pool states allow zero-input exact-output reserve extraction
 - [x] **788** - Low-amp pools can be pushed into non-convergent reserve states that brick swaps
 - [x] **546** - Zero-fee exact-input round trips can extract reserves through StableSwap rounding asymmetry
