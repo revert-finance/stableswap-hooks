@@ -629,8 +629,8 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
             (ctx.scaledInputs[excessIdx] * RATE_PRECISION - targetRatio * ctx.scaledReserves[excessIdx])
                 / (RATE_PRECISION + targetRatio);
 
-        // Output shrinks the deficit reserve while it grows the input, so divide by
-        // (RATE_PRECISION + targetRatio) to land on the target ratio after the swap.
+        // Output shrinks the deficit reserve while it grows the input
+        // Divide by (RATE_PRECISION + targetRatio) to land on the target ratio after the swap.
         uint256 outputNeeded =
             (targetRatio * ctx.scaledReserves[deficitIdx] - ctx.scaledInputs[deficitIdx] * RATE_PRECISION)
                 / (RATE_PRECISION + targetRatio);
