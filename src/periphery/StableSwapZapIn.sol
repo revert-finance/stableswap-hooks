@@ -15,6 +15,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IStableSwapHooks} from "src/interfaces/IStableSwapHooks.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
@@ -24,10 +25,12 @@ import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
 /// @param tokenInIndex Index of the input token in the pool's currencies array
 /// @param tokenOutIndex Index of the output token in the pool's currencies array
 /// @param amountIn Amount of input token to swap
+/// @param minAmountOut Minimum output (raw units) for this swap; reverts if less. Use quote's expectedAmountOut minus a buffer, or 0 to opt out
 struct Swap {
     uint256 tokenInIndex;
     uint256 tokenOutIndex;
     uint256 amountIn;
+    uint256 minAmountOut;
 }
 
 /// @notice Quote result from quoteZapIn (includes expected output for off-chain use)
@@ -313,6 +316,14 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
                 }),
                 ""
             );
+
+            int128 amountOut = zeroForOne ? swapDelta.amount1() : swapDelta.amount0();
+
+            // Revert if this swap delivered less than the caller's quote-derived floor,
+            // i.e. the pool moved adversely between quote and execution.
+            if (SafeCast.toUint256(amountOut) < swap.minAmountOut) {
+                revert SlippageExceeded();
+            }
 
             // Accumulate deltas (amount0/amount1 correspond to currency0/currency1)
             if (zeroForOne) {
