@@ -7,8 +7,8 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SwapQuote} from "src/periphery/StableSwapZapIn.sol";
 import {StableSwapZapInTest} from "test/StableSwapZapIn.t.sol";
 
-contract ZapInOvershoot512Test is StableSwapZapInTest {
-    function test_512_firstSwapDoesNotOvershootTargetRatio() public {
+contract ZapInOvershootTest is StableSwapZapInTest {
+    function test_firstSwapDoesNotOvershootTargetRatio() public {
         _addLiquidity3(1_000_000, 1_000_000, 1_000_000);
 
         uint256[] memory amounts = new uint256[](3);
@@ -30,7 +30,7 @@ contract ZapInOvershoot512Test is StableSwapZapInTest {
         );
     }
 
-    function test_512_convergesWithinIterationBudget() public {
+    function test_convergesWithinIterationBudget() public {
         _addLiquidity3(1_000_000, 1_000_000, 1_000_000);
 
         uint256[] memory amounts = new uint256[](3);
