@@ -16,5 +16,5 @@ Can be deleted when all finding fixes are merged
 - [x] **63** - StableSwap Invariant Overflow Causes Persistent Swap DoS in Imbalanced Pools
 - [x] **53** - Integer rounding in 3-token geometricMean leads to mispriced initial invariant and capital loss for LPs
 - [x] **29** - Native ETH removeLiquidity reentrancy lets LP swap against withdrawn stale reserves
-- [ ] **15** - zapIn passes zero slippage to internal addLiquidity, enabling sandwich attacks
+- [x] **15** - zapIn passes zero slippage to internal addLiquidity, enabling sandwich attacks
 - [x] **8** - Low-decimal exact-output swaps can withdraw LP reserves for zero input

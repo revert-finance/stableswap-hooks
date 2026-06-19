@@ -125,7 +125,8 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
             inputs[i] = Swap({
                 tokenInIndex: _swaps[i].tokenInIndex,
                 tokenOutIndex: _swaps[i].tokenOutIndex,
-                amountIn: _swaps[i].amountIn
+                amountIn: _swaps[i].amountIn,
+                minAmountOut: 0
             });
         }
         return inputs;
@@ -399,6 +400,24 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
         zapIn.zapIn(address(hooks), amounts, _toSwaps(swaps), quotedShares * 2);
     }
 
+    function test_zapIn_2tokens_revertMinAmountOut() public {
+        _addLiquidity(1000, 1000);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _toTokenWei(currency0, 200);
+        amounts[1] = 0;
+
+        (,, SwapQuote[] memory swaps) = zapIn.quoteZapIn(address(hooks), amounts, 1);
+        assertGt(swaps.length, 0, "single-sided zap should produce a swap");
+
+        Swap[] memory inputs = _toSwaps(swaps);
+        inputs[0].minAmountOut = swaps[0].expectedAmountOut * 2;
+
+        vm.prank(zapUser);
+        vm.expectRevert(StableSwapZapIn.SlippageExceeded.selector);
+        zapIn.zapIn(address(hooks), amounts, inputs, 0);
+    }
+
     function test_zapIn_2tokens_revertNoTokens() public {
         _addLiquidity(1000, 1000);
 
@@ -437,7 +456,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         // Create swap with out-of-bounds index
         Swap[] memory swaps = new Swap[](1);
-        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 5, amountIn: 100});
+        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 5, amountIn: 100, minAmountOut: 0});
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidSwapIndex.selector);
@@ -453,7 +472,7 @@ contract StableSwapZapInTest is StableSwapHooksBaseTest {
 
         // Create swap with same in/out index
         Swap[] memory swaps = new Swap[](1);
-        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 0, amountIn: 100});
+        swaps[0] = Swap({tokenInIndex: 0, tokenOutIndex: 0, amountIn: 100, minAmountOut: 0});
 
         vm.prank(zapUser);
         vm.expectRevert(StableSwapZapIn.InvalidSwapIndex.selector);
@@ -1297,7 +1316,8 @@ contract StableSwapZapInNativeAssetTest is StableSwapHooksBaseTest {
             inputs[i] = Swap({
                 tokenInIndex: _swaps[i].tokenInIndex,
                 tokenOutIndex: _swaps[i].tokenOutIndex,
-                amountIn: _swaps[i].amountIn
+                amountIn: _swaps[i].amountIn,
+                minAmountOut: 0
             });
         }
         return inputs;
@@ -1509,7 +1529,8 @@ contract StableSwapZapInRateOracleTest is StableSwapHooksBaseTest {
             inputs[i] = Swap({
                 tokenInIndex: _swaps[i].tokenInIndex,
                 tokenOutIndex: _swaps[i].tokenOutIndex,
-                amountIn: _swaps[i].amountIn
+                amountIn: _swaps[i].amountIn,
+                minAmountOut: 0
             });
         }
         return inputs;
