@@ -18,3 +18,13 @@ Can be deleted when all finding fixes are merged
 - [x] **29** - Native ETH removeLiquidity reentrancy lets LP swap against withdrawn stale reserves
 - [x] **15** - zapIn passes zero slippage to internal addLiquidity, enabling sandwich attacks
 - [x] **8** - Low-decimal exact-output swaps can withdraw LP reserves for zero input
+
+## Fixes
+
+Plain-language summary of each finding and how it was resolved.
+
+### #29 — Native ETH removeLiquidity reentrancy (High)
+
+When an LP removed liquidity from a pool holding native ETH, the pool sent the ETH out **before** updating its own books. A malicious LP could hijack that ETH callback to trade against the stale (still-large) balances and drain the pool at an unfair price.
+
+**Fix:** update all internal accounting first — burn the LP's shares and lower the reserves — then send any funds out. The callback now always sees the correct post-withdrawal state.
