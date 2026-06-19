@@ -76,7 +76,7 @@ contract InvariantBrickResolvedTest is ExternalContractsDeployer {
         );
     }
 
-    function test_finding63_getInvariantNoLongerOverflowsOnImbalancedReserves() public view {
+    function test_getInvariantNoLongerOverflowsOnImbalancedReserves() public view {
         uint256[] memory scaledReserves = new uint256[](2);
         scaledReserves[0] = OVERFLOW_SMALL_RESERVE;
         scaledReserves[1] = OVERFLOW_LARGE_RESERVE;
@@ -86,7 +86,7 @@ contract InvariantBrickResolvedTest is ExternalContractsDeployer {
         );
     }
 
-    function test_finding788_addLiquidityRejectsNonConvergentDeposit() public {
+    function test_addLiquidityRejectsNonConvergentDeposit() public {
         StableSwapHooks hooks = _deployPool(NONCONVERGENT_AMP, address(0));
 
         Currency token0 = hooks.currencies(0);
