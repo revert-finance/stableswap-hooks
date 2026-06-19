@@ -619,21 +619,17 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
         // Calculate target ratio (total inputs / total reserves)
         uint256 targetRatio = _getTargetRatio(ctx);
 
-        // Bail out when the deficit token already meets or exceeds the target ratio
-        if (targetRatio * ctx.scaledReserves[deficitIdx] <= ctx.scaledInputs[deficitIdx] * RATE_PRECISION) {
-            return 0;
-        }
+        // Target value the deficit token should reach, in ratio×reserve scale (×RATE_PRECISION)
+        uint256 deficitTargetValue = targetRatio * ctx.scaledReserves[deficitIdx];
+        if (deficitTargetValue <= ctx.scaledInputs[deficitIdx] * RATE_PRECISION) return 0;
 
         // Calculate max swap from excess to reach target ratio
         uint256 maxFromExcess =
             (ctx.scaledInputs[excessIdx] * RATE_PRECISION - targetRatio * ctx.scaledReserves[excessIdx])
                 / (RATE_PRECISION + targetRatio);
 
-        // Output shrinks the deficit reserve while it grows the input
-        // Divide by (RATE_PRECISION + targetRatio) to land on the target ratio after the swap.
         uint256 outputNeeded =
-            (targetRatio * ctx.scaledReserves[deficitIdx] - ctx.scaledInputs[deficitIdx] * RATE_PRECISION)
-                / (RATE_PRECISION + targetRatio);
+            (deficitTargetValue - ctx.scaledInputs[deficitIdx] * RATE_PRECISION) / (RATE_PRECISION + targetRatio);
         if (ctx.lpFee >= FEE_PRECISION) return 0;
 
         uint256 rawOutputNeeded = Math.mulDiv(outputNeeded, FEE_PRECISION, FEE_PRECISION - ctx.lpFee);
