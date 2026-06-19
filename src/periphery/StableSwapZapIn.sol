@@ -619,7 +619,7 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
         // Calculate target ratio (total inputs / total reserves)
         uint256 targetRatio = _getTargetRatio(ctx);
 
-        // Target value the deficit token should reach, in ratio×reserve scale (×RATE_PRECISION)
+        // Calculate how much output the deficit token needs
         uint256 deficitTargetValue = targetRatio * ctx.scaledReserves[deficitIdx];
         if (deficitTargetValue <= ctx.scaledInputs[deficitIdx] * RATE_PRECISION) return 0;
 
