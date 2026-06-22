@@ -203,7 +203,7 @@ library StableSwapMath {
         uint256 n = _values.length;
 
         if (n == 2) {
-            // sqrt(a * b) - use mulDiv to handle large values safely
+            // sqrt(a * b) - mulDiv by 1 is redundant, no real benefit vs standard a * b
             return Math.sqrt(Math.mulDiv(_values[0], _values[1], 1));
         }
 
