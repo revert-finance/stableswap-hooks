@@ -675,9 +675,14 @@ contract StableSwapZapIn is IUnlockCallback, ReentrancyGuard {
             (ctx.scaledInputs[excessIdx] * RATE_PRECISION - targetRatio * ctx.scaledReserves[excessIdx])
                 / (RATE_PRECISION + targetRatio);
 
-        uint256 outputNeeded =
-            (deficitTargetValue - ctx.scaledInputs[deficitIdx] * RATE_PRECISION) / (RATE_PRECISION + targetRatio);
         if (ctx.lpFee >= FEE_PRECISION) return 0;
+
+        uint256 deficitShortfall = deficitTargetValue - ctx.scaledInputs[deficitIdx] * RATE_PRECISION;
+        uint256 outputScale = FEE_PRECISION * (FEE_PRECISION - ctx.lpFee);
+        uint256 feeBump = targetRatio * ctx.lpFee * (ctx.hookFee + ctx.protocolFee);
+
+        uint256 outputNeeded =
+            Math.mulDiv(deficitShortfall, outputScale, (RATE_PRECISION + targetRatio) * outputScale + feeBump);
 
         uint256 rawOutputNeeded = Math.mulDiv(outputNeeded, FEE_PRECISION, FEE_PRECISION - ctx.lpFee);
         uint256 deficitReserve = ctx.scaledReserves[deficitIdx];
