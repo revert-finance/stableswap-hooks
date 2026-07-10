@@ -7,6 +7,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Fees} from "src/Fees.sol";
 import {StableSwapMath} from "src/libraries/StableSwapMath.sol";
@@ -31,6 +32,9 @@ abstract contract Swap is Fees {
         uint256 hookFees;
         uint256 protocolFees;
     }
+
+    /// @notice Error thrown when an exact-output swap would require zero input
+    error ZeroInput();
 
     /// @notice Emitted when a swap is executed
     event StableSwap(
@@ -68,6 +72,8 @@ abstract contract Swap is Fees {
 
         SwapResult memory result =
             isExactInput ? _swapExactInput(specifiedAmount, ctx) : _swapExactOutput(specifiedAmount, ctx);
+
+        _checkInvariant();
 
         emit StableSwap(
             _sender,
@@ -128,24 +134,30 @@ abstract contract Swap is Fees {
         _settleTrade(_ctx, result, true);
     }
 
-    /// @dev Calculates input amount for exact output swap, fees added to input
+    /// @dev Calculates input amount for exact output swap, fees grossed up into the input
     function _swapExactOutput(uint256 _amountOut, SwapContext memory _ctx) private returns (SwapResult memory result) {
-        uint256 newTokenOutReserves =
-            _ctx.scaledReserves[_ctx.tokenOutIndex] - StableSwapMath.scaleTo(_amountOut, _getRate(_ctx.tokenOutIndex));
+        uint256 newTokenOutReserves = _ctx.scaledReserves[_ctx.tokenOutIndex]
+            - StableSwapMath.scaleToUp(_amountOut, _getRate(_ctx.tokenOutIndex));
 
         uint256 newTokenInReserves = StableSwapMath.getTargetReserves(
             _ctx.tokenOutIndex, _ctx.tokenInIndex, newTokenOutReserves, _ctx.scaledReserves, _ctx.amp, _ctx.invariant
         );
 
-        uint256 rawAmountIn = StableSwapMath.descale(
+        uint256 rawAmountIn = StableSwapMath.descaleUp(
             newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
         );
 
-        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(rawAmountIn);
-        uint256 totalFees = result.lpFees + result.hookFees + result.protocolFees;
+        uint256 grossAmountIn =
+            Math.mulDiv(rawAmountIn, FEE_PRECISION, FEE_PRECISION - lpFeePercentage, Math.Rounding.Ceil);
 
-        result.amountIn = rawAmountIn + totalFees;
+        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(grossAmountIn);
+
+        result.amountIn = grossAmountIn;
         result.amountOut = _amountOut;
+
+        if (result.amountIn == 0) {
+            revert ZeroInput();
+        }
 
         _settleTrade(_ctx, result, false);
     }

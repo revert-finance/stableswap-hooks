@@ -597,6 +597,78 @@ contract StableSwapMathTest is Test {
     }
 
     // ==========================================================================
+    // scaleToUp / descaleUp
+    // ==========================================================================
+
+    function test_scaleToUp_ShouldRoundUpHighDecimalOutput() public pure {
+        // Token with 19 decimals => rate = 10^(36-19) = 1e17
+        // scaleTo: 1 * 1e17 / 1e18 = 0.1, floors to 0
+        // scaleToUp: ceil(0.1) = 1
+        uint256 rate = 1e17;
+        uint256 amount = 1;
+
+        assertEq(StableSwapMath.scaleTo(amount, rate), 0);
+        assertEq(StableSwapMath.scaleToUp(amount, rate), 1);
+    }
+
+    function test_scaleToUp_ShouldReturnZeroForZeroAmount() public pure {
+        uint256 rate = 1e17;
+
+        assertEq(StableSwapMath.scaleToUp(0, rate), 0);
+    }
+
+    function test_scaleToUp_ShouldBeIdentityFor18DecimalTokens() public pure {
+        // For 18-decimal tokens, rate = 1e18, so scaleToUp should be identity
+        uint256 rate = 1e18;
+        uint256 amount = 123e18;
+
+        assertEq(StableSwapMath.scaleToUp(amount, rate), amount);
+    }
+
+    function test_scaleToUp_ShouldMatchScaleToWhenExact() public pure {
+        // 123e6 * 1e30 / 1e18 = 123e18 exactly, so ceil and floor agree
+        uint256 rate = 1e30;
+        uint256 amount = 123e6;
+
+        assertEq(StableSwapMath.scaleToUp(amount, rate), 123e18);
+        assertEq(StableSwapMath.scaleToUp(amount, rate), StableSwapMath.scaleTo(amount, rate));
+    }
+
+    function test_descaleUp_ShouldRoundUpLowDecimalInput() public pure {
+        // Token with 0 decimals => rate = 10^(36-0) = 1e36
+        // descale: 5e17 * 1e18 / 1e36 = 0.5, floors to 0
+        // descaleUp: ceil(0.5) = 1
+        uint256 rate = 1e36;
+        uint256 scaledAmount = 5e17;
+
+        assertEq(StableSwapMath.descale(scaledAmount, rate), 0);
+        assertEq(StableSwapMath.descaleUp(scaledAmount, rate), 1);
+    }
+
+    function test_descaleUp_ShouldReturnZeroForZeroAmount() public pure {
+        uint256 rate = 1e36;
+
+        assertEq(StableSwapMath.descaleUp(0, rate), 0);
+    }
+
+    function test_descaleUp_ShouldBeIdentityFor18DecimalTokens() public pure {
+        // For 18-decimal tokens, rate = 1e18, so descaleUp should be identity
+        uint256 rate = 1e18;
+        uint256 amount = 456e18;
+
+        assertEq(StableSwapMath.descaleUp(amount, rate), amount);
+    }
+
+    function test_descaleUp_ShouldRoundUpForSmallAmounts() public pure {
+        // (1.1e12 * 1e18) / 1e30 = 1.1, descale floors to 1, descaleUp ceils to 2
+        uint256 rate = 1e30;
+        uint256 scaledAmount = 1e12 + 1e11;
+
+        assertEq(StableSwapMath.descale(scaledAmount, rate), 1);
+        assertEq(StableSwapMath.descaleUp(scaledAmount, rate), 2);
+    }
+
+    // ==========================================================================
     // scaleTo / descale - Fuzz Tests
     // ==========================================================================
 
@@ -644,6 +716,23 @@ contract StableSwapMathTest is Test {
 
         // Rescaled should be <= original scaled (due to rounding down)
         assertTrue(rescaled <= scaled);
+    }
+
+    function testFuzz_descaleUp_ShouldNeverRoundNonzeroToZero(uint128 _scaled, uint8 _decimals) public pure {
+        uint8 decimals = uint8(bound(uint256(_decimals), 0, 18));
+        uint256 rate = 10 ** (36 - decimals);
+        uint256 scaled = bound(uint256(_scaled), 1, type(uint128).max);
+
+        // A positive scaled obligation must never descale to zero raw input
+        assertGe(StableSwapMath.descaleUp(scaled, rate), 1);
+    }
+
+    function testFuzz_scaleToUp_ShouldBeGreaterOrEqualScaleTo(uint128 _amount, uint8 _decimals) public pure {
+        uint8 decimals = uint8(bound(uint256(_decimals), 0, 36));
+        uint256 rate = 10 ** (36 - decimals);
+        uint256 amount = bound(uint256(_amount), 0, type(uint256).max / rate);
+
+        assertGe(StableSwapMath.scaleToUp(amount, rate), StableSwapMath.scaleTo(amount, rate));
     }
 
     // ==========================================================================
@@ -722,14 +811,21 @@ contract StableSwapMathTest is Test {
     }
 
     function test_geometricMean_ShouldCalculateCorrectlyForThreeEqualValues() public pure {
-        // For 3 equal values, geometricMean uses cbrt(a) * cbrt(b) * cbrt(c)
-        // cbrt(1000e18) ≈ 10e6 (since (10e6)^3 = 1e21, not 1e18)
-        // Actually cbrt(1000e18) = cbrt(1e21) = 1e7
-        // So result = 1e7 * 1e7 * 1e7 = 1e21
         uint256[] memory values = _makeValues3(1000e18, 1000e18, 1000e18);
         uint256 result = StableSwapMath.geometricMean(values);
-        // cbrt(1000e18) = 1e7 (since 1e21 = 1e7^3), so result = 1e7 * 1e7 * 1e7 = 1e21
         assertEq(result, 1e21);
+    }
+
+    function test_geometricMean_ShouldUseProductCubeRootForThreeNonPerfectCubeValues() public pure {
+        assertEq(StableSwapMath.geometricMean(_makeValues3(7, 7, 7)), 7, "cbrt(343) = 7");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(10, 10, 10)), 10, "cbrt(1000) = 10");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(2, 4, 8)), 4, "cbrt(64) = 4");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(999, 1330, 1727)), 1318, "cbrt(2294613090) = 1318");
+    }
+
+    function test_geometricMean_ShouldFallBackToPerValueCbrtWhenProductOverflows() public pure {
+        assertEq(StableSwapMath.geometricMean(_makeValues3(1e27, 1e27, 1e27)), 1e27, "second multiplication overflows");
+        assertEq(StableSwapMath.geometricMean(_makeValues3(1e39, 1e39, 1e39)), 1e39, "first multiplication overflows");
     }
 
     function test_geometricMean_ShouldCalculateCorrectlyForFourValues() public pure {

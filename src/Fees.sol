@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Actions} from "src/libraries/Actions.sol";
@@ -9,9 +8,6 @@ import {Liquidity} from "src/Liquidity.sol";
 
 /// @notice Abstract contract that manages protocol, hook, and LP fee collection and distribution
 abstract contract Fees is Liquidity {
-    /// @notice Fee denominator for percentage calculations (100% = 1e6)
-    uint256 public constant FEE_PRECISION = LPFeeLibrary.MAX_LP_FEE;
-
     /// @notice Protocol fee share of gross LP fees (scaled by FEE_PRECISION)
     uint256 public protocolFeePercentage;
 
@@ -41,9 +37,6 @@ abstract contract Fees is Liquidity {
     /// @notice Error thrown when an invalid address (zero address) is provided
     error InvalidAddress();
 
-    /// @notice Error thrown when fee percentage is invalid
-    error InvalidFeePercentage();
-
     /// @dev Initializes fee accumulator arrays for each currency
     constructor() {
         protocolFees = new uint256[](currenciesLength);
@@ -55,7 +48,7 @@ abstract contract Fees is Liquidity {
     function setProtocolFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = _feePercentage + hookFeePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 
@@ -69,7 +62,7 @@ abstract contract Fees is Liquidity {
     function setHookFeePercentage(uint256 _feePercentage) external onlyFactoryOwner {
         uint256 totalFees = protocolFeePercentage + _feePercentage;
 
-        if (totalFees > FEE_PRECISION) {
+        if (totalFees >= FEE_PRECISION) {
             revert InvalidFeePercentage();
         }
 

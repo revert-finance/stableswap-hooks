@@ -52,17 +52,16 @@ library StableSwapMath {
             uint256 invariantProduct = invariant;
 
             for (uint256 j = 0; j < nCurrencies; ++j) {
-                invariantProduct = (invariantProduct * invariant) / _scaledReserves[j];
+                invariantProduct = Math.mulDiv(invariantProduct, invariant, _scaledReserves[j]);
             }
 
             invariantProduct = invariantProduct / (nCurrencies ** nCurrencies);
 
             uint256 previousInvariant = invariant;
 
-            // forgefmt: disable-next-item
-            invariant = (
-                (ampTimesCoins * totalReserves / AMP_PRECISION + invariantProduct * nCurrencies) * invariant
-            ) / (
+            invariant = Math.mulDiv(
+                ampTimesCoins * totalReserves / AMP_PRECISION + invariantProduct * nCurrencies,
+                invariant,
                 (ampTimesCoins - AMP_PRECISION) * invariant / AMP_PRECISION + (nCurrencies + 1) * invariantProduct
             );
 
@@ -120,10 +119,10 @@ library StableSwapMath {
 
             knownReservesSum += reserves;
 
-            invariantProduct = invariantProduct * _invariant / (reserves * nCurrencies);
+            invariantProduct = Math.mulDiv(invariantProduct, _invariant, reserves * nCurrencies);
         }
 
-        invariantProduct = invariantProduct * _invariant * AMP_PRECISION / (ampTimesCoins * nCurrencies);
+        invariantProduct = Math.mulDiv(invariantProduct, _invariant * AMP_PRECISION, ampTimesCoins * nCurrencies);
 
         uint256 sumPlusInvariantRatio = knownReservesSum + _invariant * AMP_PRECISION / ampTimesCoins;
 
@@ -157,14 +156,28 @@ library StableSwapMath {
     /// @param _amount Token-denominated amount.
     /// @param _rate Scaling factor for the token.
     function scaleTo(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
-        return _rate * _amount / RATE_PRECISION;
+        return Math.mulDiv(_amount, _rate, RATE_PRECISION);
+    }
+
+    /// @dev Scales a token amount into 1e18 precision using the given rate (rounds up).
+    /// @param _amount Token-denominated amount.
+    /// @param _rate Scaling factor for the token.
+    function scaleToUp(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return Math.mulDiv(_amount, _rate, RATE_PRECISION, Math.Rounding.Ceil);
     }
 
     /// @dev Converts a 1e18-precision amount back to token units using the given rate.
     /// @param _amount 1e18-scaled amount.
     /// @param _rate Scaling factor for the token.
     function descale(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
-        return _amount * RATE_PRECISION / _rate;
+        return Math.mulDiv(_amount, RATE_PRECISION, _rate);
+    }
+
+    /// @dev Converts a 1e18-precision amount back to token units using the given rate (rounds up).
+    /// @param _amount 1e18-scaled amount.
+    /// @param _rate Scaling factor for the token.
+    function descaleUp(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        return Math.mulDiv(_amount, RATE_PRECISION, _rate, Math.Rounding.Ceil);
     }
 
     /// @dev Computes the scaling rate to normalize a currency's decimals to 1e18 precision.
@@ -182,21 +195,25 @@ library StableSwapMath {
     /// @notice Calculate the geometric mean of an array of values without overflow.
     /// @dev Uses different strategies based on array length to avoid overflow:
     ///      - 2 values: sqrt(a * b) using mulDiv for safe multiplication
-    ///      - 3 values: cbrt(a) * cbrt(b) * cbrt(c) to avoid computing full product
+    ///      - 3 values: cbrt(a * b * c) when the product fits in uint256, falling back to
+    ///        cbrt(a) * cbrt(b) * cbrt(c) on overflow
     ///      - 4 values: sqrt(sqrt(a*b) * sqrt(c*d)) using pairwise approach
     /// @param _values Array of values (must be length 2, 3, or 4).
     function geometricMean(uint256[] memory _values) internal pure returns (uint256) {
         uint256 n = _values.length;
 
         if (n == 2) {
-            // sqrt(a * b) - use mulDiv to handle large values safely
+            // sqrt(a * b) - mulDiv by 1 is redundant, no real benefit vs standard a * b
             return Math.sqrt(Math.mulDiv(_values[0], _values[1], 1));
         }
 
         if (n == 3) {
-            // cbrt(a) * cbrt(b) * cbrt(c) = (a * b * c)^(1/3)
-            // This avoids computing the full product which could overflow
-            return cbrt(_values[0]) * cbrt(_values[1]) * cbrt(_values[2]);
+            // cbrt(a * b * c) floors only once, while cbrt(a) * cbrt(b) * cbrt(c) compounds three flooring errors
+            (bool fits, uint256 product) = Math.tryMul(_values[0], _values[1]);
+            (fits, product) = fits ? Math.tryMul(product, _values[2]) : (false, 0);
+
+            // Fall back to per-value cube roots when the product overflows uint256 (values above ~4.87e25 each)
+            return fits ? cbrt(product) : cbrt(_values[0]) * cbrt(_values[1]) * cbrt(_values[2]);
         }
 
         if (n == 4) {

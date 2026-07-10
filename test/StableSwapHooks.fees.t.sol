@@ -11,6 +11,7 @@ import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.so
 import {Base} from "src/Base.sol";
 import {Fees} from "src/Fees.sol";
 import {Swap} from "src/Swap.sol";
+import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
 contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     uint256 private constant LIQUIDITY_AMOUNT = 1_000_000;
@@ -31,6 +32,26 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
             }
         }
         revert("StableSwap event not found");
+    }
+
+    // ==========================================================================
+    // Deployment Fee Validation
+    // ==========================================================================
+
+    function test_deploy_ShouldRevertWhenLpFeePercentageIsZero() public {
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = currency0;
+        currencies[1] = currency1;
+
+        Base.RateOracleConfig[] memory rateOracles = new Base.RateOracleConfig[](2);
+        rateOracles[0] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+        rateOracles[1] = Base.RateOracleConfig({oracle: address(0), selector: bytes4(0)});
+
+        bytes memory code = type(StableSwapHooks).creationCode;
+        (, bytes32 salt) = factory.mineSalt(currencies, rateOracles, 0, BASE_AMP, code);
+
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
+        factory.deploy(currencies, rateOracles, 0, BASE_AMP, salt, code);
     }
 
     // ==========================================================================
@@ -57,7 +78,7 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     function test_setProtocolFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
         uint256 invalidPercentage = hooks.FEE_PRECISION();
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setProtocolFeePercentage(invalidPercentage);
     }
@@ -82,21 +103,20 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
     function test_setHookFeePercentage_ShouldRevertWhenFeesSumExceedsPrecision() public {
         uint256 invalidPercentage = hooks.FEE_PRECISION();
 
-        vm.expectRevert(Fees.InvalidFeePercentage.selector);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
         vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(invalidPercentage);
     }
 
-    function test_setFeePercentages_ShouldAllowHookPlusProtocolEqualToPrecision() public {
+    function test_setFeePercentages_ShouldRevertWhenHookPlusProtocolEqualToPrecision() public {
         uint256 feePrecision = hooks.FEE_PRECISION();
 
-        vm.startPrank(defaultAdmin);
+        vm.prank(defaultAdmin);
         hooks.setHookFeePercentage(feePrecision / 2);
-        hooks.setProtocolFeePercentage(feePrecision / 2);
-        vm.stopPrank();
 
-        assertEq(hooks.hookFeePercentage(), feePrecision / 2);
-        assertEq(hooks.protocolFeePercentage(), feePrecision / 2);
+        vm.expectRevert(Base.InvalidFeePercentage.selector);
+        vm.prank(defaultAdmin);
+        hooks.setProtocolFeePercentage(feePrecision / 2);
     }
 
     // ==========================================================================
@@ -318,31 +338,6 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
         assertEq(eventData.lpFees, grossLpFees);
         assertEq(eventData.hookFees, 0);
         assertEq(eventData.protocolFees, 0);
-    }
-
-    function test_feeCalculation_ShouldGiveZeroToLpsWhenHookAndProtocolTakeAll() public {
-        uint256 feePrecision = hooks.FEE_PRECISION();
-
-        vm.startPrank(defaultAdmin);
-        hooks.setHookFeePercentage(feePrecision / 2);
-        hooks.setProtocolFeePercentage(feePrecision / 2);
-        vm.stopPrank();
-
-        _addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
-
-        vm.recordLogs();
-        _executeExactInputSwap(true, _toTokenWei(currency0, SWAP_AMOUNT));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-
-        StableSwapEventData memory eventData = _findStableSwapEvent(logs);
-
-        uint256 grossLpFees = eventData.lpFees + eventData.hookFees + eventData.protocolFees;
-        uint256 expectedHookFees = grossLpFees / 2;
-        uint256 expectedProtocolFees = grossLpFees / 2;
-
-        assertEq(eventData.lpFees, 0);
-        assertEq(eventData.hookFees, expectedHookFees);
-        assertEq(eventData.protocolFees, expectedProtocolFees);
     }
 
     // ==========================================================================
