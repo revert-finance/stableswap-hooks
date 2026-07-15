@@ -170,21 +170,21 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         assertEq(hooks.hookFees(0), 0);
     }
 
-    function test_swap_ExactOutput_ShouldAccumulateFeesOnInputCurrency() public {
+    function test_swap_ExactOutput_ShouldAccumulateFeesOnOutputCurrency() public {
         uint256 amountOut = _toTokenWei(currency1, SWAP_AMOUNT);
 
-        uint256 protocolFees0Before = hooks.protocolFees(0);
-        uint256 hookFees0Before = hooks.hookFees(0);
+        uint256 protocolFees1Before = hooks.protocolFees(1);
+        uint256 hookFees1Before = hooks.hookFees(1);
 
         _executeExactOutputSwap(true, amountOut);
 
-        uint256 protocolFees0After = hooks.protocolFees(0);
-        uint256 hookFees0After = hooks.hookFees(0);
+        uint256 protocolFees1After = hooks.protocolFees(1);
+        uint256 hookFees1After = hooks.hookFees(1);
 
-        assertGt(protocolFees0After, protocolFees0Before);
-        assertGt(hookFees0After, hookFees0Before);
-        assertEq(hooks.protocolFees(1), 0);
-        assertEq(hooks.hookFees(1), 0);
+        assertGt(protocolFees1After, protocolFees1Before);
+        assertGt(hookFees1After, hookFees1Before);
+        assertEq(hooks.protocolFees(0), 0);
+        assertEq(hooks.hookFees(0), 0);
     }
 
     function test_swap_ShouldKeepLpFeesInReserves() public {
@@ -265,7 +265,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 reserves1After = hooks.reserves(1);
 
         assertGt(reserves0After, reserves0Before);
-        assertEq(reserves1After, reserves1Before - amountOut);
+        assertEq(reserves1After, reserves1Before - amountOut - hooks.protocolFees(1) - hooks.hookFees(1));
     }
 
     function test_swap_ExactOutput_OneForZero_ShouldUpdateReserves() public {
@@ -280,7 +280,7 @@ contract StableSwapHooksSwapTest is StableSwapHooksBaseTest {
         uint256 reserves1After = hooks.reserves(1);
 
         assertGt(reserves1After, reserves1Before);
-        assertEq(reserves0After, reserves0Before - amountOut);
+        assertEq(reserves0After, reserves0Before - amountOut - hooks.protocolFees(0) - hooks.hookFees(0));
     }
 
     // ==========================================================================

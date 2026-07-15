@@ -131,55 +131,48 @@ abstract contract Swap is Fees {
         result.amountIn = _amountIn;
         result.amountOut = rawAmountOut - totalFees;
 
-        _settleTrade(_ctx, result, true);
+        _settleTrade(_ctx, result);
     }
 
-    /// @dev Calculates input amount for exact output swap, fees grossed up into the input
+    /// @dev Calculates input amount for exact output swap, fees grossed up into the output
     function _swapExactOutput(uint256 _amountOut, SwapContext memory _ctx) private returns (SwapResult memory result) {
+        uint256 grossAmountOut =
+            Math.mulDiv(_amountOut, FEE_PRECISION, FEE_PRECISION - lpFeePercentage, Math.Rounding.Ceil);
+
+        uint256 totalFees = grossAmountOut - _amountOut;
+
+        result.hookFees = Math.mulDiv(totalFees, hookFeePercentage, FEE_PRECISION);
+        result.protocolFees = Math.mulDiv(totalFees, protocolFeePercentage, FEE_PRECISION);
+        result.lpFees = totalFees - result.hookFees - result.protocolFees;
+
         uint256 newTokenOutReserves = _ctx.scaledReserves[_ctx.tokenOutIndex]
-            - StableSwapMath.scaleToUp(_amountOut, _getRate(_ctx.tokenOutIndex));
+            - StableSwapMath.scaleToUp(grossAmountOut, _getRate(_ctx.tokenOutIndex));
 
         uint256 newTokenInReserves = StableSwapMath.getTargetReserves(
             _ctx.tokenOutIndex, _ctx.tokenInIndex, newTokenOutReserves, _ctx.scaledReserves, _ctx.amp, _ctx.invariant
         );
 
-        uint256 rawAmountIn = StableSwapMath.descaleUp(
+        result.amountIn = StableSwapMath.descaleUp(
             newTokenInReserves - _ctx.scaledReserves[_ctx.tokenInIndex], _getRate(_ctx.tokenInIndex)
         );
 
-        uint256 grossAmountIn =
-            Math.mulDiv(rawAmountIn, FEE_PRECISION, FEE_PRECISION - lpFeePercentage, Math.Rounding.Ceil);
-
-        (result.lpFees, result.hookFees, result.protocolFees) = _getFees(grossAmountIn);
-
-        result.amountIn = grossAmountIn;
         result.amountOut = _amountOut;
 
         if (result.amountIn == 0) {
             revert ZeroInput();
         }
 
-        _settleTrade(_ctx, result, false);
+        _settleTrade(_ctx, result);
     }
 
-    /// @dev Settles the trade by updating pool manager claims and reserves
-    function _settleTrade(SwapContext memory _ctx, SwapResult memory _result, bool _isExactInput) private {
-        if (_isExactInput) {
-            _addFees(_ctx.tokenOutIndex, _result.protocolFees, _result.hookFees);
+    /// @dev Settles the trade by updating pool manager claims and reserves, fees retained on the output side
+    function _settleTrade(SwapContext memory _ctx, SwapResult memory _result) private {
+        _addFees(_ctx.tokenOutIndex, _result.protocolFees, _result.hookFees);
 
-            poolManager.burn(address(this), currencies[_ctx.tokenOutIndex].toId(), _result.amountOut);
-            poolManager.mint(address(this), currencies[_ctx.tokenInIndex].toId(), _result.amountIn);
+        poolManager.burn(address(this), currencies[_ctx.tokenOutIndex].toId(), _result.amountOut);
+        poolManager.mint(address(this), currencies[_ctx.tokenInIndex].toId(), _result.amountIn);
 
-            reserves[_ctx.tokenInIndex] += _result.amountIn;
-            reserves[_ctx.tokenOutIndex] -= _result.amountOut + _result.hookFees + _result.protocolFees;
-        } else {
-            _addFees(_ctx.tokenInIndex, _result.protocolFees, _result.hookFees);
-
-            poolManager.burn(address(this), currencies[_ctx.tokenOutIndex].toId(), _result.amountOut);
-            poolManager.mint(address(this), currencies[_ctx.tokenInIndex].toId(), _result.amountIn);
-
-            reserves[_ctx.tokenInIndex] += _result.amountIn - _result.hookFees - _result.protocolFees;
-            reserves[_ctx.tokenOutIndex] -= _result.amountOut;
-        }
+        reserves[_ctx.tokenInIndex] += _result.amountIn;
+        reserves[_ctx.tokenOutIndex] -= _result.amountOut + _result.hookFees + _result.protocolFees;
     }
 }
