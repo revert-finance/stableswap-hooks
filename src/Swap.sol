@@ -136,6 +136,8 @@ abstract contract Swap is Fees {
 
     /// @dev Calculates input amount for exact output swap, fees grossed up into the output
     function _swapExactOutput(uint256 _amountOut, SwapContext memory _ctx) private returns (SwapResult memory result) {
+        // Gross up the requested output so that after deducting the LP fee the trader receives exactly _amountOut.
+        // Mirrors exact input where fees are taken from the output. Rounds up in favor of the pool.
         uint256 grossAmountOut =
             Math.mulDiv(_amountOut, FEE_PRECISION, FEE_PRECISION - lpFeePercentage, Math.Rounding.Ceil);
 
