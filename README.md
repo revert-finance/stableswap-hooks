@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Description](#description)
+- [Important Usage Notes](#important-usage-notes)
 - [Liquidity](#liquidity)
   - [Add liquidity](#add-liquidity)
   - [Remove liquidity](#remove-liquidity)
@@ -30,6 +31,16 @@
 StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
 
 The StableSwap invariant blends constant-sum and constant-product behavior with an amplification coefficient (A): near balance it behaves closer to constant-sum for tighter pricing, and as the pool becomes imbalanced it shifts toward constant-product to preserve liquidity. The benefit is concentrated liquidity around the peg without relying on external oracles for pricing, which improves capital efficiency for LPs and reduces price impact for traders.
+
+## Important Usage Notes
+
+Read these before deploying a pool. Ignoring them can lead to broken accounting or unexpected pricing.
+
+- **Token decimals must be between 6 and 18 (inclusive).** Each token is normalized to 1e18 precision internally using a scaling rate of `10^(36 - decimals)`. Tokens with fewer than 6 or more than 18 decimals fall outside the tested range and will not behave as expected (loss of precision, or a revert during deployment for very high decimals). Do not use them.
+- **Use A ≥ 100.** An amplification coefficient of `A = 1` is discouraged: it behaves close to constant product (defeating the purpose of a stable pool) and exhibits weird edge-case behavior at such a low value. For stable, correlated assets, `A ≥ 100` is recommended.
+- **Rebasing tokens are not supported.** Reserves are tracked internally, so tokens that change balances via rebasing (for example stETH) will desync the pool's accounting from its actual balances. Use the wrapped, non-rebasing equivalent instead (for example wstETH, configured with a rate oracle).
+- **Fee-on-transfer / deflationary tokens are not supported.** On deposits the pool credits reserves with the requested transfer amount, assuming the exact amount arrives. A token that takes a fee on transfer will desync accounting or revert on settlement. Do not use them.
+- **Rate oracles must return a single `uint256` scaled to 18-decimal precision (`RATE_PRECISION = 1e18`).** The configured `(oracle, selector)` is `staticcall`ed and only the 32-byte return length is validated; a wrong return type or wrong scaling silently misprices the pool. Use a hardened accumulator-style rate source (for example `wstETH.stEthPerToken`), or wrap an existing oracle in a proxy contract that returns the expected format.
 
 ## Liquidity
 Liquidity is pooled and represented by ERC20 LP tokens. The hook does not rely on Uniswap’s position manager or concentrated liquidity NFTs; it manages liquidity internally with Uniswap v2-style ERC20 LP tokens. Deposits and withdrawals are proportional across all pool assets; there is no range-based liquidity and no NFT positions.
