@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Description](#description)
+- [Important Usage Notes](#important-usage-notes)
 - [Liquidity](#liquidity)
   - [Add liquidity](#add-liquidity)
   - [Remove liquidity](#remove-liquidity)
@@ -30,6 +31,15 @@
 StableSwap Hooks is a Uniswap v4 hook implementation that brings Curve-style StableSwap AMM behavior to v4 pools. It targets stable assets (stablecoins, LSTs, etc.) to provide low-slippage swaps around the 1:1 price, while supporting configurable fees, rate oracles, and amplification (A) ramping.
 
 The StableSwap invariant blends constant-sum and constant-product behavior with an amplification coefficient (A): near balance it behaves closer to constant-sum for tighter pricing, and as the pool becomes imbalanced it shifts toward constant-product to preserve liquidity. The benefit is concentrated liquidity around the peg without relying on external oracles for pricing, which improves capital efficiency for LPs and reduces price impact for traders.
+
+## Important Usage Notes
+Read these before deploying a pool. Ignoring them can lead to broken accounting or unexpected pricing.
+
+- **Token decimals must be between 6 and 18 (inclusive).** Each token is normalized to 1e18 precision internally using a scaling rate of `10^(36 - decimals)`. Tokens with fewer than 6 or more than 18 decimals fall outside the tested range and will not behave as expected (loss of precision, or a revert during deployment for very high decimals). Do not use them.
+- **Use A ≥ 10.** Using less than 10 discouraged: On tiny or heavily imbalanced pools it lets the fee round to zero, exposing dust-sized rounding leaks on round-trip swaps.
+- **Rebasing tokens are not supported.** Reserves are tracked internally, so tokens that change balances via rebasing (for example stETH) will desync the pool's accounting from its actual balances. Use the wrapped, non-rebasing equivalent instead (for example wstETH, configured with a rate oracle).
+- **Fee-on-transfer / deflationary tokens are not supported.** On deposits the pool credits reserves with the requested transfer amount, assuming the exact amount arrives. A token that takes a fee on transfer will desync accounting or revert on settlement. Do not use them.
+- **Rate oracles must return a single `uint256` scaled to 18-decimal precision (`RATE_PRECISION = 1e18`).** The configured `(oracle, selector)` is `staticcall`ed and only the 32-byte return length is validated; a wrong return type or wrong scaling silently misprices the pool. Use a hardened accumulator-style rate source (for example `wstETH.stEthPerToken`), or wrap an existing oracle in a proxy contract that returns the expected format.
 
 ## Liquidity
 Liquidity is pooled and represented by ERC20 LP tokens. The hook does not rely on Uniswap’s position manager or concentrated liquidity NFTs; it manages liquidity internally with Uniswap v2-style ERC20 LP tokens. Deposits and withdrawals are proportional across all pool assets; there is no range-based liquidity and no NFT positions.
@@ -297,7 +307,9 @@ hooks.withdrawHookFees();
 ## Amplification
 The amplification coefficient (A) controls how tightly the pool prices around the 1:1 peg. Higher A reduces slippage near equilibrium, while lower A behaves closer to constant product. The factory owner can update A over time using ramping, via `startAmpRamp(nextAmp, nextAmpTime)` and `stopAmpRamp()` on the hook.
 
-For intuition: A ≈ 1 behaves close to constant product, A ≈ 10–100 is a middle ground, and A ≈ 1,000+ behaves close to constant sum. As a concrete reference, Curve’s USDC/USDT pool uses A = 10,000 (see `https://etherscan.io/address/0x4f493b7de8aac7d55f71853688b1f7c8f0243c85#readContract`). In practice you choose A based on how stable and correlated the assets are, and ramp between values to avoid abrupt changes.
+For intuition: the lower the A, the closer the pool behaves to constant product; the higher the A, the closer it behaves to constant sum. As a concrete reference, Curve’s USDC/USDT pool uses A = 10,000 (see `https://etherscan.io/address/0x4f493b7de8aac7d55f71853688b1f7c8f0243c85#readContract`). In practice you choose A based on how stable and correlated the assets are, and ramp between values to avoid abrupt changes.
+
+Suggested values for stable pools are A between 100 and 1,000: A ≈ 100 keeps a 10% trade under ~10 bps of slippage, while A ≈ 1,000 is effectively constant sum (~1 bp on a 10% trade). For the tightest fiat-stablecoin pegs (for example USDC/USDT) values up to ~10,000 are reasonable, matching Curve; for looser pegs such as LSTs (for example wstETH/WETH, where the rate drifts) prefer the lower end, around A ≈ 100–500.
 
 ### Ramping A
 Ramping updates A gradually to avoid abrupt changes in pricing and pool balances. Large, immediate shifts in A can be sandwiched between trades to exploit the sudden invariant change and extract value from LPs; ramping smooths the transition to reduce that attack surface. Only the factory owner can start a ramp, and the change must respect the minimum ramp duration and max change limits enforced by the hook.
