@@ -15,7 +15,7 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {Commands} from "test/testUtils/external/libraries/Commands.sol";
 import {StableSwapHooksBaseTest} from "test/testUtils/StableSwapHooksBaseTest.sol";
 
-contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
+contract ExactOutputFeeSymmetry1Test is StableSwapHooksBaseTest {
     bytes32 internal constant STABLE_SWAP_TOPIC =
         keccak256("StableSwap(address,address,address,uint256,uint256,uint256,uint256,uint256)");
 
@@ -25,27 +25,34 @@ contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
         _addLiquidity(1_000_000, 1_000_000);
     }
 
-    function test_exactOutput_collectsTheFullGrossLpFeeOnTotalInput() public {
+    function test_exactOutput_collectsTheFullGrossLpFeeOnTheOutputSide() public {
+        uint256 amountOut = _toTokenWei(currency1, 1000);
+
         vm.recordLogs();
-        _executeExactOutputSwap(true, _toTokenWei(currency1, 1000));
+        _executeExactOutputSwap(true, amountOut);
 
-        (uint256 amountIn, uint256 totalFees) = _readSwapFees();
+        (, uint256 totalFees) = _readSwapFees();
 
-        uint256 grossLpFee = Math.mulDiv(amountIn, hooks.lpFeePercentage(), hooks.FEE_PRECISION(), Math.Rounding.Ceil);
+        uint256 grossAmountOut = Math.mulDiv(
+            amountOut, hooks.FEE_PRECISION(), hooks.FEE_PRECISION() - hooks.lpFeePercentage(), Math.Rounding.Ceil
+        );
 
-        assertEq(totalFees, grossLpFee, "exact output must charge the full gross lp fee on the total input paid");
+        assertEq(
+            totalFees, grossAmountOut - amountOut, "exact output must charge the full gross lp fee on the output side"
+        );
     }
 
     function test_exactOutput_minimumOutput_stillCollectsTheGrossLpFee() public {
         vm.recordLogs();
         _executeExactOutputSwap(true, 1);
 
-        (uint256 amountIn, uint256 totalFees) = _readSwapFees();
+        (, uint256 totalFees) = _readSwapFees();
 
-        uint256 grossLpFee = Math.mulDiv(amountIn, hooks.lpFeePercentage(), hooks.FEE_PRECISION(), Math.Rounding.Ceil);
+        uint256 grossAmountOut =
+            Math.mulDiv(1, hooks.FEE_PRECISION(), hooks.FEE_PRECISION() - hooks.lpFeePercentage(), Math.Rounding.Ceil);
 
         assertEq(
-            totalFees, grossLpFee, "minimum exact output must charge the full gross lp fee on the total input paid"
+            totalFees, grossAmountOut - 1, "minimum exact output must charge the full gross lp fee on the output side"
         );
     }
 
@@ -69,11 +76,9 @@ contract ExactOutputFeeSymmetryTest is StableSwapHooksBaseTest {
         _assertCostGapForFeeTier(500000);
     }
 
-    // Both paths now charge the full fee, so the pool is not shortchanged. A tiny difference is left
-    // because the fee sits on the input token one way and the output token the other, making exact
-    // output a hair cheaper: about $0.005 on a $1M swap at 0.05% fee. That is too small to be worth
-    // exploiting (a swap costs more in gas), and it grows with the fee, so the allowed difference is
-    // sized per fee tier with 2x room to spare.
+    // Both paths charge the fee on the output side of the curve, so for the same net output the two
+    // modes traverse the curve to the same depth and only wei-level rounding separates their cost.
+    // The allowed difference is sized per fee tier with room to spare.
     function _assertCostGapForFeeTier(uint256 _feeTier) private {
         StableSwapHooks tierHooks = _deployHooksWithLpFee(_feeTier);
         _seedHooks(tierHooks);

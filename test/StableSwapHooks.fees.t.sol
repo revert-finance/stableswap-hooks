@@ -289,10 +289,10 @@ contract StableSwapHooksFeesTest is StableSwapHooksBaseTest {
 
         _executeExactOutputSwap(true, _toTokenWei(currency1, SWAP_AMOUNT));
 
-        assertGt(hooks.protocolFees(0), 0);
-        assertEq(hooks.protocolFees(1), 0);
-        assertGt(hooks.hookFees(0), 0);
-        assertEq(hooks.hookFees(1), 0);
+        assertEq(hooks.protocolFees(0), 0);
+        assertGt(hooks.protocolFees(1), 0);
+        assertEq(hooks.hookFees(0), 0);
+        assertGt(hooks.hookFees(1), 0);
     }
 
     // ==========================================================================

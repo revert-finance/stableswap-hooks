@@ -23,7 +23,7 @@ contract RemoveLiquidityReentrancy is ExternalContractsDeployer {
     uint256 internal constant AMP = 100;
     uint256 internal constant HONEST_LIQUIDITY = 10_000 ether;
     uint256 internal constant ATTACKER_LIQUIDITY = 990_000 ether;
-    uint256 internal constant REENTRANT_ETH_OUT = 9_999 ether;
+    uint256 internal constant REENTRANT_ETH_OUT = 9_996 ether;
 
     StableSwapHooksFactoryHarness internal factory;
     StableSwapHooks internal hooks;

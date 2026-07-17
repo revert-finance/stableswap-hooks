@@ -95,7 +95,7 @@ contract FullReserveSwapTest is ExternalContractsDeployer {
                 CustomRevert.WrappedError.selector,
                 address(hooks),
                 IHooks.beforeSwap.selector,
-                stdError.divisionError,
+                stdError.arithmeticError,
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
@@ -135,7 +135,7 @@ contract FullReserveSwapTest is ExternalContractsDeployer {
                 CustomRevert.WrappedError.selector,
                 address(hooks),
                 IHooks.beforeSwap.selector,
-                stdError.divisionError,
+                stdError.arithmeticError,
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
