@@ -162,6 +162,12 @@ abstract contract Liquidity is Amp, ERC20 {
         uint256 refundValue;
 
         for (uint256 i = 0; i < currenciesLength; ++i) {
+            reserves[i] += actualAmounts[i];
+        }
+
+        _mint(sender, newShares);
+
+        for (uint256 i = 0; i < currenciesLength; ++i) {
             Currency currency = currencies[i];
 
             if (currency.isAddressZero()) {
@@ -174,10 +180,7 @@ abstract contract Liquidity is Amp, ERC20 {
             }
 
             poolManager.mint(address(this), currency.toId(), actualAmounts[i]);
-            reserves[i] += actualAmounts[i];
         }
-
-        _mint(sender, newShares);
 
         if (refundValue > 0) {
             Address.sendValue(payable(sender), refundValue);
