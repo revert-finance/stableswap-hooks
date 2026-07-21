@@ -81,6 +81,9 @@ abstract contract Base is BaseHook {
     /// @notice Thrown when a rate oracle call fails
     error RateOracleCallFailed();
 
+    /// @notice Thrown when a rate oracle pushes the effective rate below 1e18, collapsing scaled precision
+    error InvalidRateOracleRate();
+
     /// @notice Thrown when rate oracles array length doesn't match currencies length
     error InvalidRateOraclesLength();
 
@@ -206,6 +209,12 @@ abstract contract Base is BaseHook {
 
             uint256 fetchedRate = abi.decode(returnData, (uint256));
             rate = rate * fetchedRate / StableSwapMath.RATE_PRECISION;
+
+            // Floor the effective rate at 1e18: below it, realistic raw amounts floor to zero scaled
+            // units and the shrunken scaled state amplifies invariant solver noise into real payouts.
+            if (rate < StableSwapMath.RATE_PRECISION) {
+                revert InvalidRateOracleRate();
+            }
         }
     }
 
