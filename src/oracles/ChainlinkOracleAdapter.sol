@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 /// @notice Adapter used for stable swap tokens that rely on chainlink feeds to obtain the rate.
 /// On `getRate`, maps chainlink answer to uint256 and 18 decimal precision as required + performs required validations.
 contract ChainlinkOracleAdapter {
@@ -88,7 +90,7 @@ contract ChainlinkOracleAdapter {
         }
 
         // Normalize the received feed value into 18 decimals.
-        return 1e18 * uint256(priceFeedAnswer) / (10 ** priceFeedDecimals);
+        return Math.mulDiv(uint256(priceFeedAnswer), 1e18, 10 ** priceFeedDecimals);
     }
 }
 
