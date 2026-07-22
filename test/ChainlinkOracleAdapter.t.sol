@@ -113,4 +113,24 @@ contract ChainlinkOracleAdapterTest is Test {
 
         assertEq(adapter.getRate(), 1e18, "rate");
     }
+
+    function test_constructor_ShouldAllowZeroSequencerFeed() public {
+        adapter = new ChainlinkOracleAdapter(priceFeed, TOLERANCE, AggregatorV3Interface(address(0)), GRACE_PERIOD);
+
+        assertEq(address(adapter.sequencerFeed()), address(0), "sequencerFeed");
+    }
+
+    function test_getRate_ShouldReturnPriceWhenNoSequencerFeed() public {
+        adapter = new ChainlinkOracleAdapter(priceFeed, TOLERANCE, AggregatorV3Interface(address(0)), GRACE_PERIOD);
+
+        assertEq(adapter.getRate(), 1e18, "rate");
+    }
+
+    function test_getRate_ShouldValidatePriceWhenNoSequencerFeed() public {
+        adapter = new ChainlinkOracleAdapter(priceFeed, TOLERANCE, AggregatorV3Interface(address(0)), GRACE_PERIOD);
+        priceFeed.set(1e8, 0, NOW - TOLERANCE - 1);
+
+        vm.expectRevert(ChainlinkOracleAdapter.PriceFeedInvalidUpdatedAt.selector);
+        adapter.getRate();
+    }
 }

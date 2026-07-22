@@ -39,7 +39,7 @@ contract ChainlinkOracleAdapter {
     /// @notice Configures the price and sequencer feeds and caches the price feed decimals
     /// @param _priceFeed The token pair price feed
     /// @param _priceFeedUpdatedAtTolerance Seconds allowed since the last price update before it is considered stale
-    /// @param _sequencerFeed The L2 sequencer uptime feed
+    /// @param _sequencerFeed The L2 sequencer uptime feed, or the zero address to skip sequencer validation on L1
     /// @param _sequencerFeedStartedAtGracePeriod Seconds the sequencer must have been running before answers are trusted
     constructor(
         AggregatorV3Interface _priceFeed,
@@ -56,9 +56,33 @@ contract ChainlinkOracleAdapter {
     }
 
     /// @notice Returns the price feed rate scaled to 18 decimal precision
-    /// @dev Validates the sequencer is up and past its grace period, then that the price feed answer is positive and fresh
+    /// @dev When a sequencer feed is configured, validates it is up and past its grace period, then that the price feed answer is positive and fresh
     /// @return The rate in 18 decimal precision
     function getRate() external view returns (uint256) {
+        // Skips the sequencer validation when no sequencer feed is configured, allowing L1 usage.
+        if (address(sequencerFeed) != address(0)) {
+            _validateSequencer();
+        }
+
+        (, int256 priceFeedAnswer,, uint256 priceFeedUpdatedAt,) = priceFeed.latestRoundData();
+
+        // Reject invalid rates
+        if (priceFeedAnswer <= 0) {
+            revert PriceFeedInvalidAnswer();
+        }
+
+        // Reverts if the price returned by the feed is too old.
+        if (block.timestamp - priceFeedUpdatedAt > priceFeedUpdatedAtTolerance) {
+            revert PriceFeedInvalidUpdatedAt();
+        }
+
+        // Normalize the received feed value into 18 decimals.
+        return Math.mulDiv(uint256(priceFeedAnswer), 1e18, 10 ** priceFeedDecimals);
+    }
+
+    /// @dev Validates the L2 sequencer is up and has been running past its grace period
+    /// Reverts on a non-zero answer, an uninitialized feed, or an insufficient grace period
+    function _validateSequencer() private view {
         (, int256 sequencerFeedAnswer, uint256 sequencerFeedStartedAt,,) = sequencerFeed.latestRoundData();
 
         // 0 means the sequencer is running, any other value means its not.
@@ -76,21 +100,6 @@ contract ChainlinkOracleAdapter {
         if (block.timestamp - sequencerFeedStartedAt <= sequencerFeedStartedAtGracePeriod) {
             revert SequencerFeedInvalidStartedAt();
         }
-
-        (, int256 priceFeedAnswer,, uint256 priceFeedUpdatedAt,) = priceFeed.latestRoundData();
-
-        // Reject invalid rates
-        if (priceFeedAnswer <= 0) {
-            revert PriceFeedInvalidAnswer();
-        }
-
-        // Reverts if the price returned by the feed is too old.
-        if (block.timestamp - priceFeedUpdatedAt > priceFeedUpdatedAtTolerance) {
-            revert PriceFeedInvalidUpdatedAt();
-        }
-
-        // Normalize the received feed value into 18 decimals.
-        return Math.mulDiv(uint256(priceFeedAnswer), 1e18, 10 ** priceFeedDecimals);
     }
 }
 
