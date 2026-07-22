@@ -37,29 +37,24 @@ contract ChainlinkOracleAdapter {
     function getRate() external view returns (uint256) {
         (, int256 sequencerFeedAnswer, uint256 sequencerFeedStartedAt,,) = sequencerFeed.latestRoundData();
 
-        // 0 means the sequencer is working, another value means it is not.
         if (sequencerFeedAnswer != 0) {
             revert SequencerFeedInvalidAnswer();
         }
 
-        // revert if the started at has default value.
         if (sequencerFeedStartedAt == 0) {
             revert SequencerFeedInvalidStartedAt();
         }
 
-        // reverts if the sequencer has been started too recently.
         if (block.timestamp - sequencerFeedStartedAt <= sequencerFeedStartedAtGracePeriod) {
             revert SequencerFeedInvalidStartedAt();
         }
 
         (, int256 priceFeedAnswer,, uint256 priceFeedUpdatedAt,) = priceFeed.latestRoundData();
 
-        // reverts if the price returned is invalid.
         if (priceFeedAnswer <= 0) {
             revert PriceFeedInvalidAnswer();
         }
 
-        // reverts if the answer is too old.
         if (block.timestamp - priceFeedUpdatedAt > priceFeedUpdatedAtTolerance) {
             revert PriceFeedInvalidUpdatedAt();
         }
