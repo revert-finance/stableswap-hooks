@@ -6,6 +6,10 @@ import {StableSwapZapIn} from "src/periphery/StableSwapZapIn.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
+/// @notice Usage:
+///   forge script script/DeployStableSwapZapIn.s.sol:DeployStableSwapZapIn \
+///     --rpc-url base --broadcast --verify -vvvv \
+///     --sig "run(address)" <FACTORY_ADDRESS>
 contract DeployStableSwapZapIn is Script {
     function run(address _factory) external {
         address poolManager = address(IStableSwapHooksFactory(_factory).poolManager());

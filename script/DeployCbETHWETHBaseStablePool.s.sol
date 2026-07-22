@@ -10,6 +10,10 @@ import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 import {ChainlinkOracleAdapter} from "src/oracles/ChainlinkOracleAdapter.sol";
 
+/// @notice Usage:
+///   forge script script/DeployCbETHWETHBaseStablePool.s.sol:DeployCbETHWETHBaseStablePool \
+///     --rpc-url base --broadcast --verify -vvvv \
+///     --sig "run(address,address)" <FACTORY_ADDRESS> <ADAPTER_ADDRESS>
 contract DeployCbETHWETHBaseStablePool is Script {
     address public constant CBETH = 0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22;
 

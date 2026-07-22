@@ -9,6 +9,10 @@ import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {Base} from "src/Base.sol";
 
+/// @notice Usage:
+///   forge script script/DeployUSDSUSDCUSDTBaseStablePool.s.sol:DeployUSDSUSDCUSDTBaseStablePool \
+///     --rpc-url base --broadcast --verify -vvvv \
+///     --sig "run(address)" <FACTORY_ADDRESS>
 contract DeployUSDSUSDCUSDTBaseStablePool is Script {
     address public constant USDS = 0x820C137fa70C8691f0e44Dc420a5e53c168921Dc;
 

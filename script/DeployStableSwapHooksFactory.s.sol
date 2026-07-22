@@ -7,6 +7,10 @@ import {CREATE3} from "./CREATE3.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
+/// @notice Usage:
+///   forge script script/DeployStableSwapHooksFactory.s.sol:DeployStableSwapHooksFactory \
+///     --rpc-url base --broadcast --verify -vvvv \
+///     --sig "run(address,address,address)" <OWNER> <PROTOCOL_FEE_COLLECTOR> <HOOK_FEE_COLLECTOR>
 contract DeployStableSwapHooksFactory is Script {
     bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 

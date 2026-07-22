@@ -4,6 +4,9 @@ pragma solidity 0.8.30;
 import {Script, console2} from "forge-std/Script.sol";
 import {ChainlinkOracleAdapter, AggregatorV3Interface} from "src/oracles/ChainlinkOracleAdapter.sol";
 
+/// @notice Usage:
+///   forge script script/DeployCbETHETHBaseChainlinkOracleAdapter.s.sol:DeployCbETHETHBaseChainlinkOracleAdapter \
+///     --rpc-url base --broadcast --verify -vvvv
 contract DeployCbETHETHBaseChainlinkOracleAdapter is Script {
     address public constant PRICE_FEED = 0x806b4Ac04501c29769051e42783cF04dCE41440b;
 
