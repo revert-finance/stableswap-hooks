@@ -24,6 +24,7 @@ contract DeployStableSwapHooksFactory is Script {
         );
 
         vm.startBroadcast();
+
         (VmSafe.CallerMode callerMode,, address broadcaster) = vm.readCallers();
         require(callerMode == VmSafe.CallerMode.RecurrentBroadcast, "broadcast not active");
 
@@ -40,6 +41,7 @@ contract DeployStableSwapHooksFactory is Script {
         console2.log("Predicted Factory:     ", predictedFactory);
 
         address factory = CREATE3.deployDeterministic(initCode, SALT);
+
         vm.stopBroadcast();
 
         console2.log("");

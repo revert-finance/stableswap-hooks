@@ -26,12 +26,14 @@ contract DeployCbETHETHBaseChainlinkOracleAdapter is Script {
         console2.log("Sequencer Grace Period:  ", SEQUENCER_FEED_STARTED_AT_GRACE_PERIOD);
 
         vm.startBroadcast();
+
         ChainlinkOracleAdapter adapter = new ChainlinkOracleAdapter(
             AggregatorV3Interface(PRICE_FEED),
             PRICE_FEED_UPDATED_AT_TOLERANCE,
             AggregatorV3Interface(SEQUENCER_FEED),
             SEQUENCER_FEED_STARTED_AT_GRACE_PERIOD
         );
+
         vm.stopBroadcast();
 
         console2.log("ChainlinkOracleAdapter deployed at:", address(adapter));
