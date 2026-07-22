@@ -59,28 +59,35 @@ contract ChainlinkOracleAdapter {
     function getRate() external view returns (uint256) {
         (, int256 sequencerFeedAnswer, uint256 sequencerFeedStartedAt,,) = sequencerFeed.latestRoundData();
 
+        // 0 means the sequencer is running, any other value means its not.
         if (sequencerFeedAnswer != 0) {
             revert SequencerFeedInvalidAnswer();
         }
 
+        // Only on Arbitrum, the value might return 0 when the uptime feed contract has not been initialized.
+        // For all other L2 chains, the result is at least the block.timestamp value at creation.
         if (sequencerFeedStartedAt == 0) {
             revert SequencerFeedInvalidStartedAt();
         }
 
+        // Reverts if not enough time has passed since the sequencer has been started.
         if (block.timestamp - sequencerFeedStartedAt <= sequencerFeedStartedAtGracePeriod) {
             revert SequencerFeedInvalidStartedAt();
         }
 
         (, int256 priceFeedAnswer,, uint256 priceFeedUpdatedAt,) = priceFeed.latestRoundData();
 
+        // Reject invalid rates
         if (priceFeedAnswer <= 0) {
             revert PriceFeedInvalidAnswer();
         }
 
+        // Reverts if the price returned by the feed is too old.
         if (block.timestamp - priceFeedUpdatedAt > priceFeedUpdatedAtTolerance) {
             revert PriceFeedInvalidUpdatedAt();
         }
 
+        // Normalize the received feed value into 18 decimals.
         return 1e18 * uint256(priceFeedAnswer) / (10 ** priceFeedDecimals);
     }
 }
