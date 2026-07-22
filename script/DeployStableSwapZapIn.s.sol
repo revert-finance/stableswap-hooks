@@ -6,22 +6,8 @@ import {StableSwapZapIn} from "src/periphery/StableSwapZapIn.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 import {IStableSwapHooksFactory} from "src/interfaces/IStableSwapHooksFactory.sol";
 
-/// @notice Deploys the StableSwapZapIn periphery contract.
-///
-/// Usage:
-///   forge script script/DeployStableSwapZapIn.s.sol:DeployStableSwapZapIn \
-///     --rpc-url base --broadcast --verify -vvvv \
-///     --sig "run(address)" <FACTORY_ADDRESS>
 contract DeployStableSwapZapIn is Script {
-    function run() external {
-        _run(vm.envAddress("STABLESWAP_FACTORY"));
-    }
-
     function run(address _factory) external {
-        _run(_factory);
-    }
-
-    function _run(address _factory) private {
         address poolManager = address(IStableSwapHooksFactory(_factory).poolManager());
         bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
 
@@ -32,7 +18,9 @@ contract DeployStableSwapZapIn is Script {
         console2.log("Creation Code Hash:", vm.toString(hooksCreationCodeHash));
 
         vm.startBroadcast();
+
         StableSwapZapIn zapIn = new StableSwapZapIn(_factory, hooksCreationCodeHash);
+
         vm.stopBroadcast();
 
         console2.log("StableSwapZapIn deployed at:", address(zapIn));

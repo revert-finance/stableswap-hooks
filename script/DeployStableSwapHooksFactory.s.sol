@@ -7,14 +7,9 @@ import {CREATE3} from "./CREATE3.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
-/// @notice Deploys StableSwapHooksFactory with CREATE3 for deterministic addresses.
 contract DeployStableSwapHooksFactory is Script {
     bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 
-    /// @notice Deploys the factory using CREATE3 with a chain-specific PoolManager.
-    /// @param _owner The owner address for the factory.
-    /// @param _protocolFeeCollector The protocol fee collector address.
-    /// @param _hookFeeCollector The hook fee collector address.
     function run(address _owner, address _protocolFeeCollector, address _hookFeeCollector) external {
         address poolManager = _getPoolManager();
         bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
