@@ -15,16 +15,21 @@ import {ChainlinkOracleAdapter} from "src/oracles/ChainlinkOracleAdapter.sol";
 ///     --rpc-url base --broadcast --verify -vvvv \
 ///     --sig "run(address,address)" <FACTORY_ADDRESS> <ADAPTER_ADDRESS>
 contract DeployCbETHWETHBaseStablePool is Script {
+    // https://basescan.org/token/0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22
     address public constant CBETH = 0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22;
 
+    // https://basescan.org/token/0x4200000000000000000000000000000000000006
     address public constant WETH = 0x4200000000000000000000000000000000000006;
 
+    // 0.03%
     uint256 public constant LP_FEE_PERCENTAGE = 300;
 
     uint256 public constant BASE_AMP = 100;
 
+    // 10% of lp fee
     uint256 public constant PROTOCOL_FEE_PERCENTAGE = 100_000;
 
+    // 20% of lp fee
     uint256 public constant HOOK_FEE_PERCENTAGE = 200_000;
 
     uint256 public constant BASE_CHAIN_ID = 8453;
