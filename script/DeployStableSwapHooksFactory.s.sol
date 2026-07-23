@@ -7,14 +7,13 @@ import {CREATE3} from "./CREATE3.sol";
 import {StableSwapHooksFactory} from "src/factories/StableSwapHooksFactory.sol";
 import {StableSwapHooks} from "src/StableSwapHooks.sol";
 
-/// @notice Deploys StableSwapHooksFactory with CREATE3 for deterministic addresses.
+/// @notice Usage:
+///   forge script script/DeployStableSwapHooksFactory.s.sol:DeployStableSwapHooksFactory \
+///     --rpc-url base --broadcast --verify -vvvv \
+///     --sig "run(address,address,address)" <OWNER> <PROTOCOL_FEE_COLLECTOR> <HOOK_FEE_COLLECTOR>
 contract DeployStableSwapHooksFactory is Script {
     bytes32 public constant SALT = keccak256("StableSwapHooksFactory");
 
-    /// @notice Deploys the factory using CREATE3 with a chain-specific PoolManager.
-    /// @param _owner The owner address for the factory.
-    /// @param _protocolFeeCollector The protocol fee collector address.
-    /// @param _hookFeeCollector The hook fee collector address.
     function run(address _owner, address _protocolFeeCollector, address _hookFeeCollector) external {
         address poolManager = _getPoolManager();
         bytes32 hooksCreationCodeHash = keccak256(type(StableSwapHooks).creationCode);
@@ -24,6 +23,7 @@ contract DeployStableSwapHooksFactory is Script {
         );
 
         vm.startBroadcast();
+
         (VmSafe.CallerMode callerMode,, address broadcaster) = vm.readCallers();
         require(callerMode == VmSafe.CallerMode.RecurrentBroadcast, "broadcast not active");
 
@@ -40,6 +40,7 @@ contract DeployStableSwapHooksFactory is Script {
         console2.log("Predicted Factory:     ", predictedFactory);
 
         address factory = CREATE3.deployDeterministic(initCode, SALT);
+
         vm.stopBroadcast();
 
         console2.log("");
