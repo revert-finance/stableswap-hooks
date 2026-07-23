@@ -14,18 +14,24 @@ import {Base} from "src/Base.sol";
 ///     --rpc-url base --broadcast --verify -vvvv \
 ///     --sig "run(address)" <FACTORY_ADDRESS>
 contract DeployUSDSUSDCUSDTBaseStablePool is Script {
+    // https://basescan.org/token/0x820c137fa70c8691f0e44dc420a5e53c168921dc
     address public constant USDS = 0x820C137fa70C8691f0e44Dc420a5e53c168921Dc;
 
+    // https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
+    // https://basescan.org/token/0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2
     address public constant USDT = 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2;
 
+    // 0.05%
     uint256 public constant LP_FEE_PERCENTAGE = 500;
 
     uint256 public constant BASE_AMP = 500;
 
+    // 10% of lp fee
     uint256 public constant PROTOCOL_FEE_PERCENTAGE = 100_000;
 
+    // 20% of lp fee
     uint256 public constant HOOK_FEE_PERCENTAGE = 200_000;
 
     uint256 public constant BASE_CHAIN_ID = 8453;
