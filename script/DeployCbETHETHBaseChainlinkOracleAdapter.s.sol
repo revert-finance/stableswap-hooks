@@ -8,11 +8,14 @@ import {ChainlinkOracleAdapter, AggregatorV3Interface} from "src/oracles/Chainli
 ///   forge script script/DeployCbETHETHBaseChainlinkOracleAdapter.s.sol:DeployCbETHETHBaseChainlinkOracleAdapter \
 ///     --rpc-url base --broadcast --verify -vvvv
 contract DeployCbETHETHBaseChainlinkOracleAdapter is Script {
-    address public constant PRICE_FEED = 0x806b4Ac04501c29769051e42783cF04dCE41440b;
+    // https://data.chain.link/feeds/base/base/cbeth-eth-exchange
+    address public constant PRICE_FEED = 0x868a501e68F3D1E89CfC0D22F6b22E8dabce5F04;
 
+    // https://docs.chain.link/data-feeds/l2-sequencer-feeds
     address public constant SEQUENCER_FEED = 0xBCF85224fc0756B9Fa45aA7892530B47e10b6433;
 
-    uint256 public constant PRICE_FEED_UPDATED_AT_TOLERANCE = 86400;
+    // 86400 heartbeat + buffer
+    uint256 public constant PRICE_FEED_UPDATED_AT_TOLERANCE = 90000;
 
     uint256 public constant SEQUENCER_FEED_STARTED_AT_GRACE_PERIOD = 3600;
 
